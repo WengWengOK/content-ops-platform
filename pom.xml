@@ -35,6 +35,7 @@
         <spring-ai.version>1.0.0</spring-ai.version>
         <langchain4j.version>1.0.1</langchain4j.version>
         <resilience4j.version>2.2.0</resilience4j.version>
+        <opentelemetry.version>1.39.0</opentelemetry.version>
     </properties>
 
     <dependencyManagement>

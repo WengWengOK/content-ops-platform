@@ -13,6 +13,12 @@ public final class AgentConstants {
     /** Kafka topic for task lifecycle events */
     public static final String TASK_EVENT_TOPIC = "content-ops.task.events";
 
+    /** P1: Kafka topic for async agent task requests (orchestrator → agent) */
+    public static final String ASYNC_TASK_REQUEST_TOPIC = "content-ops.async.tasks";
+
+    /** P1: Kafka topic for async agent task results (agent → orchestrator) */
+    public static final String ASYNC_TASK_RESULT_TOPIC = "content-ops.async.results";
+
     /** Redis key prefix for workflow state */
     public static final String WORKFLOW_STATE_PREFIX = "contentops:workflow:";
 

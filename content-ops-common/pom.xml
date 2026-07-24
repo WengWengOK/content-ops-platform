@@ -68,5 +68,11 @@
             <artifactId>langchain4j-embeddings-bge-small-zh-v15-q</artifactId>
             <version>1.0.0-beta3</version>
         </dependency>
+
+        <!-- P1: Micrometer 核心（自定义指标采集） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
     </dependencies>
 </project>

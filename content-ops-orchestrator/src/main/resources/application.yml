@@ -25,7 +25,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "com.contentops.*"
+        spring.json.trusted.packages: "com.contentops"
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -40,16 +40,70 @@ eureka:
   instance:
     prefer-ip-address: true
 
+# ════════════════════════════════════════════════════════════════
+# P1: 弹性与可观测性 — Resilience4j 熔断 + 重试配置
+# ════════════════════════════════════════════════════════════════
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        sliding-window-type: COUNT_BASED
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      topicAgent:
+        base-config: default
+      contentAgent:
+        base-config: default
+      imageAgent:
+        base-config: default
+      publishAgent:
+        base-config: default
+      analysisAgent:
+        base-config: default
+      optimizeAgent:
+        base-config: default
+  retry:
+    instances:
+      agentRetry:
+        max-attempts: 3
+        wait-duration: 5s
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - feign.FeignException
+          - org.springframework.web.client.ResourceAccessException
+
+# ════════════════════════════════════════════════════════════════
+# P1: 弹性与可观测性 — OpenTelemetry + Jaeger 分布式链路追踪
+# ════════════════════════════════════════════════════════════════
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
   tracing:
     sampling:
       probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://jaeger:4317}
+      transport: grpc
+      export-step: 10s
 
 logging:
   level:
     com.contentops: DEBUG
     org.springframework.ai: INFO
+    io.github.resilience4j: INFO

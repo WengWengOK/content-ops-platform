@@ -29,7 +29,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "com.contentops.*"
+        spring.json.trusted.packages: "com.contentops"
 
 # LangChain4j OpenAI auto-configuration: creates the OpenAiChatModel (ChatModel) bean
 # consumed by AnalysisAgentConfig to build the DataAnalysisAgent AI Service.

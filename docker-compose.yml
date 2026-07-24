@@ -52,6 +52,37 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
 
+  # P1: Jaeger 分布式链路追踪
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  # P1: Prometheus 指标采集
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  # P1: Grafana 指标可视化
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
   # === Agent 微服务 ===
   agent-topic:
     build: ./content-ops-agent-topic
@@ -157,6 +188,8 @@ services:
       - eureka-server
       - redis
       - kafka
+      - jaeger
+      - prometheus
       - agent-topic
       - agent-content
       - agent-image
@@ -171,6 +204,7 @@ services:
       - KAFKA_SERVERS=kafka:9092
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
 
 volumes:
   redis-data:

@@ -9,6 +9,7 @@ import com.contentops.common.enums.TaskStatus;
 import com.contentops.common.event.AgentTaskRequest;
 import com.contentops.common.event.StageTransitionEvent;
 import com.contentops.common.util.WorkflowStateManager;
+import com.contentops.orchestrator.kafka.AsyncTaskProducer;
 import com.contentops.orchestrator.service.AgentFeignClients.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class PipelineOrchestrator {
 
     private final WorkflowStateManager stateManager;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final AsyncTaskProducer asyncTaskProducer;
 
     // Feign clients for each agent
     private final TopicAgentClient topicAgentClient;
@@ -53,6 +55,16 @@ public class PipelineOrchestrator {
     private final PublishAgentClient publishAgentClient;
     private final AnalysisAgentClient analysisAgentClient;
     private final OptimizeAgentClient optimizeAgentClient;
+
+    /**
+     * P1: 判断子阶段是否应通过 Kafka 异步执行。
+     *
+     * <p>长耗时的子阶段（内容初稿、批量生图）通过 Kafka 异步执行，
+     * 避免 Feign HTTP 超时阻塞整个流水线。
+     */
+    private static boolean isAsyncSubStage(SubStage subStage) {
+        return subStage == SubStage.CONTENT_DRAFT || subStage == SubStage.IMAGE_GENERATE;
+    }
 
     /**
      * Execute the current stage for a workflow.
@@ -100,10 +112,26 @@ public class PipelineOrchestrator {
 
     /**
      * Execute a specific sub-stage (called by executeStage or confirmSubStage).
+     *
+     * <p><b>P1 Kafka 异步模式：</b>长耗时的子阶段（CONTENT_DRAFT、IMAGE_GENERATE）
+     * 通过 Kafka 异步执行，避免 Feign HTTP 超时：
+     * <ol>
+     *   <li>发送 AsyncTaskRequest 到 Kafka</li>
+     *   <li>设置工作流状态为 AWAITING_ASYNC</li>
+     *   <li>立即返回（不阻塞等待）</li>
+     *   <li>目标 Agent 消费消息后执行 LLM 调用，发送结果到结果 topic</li>
+     *   <li>{@link com.contentops.orchestrator.kafka.AsyncTaskResultConsumer} 消费结果并推进工作流</li>
+     * </ol>
      */
     private void executeSubStage(TaskContext context, SubStage subStage) {
         log.info("[Workflow:{}] Executing sub-stage: {} ({})",
                 context.getWorkflowId(), subStage.fullCode(), subStage.getNameCn());
+
+        // P1: 长耗时子阶段走 Kafka 异步模式
+        if (isAsyncSubStage(subStage)) {
+            executeSubStageAsync(context, subStage);
+            return;
+        }
 
         try {
             AgentTaskRequest request = buildRequest(context);
@@ -117,6 +145,39 @@ public class PipelineOrchestrator {
             }
         } catch (Exception e) {
             log.error("[Workflow:{}] Sub-stage {} failed with exception",
+                    context.getWorkflowId(), subStage.fullCode(), e);
+            AgentStage stage = AgentStage.fromCode(subStage.getParentStageCode());
+            handleStageFailure(context, stage, e.getMessage());
+        }
+    }
+
+    /**
+     * P1: 通过 Kafka 异步执行长耗时子阶段。
+     *
+     * <p>发送异步任务到 Kafka，设置工作流状态为 AWAITING_ASYNC，
+     * 然后立即返回。结果由 {@link AsyncTaskResultConsumer} 处理。
+     */
+    private void executeSubStageAsync(TaskContext context, SubStage subStage) {
+        try {
+            AgentTaskRequest request = buildRequest(context);
+
+            // 发送异步任务到 Kafka
+            String taskId = asyncTaskProducer.sendAsyncTask(
+                    context, subStage.getParentStageCode(), subStage.getCode(), request);
+
+            // 设置工作流状态为 AWAITING_ASYNC
+            context.setStatus(TaskStatus.AWAITING_ASYNC.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+
+            log.info("[Workflow:{}] Sub-stage {} sent to Kafka async. taskId={}, status=AWAITING_ASYNC",
+                    context.getWorkflowId(), subStage.fullCode(), taskId);
+
+            // 发布阶段开始事件
+            publishEvent(StageTransitionEvent.started(context.getWorkflowId(),
+                    subStage.getParentStageCode()));
+        } catch (Exception e) {
+            log.error("[Workflow:{}] Async sub-stage {} failed with exception",
                     context.getWorkflowId(), subStage.fullCode(), e);
             AgentStage stage = AgentStage.fromCode(subStage.getParentStageCode());
             handleStageFailure(context, stage, e.getMessage());
