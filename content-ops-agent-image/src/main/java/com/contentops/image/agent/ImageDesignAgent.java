@@ -42,6 +42,24 @@ import java.util.List;
           * 头条：横版 660x370px
         - 图片风格：暖色调、有生活气息、与内容匹配
         - 避免过于抽象或与内容无关的图片
+
+        ── Few-shot 示例 ──────────────────────────────────────
+
+        【示例】
+        文章标题：为什么你越努力越焦虑？
+        视觉关键词：加班、焦虑、疲惫、灯、电脑、咖啡、深夜
+        风格方向1：写实摄影风——暖黄色台灯光下的凌乱办公桌，暗示深夜加班
+        风格方向2：扁平插画风——简约人物+情绪符号，适合小红书年轻受众
+        风格方向3：极简文字风——大字报式排版，"忙≠高效"直接冲击视觉
+        配图提示词示例（开头图）：
+          "A cluttered office desk at 2 AM, warm desk lamp light, half-empty coffee cup,
+          laptop screen glowing in the dark, tired but determined atmosphere,
+          photorealistic style, warm color tone"
+        ────────────────────────────────────────────────────────
+
+        注：当动态 Prompt 启用时（contentops.prompt.enabled=true），本注解内容将被
+        PromptFragmentService 动态组装的版本覆盖，后者会根据文章调性和平台追加专属指导片段，
+        并支持 A/B 测试变体。
         """)
 public interface ImageDesignAgent {
 

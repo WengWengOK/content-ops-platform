@@ -83,6 +83,15 @@ public class TaskContext {
         private String targetAudience; // e.g., "20-30岁年轻人"
         private String tone;           // e.g., "轻松、不要太说教"
         private java.util.List<String> platforms; // e.g., ["公众号", "小红书", "头条"]
+
+        /**
+         * 个人经历/真实素材注入位（P1: Prompt 工程深度优化）。
+         *
+         * <p>创作者可在请求中传入自己的真实经历、数据或案例，ContentAgent 会将其
+         * 注入到 {{personalExperience}} 模板变量中，使生成内容更具个人色彩和真实感，
+         * 而非空泛说教。为 null 时表示不注入个人经历。
+         */
+        private String personalExperience;
     }
 
     @Data

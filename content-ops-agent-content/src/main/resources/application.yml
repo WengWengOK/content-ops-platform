@@ -74,6 +74,19 @@ contentops:
     base-dir: ${FILE_OUTPUT_DIR:./content-outputs}
     allowed-extensions: md,json,txt,csv
 
+  # Prompt 版本管理与 A/B 测试配置（P1: Prompt 工程深度优化）
+  prompt:
+    enabled: true
+    default-version: v2
+    default-variant: A
+    ab-testing:
+      enabled: false
+      traffic-split: 50
+    agents:
+      content:
+        version: v2
+        variant: A
+
 eureka:
   client:
     service-url:

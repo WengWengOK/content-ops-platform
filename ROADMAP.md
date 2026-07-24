@@ -47,13 +47,13 @@ Based on the original TRAE Work content operations methodology and current imple
 
 > Original article: "需求越具体，产出越好"
 
-- [ ] Add few-shot examples to each agent's SystemMessage
-- [ ] Dynamic prompt assembly based on AccountProfile (niche/audience/tone)
-- [ ] TopicAgent: "unconventional angle exploration" directive
-- [ ] ContentAgent: {{personalExperience}} injection variable
-- [ ] AnalysisAgent: "monthly trends, ask the right questions" methodology
-- [ ] Prompt version management via Nacos config center
-- [ ] A/B testing framework for prompt variants
+- [x] Add few-shot examples to each agent's SystemMessage
+- [x] Dynamic prompt assembly based on AccountProfile (niche/audience/tone)
+- [x] TopicAgent: "unconventional angle exploration" directive
+- [x] ContentAgent: {{personalExperience}} injection variable
+- [x] AnalysisAgent: "monthly trends, ask the right questions" methodology
+- [x] Prompt version management via Nacos config center (设计预留，通过 @ConfigurationProperties 绑定，引入 Nacos Config 即可热更新)
+- [x] A/B testing framework for prompt variants (PromptVersionService + PromptFragmentService 变体 B 指令)
 
 ## v1.5.0 — P1: Resilience & Observability
 

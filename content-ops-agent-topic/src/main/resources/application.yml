@@ -74,6 +74,21 @@ contentops:
     base-dir: ${FILE_OUTPUT_DIR:./content-outputs}
     allowed-extensions: md,json,txt,csv
 
+  # Prompt 版本管理与 A/B 测试配置（P1: Prompt 工程深度优化）
+  # 启用后通过 PromptFragmentService 动态组装系统提示词
+  # 引入 Nacos 配置中心后，将此段迁移至 Nacos 即可实现热更新
+  prompt:
+    enabled: true
+    default-version: v2
+    default-variant: A
+    ab-testing:
+      enabled: false
+      traffic-split: 50
+    agents:
+      topic:
+        version: v2
+        variant: A
+
 # PostgreSQL datasource (for future JPA persistence of discussion sessions)
 # spring:
 #   datasource:

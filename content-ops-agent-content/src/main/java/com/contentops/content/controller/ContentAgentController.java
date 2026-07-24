@@ -60,12 +60,18 @@ public class ContentAgentController {
 
             String angle = resolveInput(request, "angle");
             String additionalContext = resolveInput(request, "additionalContext");
+            // P1: 提取个人经历/真实素材（优先从 inputs 取，其次从 AccountProfile 取）
+            String personalExperience = resolveInput(request, "personalExperience");
+            if ((personalExperience == null || personalExperience.isBlank())
+                    && profile.getPersonalExperience() != null) {
+                personalExperience = profile.getPersonalExperience();
+            }
 
             OutlineResult result = contentCreationAgent.generateOutline(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
                             AgentStage.CONTENT_CREATION.getCode(), request.getWorkflowId()),
                     topic, angle, profile.getNiche(), profile.getTargetAudience(),
-                    profile.getTone(), additionalContext);
+                    profile.getTone(), additionalContext, personalExperience);
 
             Map<String, Object> data = new HashMap<>();
             data.put("outline", result);
@@ -117,11 +123,18 @@ public class ContentAgentController {
                         "Missing 'confirmedOutline' (call /outline first, then pass the result here)");
             }
 
+            // P1: 提取个人经历/真实素材（优先从 inputs 取，其次从 AccountProfile 取）
+            String personalExperience = resolveInput(request, "personalExperience");
+            if ((personalExperience == null || personalExperience.isBlank())
+                    && profile.getPersonalExperience() != null) {
+                personalExperience = profile.getPersonalExperience();
+            }
+
             ContentDraftResult result = contentCreationAgent.generateDraft(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
                             AgentStage.CONTENT_CREATION.getCode(), request.getWorkflowId()),
                     confirmedOutline, topic, profile.getNiche(), profile.getTone(),
-                    profile.getNiche(), request.getWorkflowId());
+                    profile.getNiche(), request.getWorkflowId(), personalExperience);
 
             Map<String, Object> data = new HashMap<>();
             data.put("outline", result.getOutline());
@@ -175,12 +188,18 @@ public class ContentAgentController {
             String angle = resolveInput(request, "angle");
             String outline = resolveInput(request, "outline");
             String additionalContext = resolveInput(request, "additionalContext");
+            // P1: 提取个人经历/真实素材（优先从 inputs 取，其次从 AccountProfile 取）
+            String personalExperience = resolveInput(request, "personalExperience");
+            if ((personalExperience == null || personalExperience.isBlank())
+                    && profile.getPersonalExperience() != null) {
+                personalExperience = profile.getPersonalExperience();
+            }
 
             ContentDraftResult result = contentCreationAgent.createDraft(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
                             AgentStage.CONTENT_CREATION.getCode(), request.getWorkflowId()),
                     topic, angle, profile.getNiche(), profile.getTargetAudience(),
-                    profile.getTone(), outline, additionalContext);
+                    profile.getTone(), outline, additionalContext, personalExperience);
 
             Map<String, Object> data = new HashMap<>();
             data.put("outline", result.getOutline());
