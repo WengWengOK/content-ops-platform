@@ -50,6 +50,7 @@ public class WorkflowController {
                 .status(TaskStatus.PENDING.name())
                 .createdAt(LocalDateTime.now())
                 .requireHumanReview(request.isRequireHumanReview())
+                .cycleCount(1)  // A计划：初始化循环计数
                 .build();
 
         workflowService.startWorkflow(context);
@@ -214,6 +215,7 @@ public class WorkflowController {
                     .status(TaskStatus.PENDING.name())
                     .createdAt(LocalDateTime.now())
                     .requireHumanReview(false)
+                    .cycleCount(1)  // A计划：初始化循环计数
                     .build();
 
             // Store the topic plan as an accumulated artifact from the "topic-planning" stage

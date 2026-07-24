@@ -36,13 +36,16 @@ public class WorkflowService {
     /**
      * Approve current stage and proceed to the next.
      * This is called after human review.
+     *
+     * <p><b>A计划修复：</b>新增循环边界检查 —— 当人工审批 OPTIMIZATION 阶段后，
+     * 检查是否进入新一轮循环或标记工作流完成。
      */
     public void approveAndProceed(String workflowId, Map<String, Object> feedback) {
         TaskContext context = stateManager.loadWorkflowState(workflowId)
                 .orElseThrow(() -> new RuntimeException("Workflow not found: " + workflowId));
 
         if (!TaskStatus.AWAITING_HUMAN.name().equals(context.getStatus())) {
-            throw new RuntimeException("Workflow is not awaiting human review. Current status: " 
+            throw new RuntimeException("Workflow is not awaiting human review. Current status: "
                     + context.getStatus());
         }
 
@@ -55,13 +58,21 @@ public class WorkflowService {
         }
 
         // Advance to next stage
-        com.contentops.common.enums.AgentStage currentStage = 
+        com.contentops.common.enums.AgentStage currentStage =
                 com.contentops.common.enums.AgentStage.fromCode(context.getCurrentStage());
         com.contentops.common.enums.AgentStage nextStage = currentStage.next();
+
+        // A计划：检查是否为循环边界（OPTIMIZATION → TOPIC_PLANNING）
+        if (orchestrator.checkAndHandleCycleBoundary(context, currentStage, nextStage)) {
+            log.info("[Workflow:{}] Cycle boundary handled in approveAndProceed. cycle={}",
+                    workflowId, context.getCycleCount());
+            return;
+        }
+
         context.setCurrentStage(nextStage.getCode());
         context.setStatus(TaskStatus.PENDING.name());
 
-        log.info("[Workflow:{}] Human approved. Advancing {} → {}", 
+        log.info("[Workflow:{}] Human approved. Advancing {} → {}",
                 workflowId, currentStage.getCode(), nextStage.getCode());
 
         orchestrator.executeStage(context);

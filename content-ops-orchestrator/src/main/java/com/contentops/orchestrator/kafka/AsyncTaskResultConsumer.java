@@ -96,6 +96,9 @@ public class AsyncTaskResultConsumer {
 
     /**
      * 异步任务成功：合并产物并推进到下一子阶段或下一 AgentStage。
+     *
+     * <p><b>A计划修复：</b>修复异步推进断裂 —— 最后一个子阶段完成后，
+     * 立即调用 {@code pipelineOrchestrator.executeStage(context)} 继续执行下一阶段。
      */
     private void handleAsyncSuccess(TaskContext context, SubStage subStage,
                                     AsyncTaskEvent.AsyncTaskResult result) {
@@ -148,6 +151,9 @@ public class AsyncTaskResultConsumer {
                     nextStage.getCode(),
                     result.getData()
             ));
+
+            // FIX: 修复异步推进断裂 —— 立即触发下一阶段执行
+            pipelineOrchestrator.executeStage(context);
         }
     }
 

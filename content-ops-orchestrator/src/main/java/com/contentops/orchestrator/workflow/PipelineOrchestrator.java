@@ -245,6 +245,9 @@ public class PipelineOrchestrator {
                     nextStage.getCode(),
                     null
             ));
+
+            // FIX: 修复自动推进断裂 —— 立即触发下一阶段执行
+            executeStage(context);
         }
     }
 
@@ -330,6 +333,9 @@ public class PipelineOrchestrator {
                     nextStage.getCode(),
                     response.getData()
             ));
+
+            // FIX: 修复自动推进断裂 —— 立即触发下一阶段执行
+            executeStage(context);
         }
     }
 
@@ -373,6 +379,12 @@ public class PipelineOrchestrator {
 
     /**
      * Handle successful stage execution (for stages without sub-stages).
+     *
+     * <p><b>A计划修复：</b>
+     * <ul>
+     *   <li>修复自动推进断裂：auto-advance 后立即调用 {@code executeStage(context)} 继续执行</li>
+     *   <li>新增循环控制：OPTIMIZATION 完成时检查是否进入新一轮循环</li>
+     * </ul>
      */
     private void handleStageSuccess(TaskContext context, AgentStage stage,
                                      AgentResponse<Map<String, Object>> response) {
@@ -385,30 +397,147 @@ public class PipelineOrchestrator {
             context.getAccumulatedArtifacts().put(stage.getCode(), response.getData());
         }
 
-        // Check for human review
-        if (context.isRequireHumanReview()) {
-            context.setStatus(TaskStatus.AWAITING_HUMAN.name());
-            log.info("[Workflow:{}] Stage {} completed. Awaiting human approval.",
-                    context.getWorkflowId(), stage.getCode());
-        } else {
-            // Auto-advance to next stage
-            AgentStage nextStage = stage.next();
-            context.setCurrentStage(nextStage.getCode());
-            context.setStatus(TaskStatus.PENDING.name());
-            log.info("[Workflow:{}] Stage {} → {} (auto-advance)",
-                    context.getWorkflowId(), stage.getCode(), nextStage.getCode());
+        // ── A计划：循环边界检查（OPTIMIZATION → TOPIC_PLANNING） ──
+        AgentStage nextStage = stage.next();
+        if (isCycleBoundary(stage, nextStage)) {
+            handleCycleBoundary(context, stage, response.getData());
+            return;
         }
 
-        context.setUpdatedAt(LocalDateTime.now());
-        stateManager.saveWorkflowState(context.getWorkflowId(), context);
+        // ── 正常阶段推进 ──
+        if (context.isRequireHumanReview()) {
+            context.setStatus(TaskStatus.AWAITING_HUMAN.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+            log.info("[Workflow:{}] Stage {} completed. Awaiting human approval.",
+                    context.getWorkflowId(), stage.getCode());
+            publishEvent(StageTransitionEvent.completed(
+                    context.getWorkflowId(), stage.getCode(),
+                    stage.getCode(), response.getData()));
+        } else {
+            // Auto-advance to next stage
+            context.setCurrentStage(nextStage.getCode());
+            context.setStatus(TaskStatus.PENDING.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+            log.info("[Workflow:{}] Stage {} → {} (auto-advance)",
+                    context.getWorkflowId(), stage.getCode(), nextStage.getCode());
+            publishEvent(StageTransitionEvent.completed(
+                    context.getWorkflowId(), stage.getCode(),
+                    nextStage.getCode(), response.getData()));
 
-        // Publish completion event
-        publishEvent(StageTransitionEvent.completed(
-                context.getWorkflowId(),
-                stage.getCode(),
-                context.getCurrentStage(),
-                response.getData()
-        ));
+            // FIX: 修复自动推进断裂 —— 立即触发下一阶段执行
+            executeStage(context);
+        }
+    }
+
+    // ==================== A计划：循环控制方法 ====================
+
+    /**
+     * 判断是否为循环边界（OPTIMIZATION → TOPIC_PLANNING）。
+     */
+    private boolean isCycleBoundary(AgentStage currentStage, AgentStage nextStage) {
+        return currentStage == AgentStage.OPTIMIZATION
+                && nextStage == AgentStage.TOPIC_PLANNING;
+    }
+
+    /**
+     * 检查并处理循环边界（公开方法，供 WorkflowService.approveAndProceed 调用）。
+     *
+     * <p>当人工审批 OPTIMIZATION 阶段后，WorkflowService 调用此方法判断是否为循环边界：
+     * <ul>
+     *   <li>如果是循环边界且有剩余轮次：快照 + 开始新一轮 + 自动执行</li>
+     *   <li>如果是循环边界但无剩余轮次：标记 COMPLETED</li>
+     *   <li>如果不是循环边界：返回 false，调用方正常推进</li>
+     * </ul>
+     *
+     * @return true 如果已处理循环边界（调用方不应继续正常推进），false 如果不是循环边界
+     */
+    @SuppressWarnings("unchecked")
+    public boolean checkAndHandleCycleBoundary(TaskContext context,
+                                                 AgentStage currentStage,
+                                                 AgentStage nextStage) {
+        if (!isCycleBoundary(currentStage, nextStage)) {
+            return false;
+        }
+
+        // 从 accumulatedArtifacts 提取 OPTIMIZATION 阶段的产物作为响应数据
+        Map<String, Object> optimizationData = null;
+        if (context.getAccumulatedArtifacts() != null) {
+            Object stored = context.getAccumulatedArtifacts().get(AgentStage.OPTIMIZATION.getCode());
+            if (stored instanceof Map) {
+                optimizationData = (Map<String, Object>) stored;
+            }
+        }
+
+        handleCycleBoundary(context, currentStage, optimizationData);
+        return true;
+    }
+
+    /**
+     * 处理循环边界：OPTIMIZATION 完成后，决定是否开始新一轮循环。
+     *
+     * <p>逻辑：
+     * <ol>
+     *   <li>提取 OptimizeAgent 的优化反馈</li>
+     *   <li>检查 {@code hasRemainingCycles()}：cycleCount < maxCycles</li>
+     *   <li>若有剩余轮次：快照当前轮次产物 → 递增 cycleCount → 注入反馈 → 开始新一轮</li>
+     *   <li>若无剩余轮次：标记工作流 COMPLETED</li>
+     * </ol>
+     */
+    private void handleCycleBoundary(TaskContext context, AgentStage stage,
+                                      Map<String, Object> responseData) {
+        // 提取优化反馈（A3: 反馈注入）
+        extractOptimizationFeedback(context, responseData);
+
+        if (context.hasRemainingCycles()) {
+            // 快照当前轮次产物 + 递增 cycleCount + 重置阶段 + 注入反馈
+            context.startNewCycle();
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+
+            log.info("[Workflow:{}] Cycle boundary: cycle {} → {}. Starting new cycle.",
+                    context.getWorkflowId(), context.getCycleCount() - 1, context.getCycleCount());
+
+            publishEvent(StageTransitionEvent.completed(
+                    context.getWorkflowId(), stage.getCode(),
+                    context.getCurrentStage(), responseData));
+
+            // 开始新一轮的 TOPIC_PLANNING
+            executeStage(context);
+        } else {
+            // 达到最大循环次数，工作流完成
+            context.setStatus(TaskStatus.COMPLETED.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+
+            log.info("[Workflow:{}] All {} cycles completed. Workflow COMPLETED.",
+                    context.getWorkflowId(), context.getMaxCycles());
+
+            publishEvent(StageTransitionEvent.completed(
+                    context.getWorkflowId(), stage.getCode(),
+                    "COMPLETED", responseData));
+        }
+    }
+
+    /**
+     * 从 OptimizeAgent 的响应中提取优化反馈。
+     *
+     * <p>尝试多个可能的 key（optimizationSuggestions / recommendations / feedback），
+     * 将提取到的反馈存入 {@link TaskContext#lastOptimizationFeedback}，
+     * 供下一轮循环的 TOPIC_PLANNING Agent 使用。
+     */
+    @SuppressWarnings("unchecked")
+    private void extractOptimizationFeedback(TaskContext context, Map<String, Object> responseData) {
+        if (responseData == null) return;
+        Object feedback = responseData.get("optimizationSuggestions");
+        if (feedback == null) feedback = responseData.get("recommendations");
+        if (feedback == null) feedback = responseData.get("feedback");
+        if (feedback == null) feedback = responseData.get("suggestions");
+        if (feedback != null) {
+            context.setLastOptimizationFeedback(feedback.toString());
+            log.info("[Workflow:{}] Optimization feedback extracted ({} chars)",
+                    context.getWorkflowId(), feedback.toString().length());
+        }
     }
 
     /**
