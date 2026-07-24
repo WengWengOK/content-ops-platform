@@ -1,5 +1,6 @@
 package com.contentops.image.controller;
 
+import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.ImageDesignResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
@@ -72,6 +73,8 @@ public class ImageAgentController {
                     : profile.getPlatforms();
 
             ImageDesignResult result = imageDesignAgent.designImages(
+                    String.format(AgentConstants.MEMORY_ID_FORMAT,
+                            AgentStage.IMAGE_DESIGN.getCode(), request.getWorkflowId()),
                     articleTitle,
                     articleContent,
                     articleTone,

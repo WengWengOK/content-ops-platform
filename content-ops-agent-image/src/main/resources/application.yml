@@ -43,6 +43,13 @@ langchain4j:
       log-requests: true
       log-responses: true
 
+# Chat Memory configuration (P0: Agent Memory & Multi-turn Dialogue)
+contentops:
+  chat-memory:
+    window-size: 20          # Max messages retained per conversation window
+    ttl-hours: 24            # Redis TTL for chat memory entries
+    key-prefix: "contentops:chat-memory:"
+
 eureka:
   client:
     service-url:

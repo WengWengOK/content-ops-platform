@@ -1,6 +1,7 @@
 package com.contentops.content.agent;
 
 import com.contentops.common.dto.ContentDraftResult;
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
@@ -69,7 +70,8 @@ public interface ContentCreationAgent {
             请先调用工具生成框架大纲并搜集相关案例素材，再按照系统提示的输出要求，
             返回结构化的文章初稿结果（框架大纲、完整Markdown初稿、3-5个标题变体、5-10个标签、100字以内的分享摘要）。
             """)
-    ContentDraftResult createDraft(String topic,
+    ContentDraftResult createDraft(@MemoryId String memoryId,
+                                   String topic,
                                    String angle,
                                    String accountNiche,
                                    String targetAudience,

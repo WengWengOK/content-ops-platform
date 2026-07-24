@@ -2,15 +2,17 @@ package com.contentops.orchestrator.service;
 
 import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
+import com.contentops.common.dto.DiscussionResponse;
+import com.contentops.common.dto.DiscussionSession;
+import com.contentops.common.dto.TopicPlanResult;
 import com.contentops.common.event.AgentTaskRequest;
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
 /**
- * Feign clients for all 6 agent services.
+ * Feign clients for all 6 agent services plus the Discussion Agent.
  * Each agent is a separate microservice registered with Eureka.
  */
 public class AgentFeignClients {
@@ -49,5 +51,29 @@ public class AgentFeignClients {
     public interface OptimizeAgentClient {
         @PostMapping("/api/v1/optimize/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
+    }
+
+    /**
+     * Feign client for the Discussion Agent (hosted in the Topic Agent service).
+     * Supports the multi-turn "把TRAE当讨论对象" discussion workflow.
+     */
+    @FeignClient(name = AgentConstants.SERVICE_TOPIC)
+    public interface DiscussionAgentClient {
+
+        @PostMapping("/api/v1/discussion/start")
+        AgentResponse<DiscussionResponse> startDiscussion(@RequestBody Map<String, Object> request);
+
+        @PostMapping("/api/v1/discussion/{sessionId}/chat")
+        AgentResponse<DiscussionResponse> chat(@PathVariable("sessionId") String sessionId,
+                                                @RequestBody Map<String, Object> request);
+
+        @PostMapping("/api/v1/discussion/{sessionId}/finalize")
+        AgentResponse<TopicPlanResult> finalize(@PathVariable("sessionId") String sessionId);
+
+        @GetMapping("/api/v1/discussion/{sessionId}")
+        AgentResponse<DiscussionSession> getSession(@PathVariable("sessionId") String sessionId);
+
+        @DeleteMapping("/api/v1/discussion/{sessionId}")
+        AgentResponse<Void> clearSession(@PathVariable("sessionId") String sessionId);
     }
 }

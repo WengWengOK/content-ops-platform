@@ -1,6 +1,7 @@
 package com.contentops.publish.agent;
 
 import com.contentops.common.dto.PublishResult;
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
@@ -62,7 +63,8 @@ public interface PublishingAgent {
             请调用可用工具进行格式转换、可读性优化并生成发布检查清单，按照系统提示的平台适配规则与输出要求，
             返回结构化的发布结果（每个平台的排版后内容、发布状态和URL）。
             """)
-    PublishResult formatAndPublish(String articleTitle,
+    PublishResult formatAndPublish(@MemoryId String memoryId,
+                                   String articleTitle,
                                    String articleContent,
                                    List<String> targetPlatforms,
                                    String coverImageUrl,

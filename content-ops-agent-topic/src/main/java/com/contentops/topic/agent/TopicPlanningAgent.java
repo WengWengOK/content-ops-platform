@@ -1,6 +1,7 @@
 package com.contentops.topic.agent;
 
 import com.contentops.common.dto.TopicPlanResult;
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
@@ -65,7 +66,8 @@ public interface TopicPlanningAgent {
             请调用可用工具进行联网热点调研与竞品分析，并严格按照系统提示的输出要求，
             返回结构化的选题方案（3-5个选题候选、关键词标签、平台适配标题、趋势关键词、竞品分析摘要和推荐方向）。
             """)
-    TopicPlanResult planTopics(String accountNiche,
+    TopicPlanResult planTopics(@MemoryId String memoryId,
+                               String accountNiche,
                                String targetAudience,
                                String tone,
                                List<String> platforms,

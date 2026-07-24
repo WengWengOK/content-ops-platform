@@ -1,9 +1,13 @@
 package com.contentops.orchestrator.controller;
 
 import com.contentops.common.dto.AgentResponse;
+import com.contentops.common.dto.DiscussionResponse;
+import com.contentops.common.dto.DiscussionSession;
 import com.contentops.common.dto.TaskContext;
+import com.contentops.common.dto.TopicPlanResult;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.enums.TaskStatus;
+import com.contentops.orchestrator.service.AgentFeignClients.DiscussionAgentClient;
 import com.contentops.orchestrator.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,6 +27,7 @@ import java.util.UUID;
 public class WorkflowController {
 
     private final WorkflowService workflowService;
+    private final DiscussionAgentClient discussionClient;
 
     /**
      * Start a new content operations workflow.
@@ -99,6 +105,143 @@ public class WorkflowController {
         return ResponseEntity.ok(AgentResponse.success("orchestrator", stages));
     }
 
+    // ──────────────────── Discussion Endpoints ────────────────────
+
+    /**
+     * Start a multi-turn discussion session ("把TRAE当讨论对象").
+     *
+     * <p>Instead of directly running the pipeline, the user discusses their
+     * fuzzy idea with the AI to clarify direction before generating a plan.
+     */
+    @PostMapping("/discuss/start")
+    public ResponseEntity<AgentResponse<DiscussionResponse>> startDiscussion(
+            @RequestBody DiscussStartRequest request) {
+
+        log.info("Starting discussion session via orchestrator");
+
+        Map<String, Object> feignRequest = new HashMap<>();
+        feignRequest.put("fuzzyIdea", request.getFuzzyIdea());
+        feignRequest.put("accountProfile", request.getAccountProfile());
+
+        AgentResponse<DiscussionResponse> response = discussionClient.startDiscussion(feignRequest);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Continue the discussion with a new user message.
+     */
+    @PostMapping("/discuss/{sessionId}/chat")
+    public ResponseEntity<AgentResponse<DiscussionResponse>> chat(
+            @PathVariable String sessionId,
+            @RequestBody DiscussChatRequest request) {
+
+        log.info("Discussion chat via orchestrator: sessionId={}", sessionId);
+
+        Map<String, Object> feignRequest = new HashMap<>();
+        feignRequest.put("message", request.getMessage());
+
+        AgentResponse<DiscussionResponse> response = discussionClient.chat(sessionId, feignRequest);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Finalize the discussion and optionally start the pipeline from Content Creation.
+     *
+     * <p>The discussion result (TopicPlanResult) is used as the input for the
+     * Content Creation stage, skipping the Topic Planning stage (since the
+     * discussion already produced a topic plan).
+     *
+     * @param sessionId    the discussion session ID
+     * @param startPipeline if true, automatically start the pipeline from CONTENT_CREATION
+     */
+    @PostMapping("/discuss/{sessionId}/finalize")
+    public ResponseEntity<AgentResponse<Map<String, Object>>> finalizeDiscussion(
+            @PathVariable String sessionId,
+            @RequestParam(required = false, defaultValue = "true") boolean startPipeline) {
+
+        log.info("Finalizing discussion: sessionId={}, startPipeline={}", sessionId, startPipeline);
+
+        AgentResponse<TopicPlanResult> finalizeResponse = discussionClient.finalize(sessionId);
+
+        if (!finalizeResponse.isSuccess()) {
+            return ResponseEntity.ok(AgentResponse.failure("orchestrator",
+                    "Discussion finalization failed: " + finalizeResponse.getError()));
+        }
+
+        TopicPlanResult topicPlan = finalizeResponse.getData();
+        Map<String, Object> result = new HashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("topicPlan", topicPlan);
+
+        if (startPipeline && topicPlan != null) {
+            // Start the pipeline from CONTENT_CREATION, using the discussion result
+            String workflowId = sessionId; // use sessionId as workflowId for traceability
+            TaskContext context = TaskContext.builder()
+                    .workflowId(workflowId)
+                    .currentStage(AgentStage.CONTENT_CREATION.getCode())
+                    .accountProfile(null) // populated below if available
+                    .inputs(new HashMap<>())
+                    .accumulatedArtifacts(new HashMap<>())
+                    .status(TaskStatus.PENDING.name())
+                    .createdAt(LocalDateTime.now())
+                    .requireHumanReview(false)
+                    .build();
+
+            // Store the topic plan as an accumulated artifact from the "topic-planning" stage
+            Map<String, Object> topicArtifacts = new HashMap<>();
+            if (topicPlan.getTopics() != null && !topicPlan.getTopics().isEmpty()) {
+                TopicPlanResult.TopicCandidate firstTopic = topicPlan.getTopics().get(0);
+                topicArtifacts.put("topic", firstTopic.getTitle());
+                topicArtifacts.put("angle", firstTopic.getAngle());
+            }
+            topicArtifacts.put("trendingKeywords", topicPlan.getTrendingKeywords());
+            topicArtifacts.put("competitiveAnalysis", topicPlan.getCompetitiveAnalysis());
+            topicArtifacts.put("recommendedDirection", topicPlan.getRecommendedDirection());
+            topicArtifacts.put("topicPlan", topicPlan);
+
+            context.getAccumulatedArtifacts().put(AgentStage.TOPIC_PLANNING.getCode(), topicArtifacts);
+
+            // Retrieve account profile from the discussion session if available
+            AgentResponse<DiscussionSession> sessionResponse = discussionClient.getSession(sessionId);
+            if (sessionResponse.isSuccess() && sessionResponse.getData() != null) {
+                context.setAccountProfile(sessionResponse.getData().getAccountProfile());
+            }
+
+            workflowService.startWorkflow(context);
+
+            result.put("workflowId", workflowId);
+            result.put("currentStage", AgentStage.CONTENT_CREATION.getCode());
+            result.put("message", "Discussion finalized. Pipeline started from Content Creation stage.");
+            log.info("Pipeline started from discussion: sessionId={}, workflowId={}", sessionId, workflowId);
+        } else {
+            result.put("message", "Discussion finalized. Call /start to begin the pipeline manually.");
+        }
+
+        return ResponseEntity.ok(AgentResponse.success("orchestrator", result));
+    }
+
+    /**
+     * Get the current discussion session state.
+     */
+    @GetMapping("/discuss/{sessionId}")
+    public ResponseEntity<AgentResponse<DiscussionSession>> getDiscussionSession(
+            @PathVariable String sessionId) {
+        AgentResponse<DiscussionSession> response = discussionClient.getSession(sessionId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Clear a discussion session and its conversation memory.
+     */
+    @DeleteMapping("/discuss/{sessionId}")
+    public ResponseEntity<AgentResponse<Void>> clearDiscussion(
+            @PathVariable String sessionId) {
+        discussionClient.clearSession(sessionId);
+        return ResponseEntity.ok(AgentResponse.success("orchestrator", null));
+    }
+
+    // ──────────────────── Request/Response DTOs ────────────────────
+
     @lombok.Data
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
@@ -116,5 +259,20 @@ public class WorkflowController {
         private String code;
         private String name;
         private String description;
+    }
+
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    @lombok.NoArgsConstructor
+    public static class DiscussStartRequest {
+        private String fuzzyIdea;
+        private TaskContext.AccountProfile accountProfile;
+    }
+
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    @lombok.NoArgsConstructor
+    public static class DiscussChatRequest {
+        private String message;
     }
 }

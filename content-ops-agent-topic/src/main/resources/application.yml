@@ -43,6 +43,20 @@ langchain4j:
       log-requests: true
       log-responses: true
 
+# Chat Memory configuration (P0: Agent Memory & Multi-turn Dialogue)
+contentops:
+  chat-memory:
+    window-size: 20          # Max messages retained per conversation window
+    ttl-hours: 24            # Redis TTL for chat memory entries
+    key-prefix: "contentops:chat-memory:"
+
+# PostgreSQL datasource (for future JPA persistence of discussion sessions)
+# spring:
+#   datasource:
+#     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/contentops
+#     username: ${POSTGRES_USER:contentops}
+#     password: ${POSTGRES_PASSWORD:contentops123}
+
 eureka:
   client:
     service-url:

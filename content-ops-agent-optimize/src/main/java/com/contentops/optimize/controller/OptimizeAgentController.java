@@ -1,5 +1,6 @@
 package com.contentops.optimize.controller;
 
+import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.OptimizationResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
@@ -46,6 +47,8 @@ public class OptimizeAgentController {
             String historicalPerformance = resolveInput(request, "historicalPerformance");
 
             OptimizationResult result = optimizationAgent.optimizeStrategy(
+                    String.format(AgentConstants.MEMORY_ID_FORMAT,
+                            AgentStage.OPTIMIZATION.getCode(), request.getWorkflowId()),
                     accountNiche,
                     analysisSummary,
                     currentStrategy,

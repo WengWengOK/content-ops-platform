@@ -1,6 +1,7 @@
 package com.contentops.image.agent;
 
 import com.contentops.common.dto.ImageDesignResult;
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
@@ -63,7 +64,8 @@ public interface ImageDesignAgent {
             请调用可用工具提取视觉关键词并生成图片描述提示词，按照系统提示的配图规则与输出要求，
             返回结构化的配图设计结果（文章配图列表含prompt和位置、平台封面列表含尺寸和描述）。
             """)
-    ImageDesignResult designImages(String articleTitle,
+    ImageDesignResult designImages(@MemoryId String memoryId,
+                                   String articleTitle,
                                    String articleContent,
                                    String articleTone,
                                    List<String> targetPlatforms);

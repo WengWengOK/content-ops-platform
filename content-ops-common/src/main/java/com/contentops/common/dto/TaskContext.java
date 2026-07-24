@@ -45,7 +45,20 @@ public class TaskContext {
     /** Human review flag - if true, pause for human approval before next stage */
     private boolean requireHumanReview;
 
-    /** Conversation history for multi-turn agent interactions */
+    /**
+     * Conversation history for multi-turn agent interactions.
+     *
+     * <p><b>Note (P0):</b> This field is now backed by Redis ChatMemory at runtime.
+     * LangChain4j's {@code @MemoryId} mechanism automatically loads and stores
+     * conversation history in Redis (key: {@code contentops:chat-memory:{agentCode}:{workflowId}}).
+     * This field is retained for:
+     * <ul>
+     *   <li>Initial seeding of conversation context when starting a workflow</li>
+     *   <li>Audit/snapshot purposes (a copy of the conversation can be stored here)</li>
+     *   <li>Backward compatibility with existing pipeline code</li>
+     * </ul>
+     * Do NOT manually append to this list during agent execution — ChatMemory handles that.
+     */
     private java.util.List<ChatMessage> conversationHistory;
 
     @Data

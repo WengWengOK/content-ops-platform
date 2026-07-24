@@ -1,5 +1,6 @@
 package com.contentops.publish.controller;
 
+import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.PublishResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
@@ -75,6 +76,8 @@ public class PublishAgentController {
                     : profile.getPlatforms();
 
             PublishResult result = publishingAgent.formatAndPublish(
+                    String.format(AgentConstants.MEMORY_ID_FORMAT,
+                            AgentStage.PUBLISHING.getCode(), request.getWorkflowId()),
                     articleTitle,
                     articleContent,
                     platforms,

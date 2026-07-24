@@ -1,5 +1,6 @@
 package com.contentops.topic.controller;
 
+import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.dto.TopicPlanResult;
@@ -49,6 +50,8 @@ public class TopicAgentController {
             String additionalContext = resolveInput(request, "additionalContext");
 
             TopicPlanResult result = topicPlanningAgent.planTopics(
+                    String.format(AgentConstants.MEMORY_ID_FORMAT,
+                            AgentStage.TOPIC_PLANNING.getCode(), request.getWorkflowId()),
                     profile.getNiche(),
                     profile.getTargetAudience(),
                     profile.getTone(),

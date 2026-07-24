@@ -1,6 +1,7 @@
 package com.contentops.analysis.controller;
 
 import com.contentops.analysis.agent.DataAnalysisAgent;
+import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.AnalysisReport;
 import com.contentops.common.dto.TaskContext.AccountProfile;
@@ -46,6 +47,8 @@ public class AnalysisAgentController {
             String previousAnalysisSummary = resolveInput(request, "previousAnalysisSummary");
 
             AnalysisReport result = dataAnalysisAgent.analyzePerformance(
+                    String.format(AgentConstants.MEMORY_ID_FORMAT,
+                            AgentStage.DATA_ANALYSIS.getCode(), request.getWorkflowId()),
                     accountNiche,
                     rawData,
                     timeRange,

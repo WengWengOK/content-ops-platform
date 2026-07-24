@@ -1,6 +1,7 @@
 package com.contentops.optimize.agent;
 
 import com.contentops.common.dto.OptimizationResult;
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
@@ -67,7 +68,8 @@ public interface OptimizationAgent {
             以及基于数据趋势推荐下周期选题。然后严格按照系统提示的输出要求，
             返回结构化的优化结果（策略调整列表、下周期推荐选题3-5个、经验总结、运营健康评分0-100、周期总结）。
             """)
-    OptimizationResult optimizeStrategy(String accountNiche,
+    OptimizationResult optimizeStrategy(@MemoryId String memoryId,
+                                        String accountNiche,
                                         String analysisSummary,
                                         String currentStrategy,
                                         String historicalPerformance);

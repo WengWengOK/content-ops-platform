@@ -1,5 +1,6 @@
 package com.contentops.content.controller;
 
+import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.ContentDraftResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
@@ -55,6 +56,8 @@ public class ContentAgentController {
             String additionalContext = resolveInput(request, "additionalContext");
 
             ContentDraftResult result = contentCreationAgent.createDraft(
+                    String.format(AgentConstants.MEMORY_ID_FORMAT,
+                            AgentStage.CONTENT_CREATION.getCode(), request.getWorkflowId()),
                     topic,
                     angle,
                     profile.getNiche(),

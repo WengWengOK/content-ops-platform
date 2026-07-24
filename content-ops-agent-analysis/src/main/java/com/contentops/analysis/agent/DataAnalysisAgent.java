@@ -1,6 +1,7 @@
 package com.contentops.analysis.agent;
 
 import com.contentops.common.dto.AnalysisReport;
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
@@ -65,7 +66,8 @@ public interface DataAnalysisAgent {
             并生成可视化图表数据。然后严格按照系统提示的输出要求，
             返回结构化的数据分析报告（核心指标摘要、各类内容表现对比、时间段表现分析、关键洞察列表、具体建议列表、图表数据）。
             """)
-    AnalysisReport analyzePerformance(String accountNiche,
+    AnalysisReport analyzePerformance(@MemoryId String memoryId,
+                                      String accountNiche,
                                       String rawData,
                                       String timeRange,
                                       String previousAnalysisSummary);

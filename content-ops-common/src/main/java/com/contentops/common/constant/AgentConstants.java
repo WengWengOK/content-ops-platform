@@ -42,4 +42,13 @@ public final class AgentConstants {
     public static final String SERVICE_ANALYSIS = "content-ops-agent-analysis";
     public static final String SERVICE_OPTIMIZE = "content-ops-agent-optimize";
     public static final String SERVICE_ORCHESTRATOR = "content-ops-orchestrator";
+
+    /** Redis key prefix for discussion sessions */
+    public static final String DISCUSSION_SESSION_PREFIX = "contentops:discussion:";
+
+    /** Memory ID format: {agentCode}:{workflowId} — ensures per-agent per-workflow isolation */
+    public static final String MEMORY_ID_FORMAT = "%s:%s";
+
+    /** Chat memory window size (number of messages retained) */
+    public static final int CHAT_MEMORY_WINDOW_SIZE = 20;
 }
