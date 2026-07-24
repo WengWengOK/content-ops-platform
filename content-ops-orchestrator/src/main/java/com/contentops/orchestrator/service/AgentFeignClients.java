@@ -27,12 +27,28 @@ public class AgentFeignClients {
     public interface ContentAgentClient {
         @PostMapping("/api/v1/content/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
+
+        /** 阶段一：生成大纲（渐进式生成） */
+        @PostMapping("/api/v1/content/outline")
+        AgentResponse<Map<String, Object>> generateOutline(@RequestBody AgentTaskRequest request);
+
+        /** 阶段二：基于确认大纲生成初稿（渐进式生成） */
+        @PostMapping("/api/v1/content/draft")
+        AgentResponse<Map<String, Object>> generateDraft(@RequestBody AgentTaskRequest request);
     }
 
     @FeignClient(name = AgentConstants.SERVICE_IMAGE)
     public interface ImageAgentClient {
         @PostMapping("/api/v1/image/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
+
+        /** 阶段一：生成风格方向（渐进式生成） */
+        @PostMapping("/api/v1/image/styles")
+        AgentResponse<Map<String, Object>> generateStyleDirections(@RequestBody AgentTaskRequest request);
+
+        /** 阶段二：基于确认风格批量生图（渐进式生成） */
+        @PostMapping("/api/v1/image/generate")
+        AgentResponse<Map<String, Object>> generateImages(@RequestBody AgentTaskRequest request);
     }
 
     @FeignClient(name = AgentConstants.SERVICE_PUBLISH)

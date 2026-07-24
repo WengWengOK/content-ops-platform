@@ -20,6 +20,17 @@ public class TaskContext {
     /** Current agent stage */
     private String currentStage;
 
+    /**
+     * 当前子阶段（渐进式生成）。
+     *
+     * <p>当 {@code currentStage} 是有子阶段的 AgentStage（如 CONTENT_CREATION、IMAGE_DESIGN）时，
+     * 此字段标识当前执行到哪个子步骤，如 "outline" / "draft" / "styles" / "generate"。
+     * 为 null 表示该阶段没有子阶段，或子阶段已全部完成。
+     *
+     * <p>参见 {@link com.contentops.common.enums.SubStage}
+     */
+    private String currentSubStage;
+
     /** Account/brand profile for the content */
     private AccountProfile accountProfile;
 

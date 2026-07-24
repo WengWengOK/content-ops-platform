@@ -4,6 +4,7 @@ import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.TaskContext;
 import com.contentops.common.enums.AgentStage;
+import com.contentops.common.enums.SubStage;
 import com.contentops.common.enums.TaskStatus;
 import com.contentops.common.event.AgentTaskRequest;
 import com.contentops.common.event.StageTransitionEvent;
@@ -22,6 +23,13 @@ import java.util.Map;
  *
  * Implements a Sequential Pipeline pattern:
  *   Topic → Content → Image → Publish → Analysis → Optimize → (loop back to Topic)
+ *
+ * <p><b>P1 渐进式生成：</b>CONTENT_CREATION 和 IMAGE_DESIGN 两个阶段各自包含子阶段：
+ * <ul>
+ *   <li>CONTENT_CREATION: outline → (确认) → draft</li>
+ *   <li>IMAGE_DESIGN: styles → (确认) → generate</li>
+ * </ul>
+ * 子阶段一完成后暂停等待人工确认，确认后再执行子阶段二。
  *
  * Each stage:
  *   1. Loads accumulated artifacts from Redis
@@ -48,10 +56,13 @@ public class PipelineOrchestrator {
 
     /**
      * Execute the current stage for a workflow.
+     *
+     * <p>If the stage has sub-stages, starts with the first sub-stage.
+     * Otherwise, executes the stage in a single call.
      */
     public void executeStage(TaskContext context) {
         AgentStage stage = AgentStage.fromCode(context.getCurrentStage());
-        log.info("[Workflow:{}] Executing stage: {} ({})", 
+        log.info("[Workflow:{}] Executing stage: {} ({})",
                 context.getWorkflowId(), stage.getCode(), stage.getNameCn());
 
         context.setStatus(TaskStatus.IN_PROGRESS.name());
@@ -62,33 +73,122 @@ public class PipelineOrchestrator {
         publishEvent(StageTransitionEvent.started(context.getWorkflowId(), stage.getCode()));
 
         try {
-            // Build request from context
-            AgentTaskRequest request = AgentTaskRequest.of(
-                    context.getWorkflowId(),
-                    stage.getCode(),
-                    context.getAccountProfile(),
-                    context.getInputs(),
-                    context.getAccumulatedArtifacts()
-            );
-            request.setRequireHumanReview(context.isRequireHumanReview());
-
-            // Route to the appropriate agent
-            AgentResponse<Map<String, Object>> response = routeToAgent(stage, request);
-
-            if (response.isSuccess()) {
-                handleStageSuccess(context, stage, response);
+            // Check if this stage has sub-stages (progressive generation)
+            if (SubStage.hasSubStages(stage)) {
+                SubStage firstSub = SubStage.firstOf(stage);
+                log.info("[Workflow:{}] Stage {} has sub-stages. Starting with: {} ({})",
+                        context.getWorkflowId(), stage.getCode(), firstSub.getCode(), firstSub.getNameCn());
+                context.setCurrentSubStage(firstSub.getCode());
+                executeSubStage(context, firstSub);
             } else {
-                handleStageFailure(context, stage, response.getError());
+                // No sub-stages: execute in one shot
+                AgentTaskRequest request = buildRequest(context);
+                AgentResponse<Map<String, Object>> response = routeToAgent(stage, request);
+
+                if (response.isSuccess()) {
+                    handleStageSuccess(context, stage, response);
+                } else {
+                    handleStageFailure(context, stage, response.getError());
+                }
             }
         } catch (Exception e) {
-            log.error("[Workflow:{}] Stage {} failed with exception", 
+            log.error("[Workflow:{}] Stage {} failed with exception",
                     context.getWorkflowId(), stage.getCode(), e);
             handleStageFailure(context, stage, e.getMessage());
         }
     }
 
     /**
-     * Route the task to the appropriate agent microservice.
+     * Execute a specific sub-stage (called by executeStage or confirmSubStage).
+     */
+    private void executeSubStage(TaskContext context, SubStage subStage) {
+        log.info("[Workflow:{}] Executing sub-stage: {} ({})",
+                context.getWorkflowId(), subStage.fullCode(), subStage.getNameCn());
+
+        try {
+            AgentTaskRequest request = buildRequest(context);
+            AgentResponse<Map<String, Object>> response = routeToSubStage(subStage, request);
+
+            if (response.isSuccess()) {
+                handleSubStageSuccess(context, subStage, response);
+            } else {
+                AgentStage stage = AgentStage.fromCode(subStage.getParentStageCode());
+                handleStageFailure(context, stage, response.getError());
+            }
+        } catch (Exception e) {
+            log.error("[Workflow:{}] Sub-stage {} failed with exception",
+                    context.getWorkflowId(), subStage.fullCode(), e);
+            AgentStage stage = AgentStage.fromCode(subStage.getParentStageCode());
+            handleStageFailure(context, stage, e.getMessage());
+        }
+    }
+
+    /**
+     * Confirm a sub-stage and proceed to the next sub-stage or the next AgentStage.
+     *
+     * <p>Called by the WorkflowController when a user confirms the sub-stage output
+     * (e.g., confirms an outline before draft generation).
+     *
+     * @param context   the workflow context
+     * @param feedback  optional feedback/modifications from the user (e.g., edited outline)
+     */
+    public void confirmAndProceedSubStage(TaskContext context, Map<String, Object> feedback) {
+        String currentSub = context.getCurrentSubStage();
+        if (currentSub == null || currentSub.isBlank()) {
+            log.warn("[Workflow:{}] No current sub-stage to confirm", context.getWorkflowId());
+            return;
+        }
+
+        SubStage subStage = SubStage.fromCode(currentSub);
+        log.info("[Workflow:{}] Confirming sub-stage: {} ({})",
+                context.getWorkflowId(), subStage.fullCode(), subStage.getNameCn());
+
+        // Merge feedback into accumulated artifacts (e.g., confirmedOutline, confirmedStyle)
+        if (feedback != null && !feedback.isEmpty()) {
+            if (context.getAccumulatedArtifacts() == null) {
+                context.setAccumulatedArtifacts(new java.util.HashMap<>());
+            }
+            // Store feedback as inputs for the next sub-stage
+            if (context.getInputs() == null) {
+                context.setInputs(new java.util.HashMap<>());
+            }
+            context.getInputs().putAll(feedback);
+        }
+
+        // Check if there's a next sub-stage
+        SubStage nextSub = subStage.next();
+        if (nextSub != null) {
+            // Proceed to next sub-stage
+            log.info("[Workflow:{}] Sub-stage {} → {} (proceeding)",
+                    context.getWorkflowId(), subStage.getCode(), nextSub.getCode());
+            context.setCurrentSubStage(nextSub.getCode());
+            context.setStatus(TaskStatus.IN_PROGRESS.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+            executeSubStage(context, nextSub);
+        } else {
+            // Last sub-stage completed → advance to next AgentStage
+            AgentStage stage = AgentStage.fromCode(subStage.getParentStageCode());
+            context.setCurrentSubStage(null);
+            AgentStage nextStage = stage.next();
+            context.setCurrentStage(nextStage.getCode());
+            context.setStatus(TaskStatus.PENDING.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+
+            log.info("[Workflow:{}] Stage {} → {} (all sub-stages done)",
+                    context.getWorkflowId(), stage.getCode(), nextStage.getCode());
+            publishEvent(StageTransitionEvent.completed(
+                    context.getWorkflowId(),
+                    stage.getCode(),
+                    nextStage.getCode(),
+                    null
+            ));
+        }
+    }
+
+    /**
+     * Route the task to the appropriate agent microservice (non-sub-stage stages).
      */
     private AgentResponse<Map<String, Object>> routeToAgent(AgentStage stage, AgentTaskRequest request) {
         return switch (stage) {
@@ -102,7 +202,116 @@ public class PipelineOrchestrator {
     }
 
     /**
-     * Handle successful stage execution.
+     * Route the task to the appropriate sub-stage endpoint.
+     */
+    private AgentResponse<Map<String, Object>> routeToSubStage(SubStage subStage, AgentTaskRequest request) {
+        return switch (subStage) {
+            case CONTENT_OUTLINE -> contentAgentClient.generateOutline(request);
+            case CONTENT_DRAFT -> contentAgentClient.generateDraft(request);
+            case IMAGE_STYLES -> imageAgentClient.generateStyleDirections(request);
+            case IMAGE_GENERATE -> imageAgentClient.generateImages(request);
+        };
+    }
+
+    /**
+     * Handle successful sub-stage execution.
+     *
+     * <p>If this is NOT the last sub-stage, pause for human confirmation.
+     * If it IS the last sub-stage, advance to the next AgentStage.
+     */
+    private void handleSubStageSuccess(TaskContext context, SubStage subStage,
+                                        AgentResponse<Map<String, Object>> response) {
+        // Merge sub-stage artifacts into accumulated artifacts
+        if (response.getData() != null) {
+            if (context.getAccumulatedArtifacts() == null) {
+                context.setAccumulatedArtifacts(new java.util.HashMap<>());
+            }
+            context.getAccumulatedArtifacts().put(subStage.fullCode(), response.getData());
+
+            // Also store key outputs at a flat level for easy access by next sub-stage
+            // (e.g., outline result → confirmedOutline, style result → confirmedStyle)
+            storeSubStageOutput(context, subStage, response.getData());
+        }
+
+        SubStage nextSub = subStage.next();
+        if (nextSub != null) {
+            // Pause for human confirmation before next sub-stage
+            context.setStatus(TaskStatus.AWAITING_HUMAN.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+
+            log.info("[Workflow:{}] Sub-stage {} completed. Awaiting confirmation for {}.",
+                    context.getWorkflowId(), subStage.getCode(), nextSub.getCode());
+
+            publishEvent(StageTransitionEvent.completed(
+                    context.getWorkflowId(),
+                    subStage.getParentStageCode(),
+                    subStage.getParentStageCode(),  // stays on same stage
+                    response.getData()
+            ));
+        } else {
+            // Last sub-stage → advance to next AgentStage
+            AgentStage stage = AgentStage.fromCode(subStage.getParentStageCode());
+            context.setCurrentSubStage(null);
+
+            AgentStage nextStage = stage.next();
+            context.setCurrentStage(nextStage.getCode());
+            context.setStatus(TaskStatus.PENDING.name());
+            context.setUpdatedAt(LocalDateTime.now());
+            stateManager.saveWorkflowState(context.getWorkflowId(), context);
+
+            log.info("[Workflow:{}] Sub-stage {} completed. Stage {} → {} (auto-advance)",
+                    context.getWorkflowId(), subStage.getCode(), stage.getCode(), nextStage.getCode());
+
+            publishEvent(StageTransitionEvent.completed(
+                    context.getWorkflowId(),
+                    stage.getCode(),
+                    nextStage.getCode(),
+                    response.getData()
+            ));
+        }
+    }
+
+    /**
+     * Store sub-stage output at a flat level for easy access by the next sub-stage.
+     *
+     * <p>For example, the outline sub-stage's result is stored as "confirmedOutline"
+     * so the draft sub-stage can pick it up via inputs.
+     */
+    @SuppressWarnings("unchecked")
+    private void storeSubStageOutput(TaskContext context, SubStage subStage, Map<String, Object> data) {
+        if (context.getInputs() == null) {
+            context.setInputs(new java.util.HashMap<>());
+        }
+        switch (subStage) {
+            case CONTENT_OUTLINE -> {
+                // Store the outline result as confirmedOutline for the draft sub-stage
+                Object outlineObj = data.get("outline");
+                if (outlineObj != null) {
+                    context.getInputs().put("confirmedOutline", outlineObj.toString());
+                }
+                // Also carry forward the topic
+                Object topic = data.get("topic");
+                if (topic != null) {
+                    context.getInputs().putIfAbsent("topic", topic);
+                }
+            }
+            case IMAGE_STYLES -> {
+                // Store the style directions result as confirmedStyle for the generate sub-stage
+                Object stylesObj = data.get("styleDirections");
+                if (stylesObj != null) {
+                    context.getInputs().put("confirmedStyle", stylesObj.toString());
+                }
+            }
+            default -> {
+                // For CONTENT_DRAFT and IMAGE_GENERATE, outputs are final stage outputs
+                // and are already stored in accumulatedArtifacts
+            }
+        }
+    }
+
+    /**
+     * Handle successful stage execution (for stages without sub-stages).
      */
     private void handleStageSuccess(TaskContext context, AgentStage stage,
                                      AgentResponse<Map<String, Object>> response) {
@@ -118,14 +327,14 @@ public class PipelineOrchestrator {
         // Check for human review
         if (context.isRequireHumanReview()) {
             context.setStatus(TaskStatus.AWAITING_HUMAN.name());
-            log.info("[Workflow:{}] Stage {} completed. Awaiting human approval.", 
+            log.info("[Workflow:{}] Stage {} completed. Awaiting human approval.",
                     context.getWorkflowId(), stage.getCode());
         } else {
             // Auto-advance to next stage
             AgentStage nextStage = stage.next();
             context.setCurrentStage(nextStage.getCode());
             context.setStatus(TaskStatus.PENDING.name());
-            log.info("[Workflow:{}] Stage {} → {} (auto-advance)", 
+            log.info("[Workflow:{}] Stage {} → {} (auto-advance)",
                     context.getWorkflowId(), stage.getCode(), nextStage.getCode());
         }
 
@@ -154,8 +363,23 @@ public class PipelineOrchestrator {
                 context.getWorkflowId(), stage.getCode(), error
         ));
 
-        log.error("[Workflow:{}] Stage {} FAILED: {}", 
+        log.error("[Workflow:{}] Stage {} FAILED: {}",
                 context.getWorkflowId(), stage.getCode(), error);
+    }
+
+    /**
+     * Build an AgentTaskRequest from the workflow context.
+     */
+    private AgentTaskRequest buildRequest(TaskContext context) {
+        AgentTaskRequest request = AgentTaskRequest.of(
+                context.getWorkflowId(),
+                context.getCurrentStage(),
+                context.getAccountProfile(),
+                context.getInputs(),
+                context.getAccumulatedArtifacts()
+        );
+        request.setRequireHumanReview(context.isRequireHumanReview());
+        return request;
     }
 
     /**

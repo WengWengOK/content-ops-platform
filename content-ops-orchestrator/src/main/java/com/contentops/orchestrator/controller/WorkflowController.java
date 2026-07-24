@@ -95,6 +95,35 @@ public class WorkflowController {
     }
 
     /**
+     * 确认当前子阶段并推进到下一个子阶段（渐进式生成）。
+     *
+     * <p>当 CONTENT_CREATION 执行完大纲生成（outline）后，工作流会暂停等待人工确认。
+     * 用户确认大纲后调用此端点，编排器会推进到初稿生成（draft）子阶段。
+     *
+     * <p>同理，IMAGE_DESIGN 执行完风格方向（styles）后，用户确认后推进到批量生图（generate）。
+     *
+     * @param workflowId 工作流 ID
+     * @param body      可选的请求体，包含确认内容：
+     *                  <ul>
+     *                    <li>{@code confirmedOutline}：确认的大纲（可修改）</li>
+     *                    <li>{@code confirmedStyle}：选择的风格方向</li>
+     *                  </ul>
+     */
+    @PostMapping("/{workflowId}/confirm-substage")
+    public ResponseEntity<AgentResponse<Map<String, Object>>> confirmSubStage(
+            @PathVariable String workflowId,
+            @RequestBody(required = false) Map<String, Object> body) {
+
+        log.info("[Workflow:{}] Confirming sub-stage", workflowId);
+        workflowService.confirmSubStage(workflowId, body);
+
+        return ResponseEntity.ok(AgentResponse.success(
+                "orchestrator",
+                Map.of("message", "Sub-stage confirmed. Proceeding to next sub-stage.")
+        ));
+    }
+
+    /**
      * Get all pipeline stages.
      */
     @GetMapping("/stages")
