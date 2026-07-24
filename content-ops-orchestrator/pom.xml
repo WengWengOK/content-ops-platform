@@ -66,6 +66,13 @@
                       -Dotel.exporter.otlp.endpoint=http://jaeger:4317
                       -Dotel.service.name=orchestrator -jar app.jar
              此方式支持自动 instrument Feign/Kafka/Redis/HTTP，无需修改代码。 -->
+
+        <!-- B计划: LangGraph4j 图编排引擎 -->
+        <dependency>
+            <groupId>org.bsc.langgraph4j</groupId>
+            <artifactId>langgraph4j-core</artifactId>
+            <version>1.8.20</version>
+        </dependency>
     </dependencies>
 
     <build>

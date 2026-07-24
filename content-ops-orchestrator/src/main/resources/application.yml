@@ -107,3 +107,13 @@ logging:
     com.contentops: DEBUG
     org.springframework.ai: INFO
     io.github.resilience4j: INFO
+
+# ════════════════════════════════════════════════════════════════
+# B计划: LangGraph4j 双引擎切换配置
+# ════════════════════════════════════════════════════════════════
+contentops:
+  orchestrator:
+    # 引擎选择：legacy（原 PipelineOrchestrator）或 langgraph（LangGraph4j）
+    # 灰度切换：通过 Nacos 配置中心动态修改此值，配合 @RefreshScope 无需重启
+    # 回滚：改回 legacy 即可，原引擎代码完全保留
+    engine: ${CONTENTOPS_ENGINE:legacy}

@@ -9,9 +9,11 @@ import com.contentops.common.enums.TaskStatus;
 import com.contentops.common.event.AsyncTaskEvent;
 import com.contentops.common.event.StageTransitionEvent;
 import com.contentops.common.util.WorkflowStateManager;
+import com.contentops.orchestrator.graph.KafkaAsyncBridge;
 import com.contentops.orchestrator.workflow.PipelineOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
@@ -25,13 +27,11 @@ import java.util.Map;
  * <p>监听 {@code content-ops.async.results} topic，当长耗时 Agent（内容初稿、批量生图）
  * 完成异步执行后，消费其结果并推进工作流到下一个子阶段或 AgentStage。
  *
- * <p>结果处理逻辑：
- * <ol>
- *   <li>从 Redis 加载工作流状态</li>
- *   <li>校验 workflowId 匹配</li>
- *   <li>如果成功：合并产物 → 推进到下一子阶段/下一 AgentStage</li>
- *   <li>如果失败：标记工作流失败</li>
- * </ol>
+ * <p><b>B计划双模式：</b>
+ * <ul>
+ *   <li>{@code langgraph} 模式：将结果交给 {@link KafkaAsyncBridge} 完成 Future</li>
+ *   <li>{@code legacy} 模式（默认）：直接操作 Redis 推进工作流（A计划修复后的逻辑）</li>
+ * </ul>
  */
 @Slf4j
 @Component
@@ -40,7 +40,11 @@ public class AsyncTaskResultConsumer {
 
     private final WorkflowStateManager stateManager;
     private final PipelineOrchestrator pipelineOrchestrator;
+    private final KafkaAsyncBridge kafkaAsyncBridge;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+
+    @Value("${contentops.orchestrator.engine:legacy}")
+    private String engineType;
 
     /**
      * 消费异步任务结果。
@@ -57,6 +61,13 @@ public class AsyncTaskResultConsumer {
                 result.getTaskId(), result.getWorkflowId(),
                 result.getAgentStage(), result.getSubStage(), result.isSuccess());
 
+        // B计划：LangGraph 模式下，将结果交给 KafkaAsyncBridge 完成 Future
+        if ("langgraph".equalsIgnoreCase(engineType)) {
+            kafkaAsyncBridge.completeTask(result.getTaskId(), result);
+            return;
+        }
+
+        // Legacy 模式：直接操作 Redis 推进工作流
         try {
             processResult(result);
         } catch (Exception e) {
