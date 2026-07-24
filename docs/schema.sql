@@ -14,6 +14,14 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================================
+-- 0. pgvector extension for RAG knowledge base (P1: RAG + File I/O + Web Search)
+-- ============================================================================
+-- Required by langchain4j-pgvector EmbeddingStore.
+-- The content_embeddings table is auto-created by PgVectorEmbeddingStore on first connect,
+-- but we create the extension here to ensure it's available before the app starts.
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- ============================================================================
 -- 1. Discussion Sessions — persistent record of multi-turn topic discussions
 -- ============================================================================
 -- Each row represents one "把TRAE当讨论对象" discussion session.

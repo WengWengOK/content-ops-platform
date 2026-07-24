@@ -49,6 +49,30 @@ contentops:
     window-size: 20          # Max messages retained per conversation window
     ttl-hours: 24            # Redis TTL for chat memory entries
     key-prefix: "contentops:chat-memory:"
+  # Tavily web search configuration (P1: RAG + File I/O + Web Search)
+  tavily:
+    api-key: ${TAVILY_API_KEY:}
+    max-results: 5
+    search-depth: basic
+    timeout-seconds: 15
+
+  # Knowledge base (PGVector) configuration (P1: RAG knowledge base)
+  knowledge-base:
+    pg-host: ${POSTGRES_HOST:localhost}
+    pg-port: 5432
+    pg-database: contentops
+    pg-user: ${POSTGRES_USER:contentops}
+    pg-password: ${POSTGRES_PASSWORD:contentops123}
+    table-name: content_embeddings
+    max-results: 5
+    min-score: 0.6
+    create-table: true
+    use-index: true
+
+  # File tools configuration (P1: File I/O)
+  file-tools:
+    base-dir: ${FILE_OUTPUT_DIR:./content-outputs}
+    allowed-extensions: md,json,txt,csv
 
 eureka:
   client:

@@ -1,5 +1,6 @@
 package com.contentops.optimize.config;
 
+import com.contentops.common.knowledge.FileTools;
 import com.contentops.common.memory.RedisChatMemoryProvider;
 import com.contentops.optimize.agent.OptimizationAgent;
 import com.contentops.optimize.tool.OptimizeTools;
@@ -17,10 +18,11 @@ public class OptimizeAgentConfig {
     @Bean
     public OptimizationAgent optimizationAgent(ChatModel chatModel,
                                                 OptimizeTools optimizeTools,
-                                                RedisChatMemoryProvider chatMemoryProvider) {
+                                                RedisChatMemoryProvider chatMemoryProvider,
+                                                FileTools fileTools) {
         return AiServices.builder(OptimizationAgent.class)
                 .chatModel(chatModel)
-                .tools(optimizeTools)
+                .tools(optimizeTools, fileTools)
                 .chatMemoryProvider(chatMemoryProvider)
                 .build();
     }

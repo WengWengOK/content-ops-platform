@@ -1,5 +1,6 @@
 package com.contentops.publish.config;
 
+import com.contentops.common.knowledge.FileTools;
 import com.contentops.common.memory.RedisChatMemoryProvider;
 import com.contentops.publish.agent.PublishingAgent;
 import com.contentops.publish.tool.PublishTools;
@@ -17,10 +18,11 @@ public class PublishAgentConfig {
     @Bean
     public PublishingAgent publishingAgent(ChatModel chatModel,
                                             PublishTools publishTools,
-                                            RedisChatMemoryProvider chatMemoryProvider) {
+                                            RedisChatMemoryProvider chatMemoryProvider,
+                                            FileTools fileTools) {
         return AiServices.builder(PublishingAgent.class)
                 .chatModel(chatModel)
-                .tools(publishTools)
+                .tools(publishTools, fileTools)
                 .chatMemoryProvider(chatMemoryProvider)
                 .build();
     }

@@ -1,5 +1,6 @@
 package com.contentops.image.config;
 
+import com.contentops.common.knowledge.FileTools;
 import com.contentops.common.memory.RedisChatMemoryProvider;
 import com.contentops.image.agent.ImageDesignAgent;
 import com.contentops.image.tool.ImageTools;
@@ -17,10 +18,11 @@ public class ImageAgentConfig {
     @Bean
     public ImageDesignAgent imageDesignAgent(ChatModel chatModel,
                                               ImageTools imageTools,
-                                              RedisChatMemoryProvider chatMemoryProvider) {
+                                              RedisChatMemoryProvider chatMemoryProvider,
+                                              FileTools fileTools) {
         return AiServices.builder(ImageDesignAgent.class)
                 .chatModel(chatModel)
-                .tools(imageTools)
+                .tools(imageTools, fileTools)
                 .chatMemoryProvider(chatMemoryProvider)
                 .build();
     }

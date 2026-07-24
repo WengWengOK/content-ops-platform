@@ -66,6 +66,12 @@
                 <artifactId>content-ops-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <!-- Override BOM-managed version: we have 1.0.0-beta3 locally, BOM wants 1.0.1-beta6 -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-embeddings-bge-small-zh-v15-q</artifactId>
+                <version>1.0.0-beta3</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

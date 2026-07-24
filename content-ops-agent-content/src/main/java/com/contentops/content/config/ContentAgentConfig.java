@@ -1,5 +1,6 @@
 package com.contentops.content.config;
 
+import com.contentops.common.knowledge.FileTools;
 import com.contentops.common.memory.RedisChatMemoryProvider;
 import com.contentops.content.agent.ContentCreationAgent;
 import com.contentops.content.tool.ContentTools;
@@ -20,10 +21,11 @@ public class ContentAgentConfig {
     @Bean
     public ContentCreationAgent contentCreationAgent(ChatModel chatModel,
                                                       ContentTools contentTools,
-                                                      RedisChatMemoryProvider chatMemoryProvider) {
+                                                      RedisChatMemoryProvider chatMemoryProvider,
+                                                      FileTools fileTools) {
         return AiServices.builder(ContentCreationAgent.class)
                 .chatModel(chatModel)
-                .tools(contentTools)
+                .tools(contentTools, fileTools)
                 .chatMemoryProvider(chatMemoryProvider)
                 .build();
     }

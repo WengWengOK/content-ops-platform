@@ -1,5 +1,6 @@
 package com.contentops.topic.config;
 
+import com.contentops.common.knowledge.FileTools;
 import com.contentops.common.memory.RedisChatMemoryProvider;
 import com.contentops.topic.agent.TopicPlanningAgent;
 import com.contentops.topic.tool.TopicResearchTools;
@@ -28,10 +29,11 @@ public class TopicAgentConfig {
     @Bean
     public TopicPlanningAgent topicPlanningAgent(ChatModel chatModel,
                                                   TopicResearchTools topicResearchTools,
-                                                  RedisChatMemoryProvider chatMemoryProvider) {
+                                                  RedisChatMemoryProvider chatMemoryProvider,
+                                                  FileTools fileTools) {
         return AiServices.builder(TopicPlanningAgent.class)
                 .chatModel(chatModel)
-                .tools(topicResearchTools)
+                .tools(topicResearchTools, fileTools)
                 .chatMemoryProvider(chatMemoryProvider)
                 .build();
     }
