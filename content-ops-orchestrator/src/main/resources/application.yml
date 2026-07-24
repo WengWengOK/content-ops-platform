@@ -117,3 +117,37 @@ contentops:
     # 灰度切换：通过 Nacos 配置中心动态修改此值，配合 @RefreshScope 无需重启
     # 回滚：改回 legacy 即可，原引擎代码完全保留
     engine: ${CONTENTOPS_ENGINE:legacy}
+
+# ════════════════════════════════════════════════════════════════
+# SpringDoc OpenAPI 配置 — 前端对接 API 文档
+# ════════════════════════════════════════════════════════════════
+# 前端项目集成方式：
+#   1. Swagger UI: http://localhost:8080/orchestrator/swagger-ui.html
+#   2. OpenAPI 3 JSON: http://localhost:8080/orchestrator/v3/api-docs
+#   3. 前端代码生成: 使用 openapi-generator 基于 /v3/api-docs 生成 TypeScript/JS 客户端
+springdoc:
+  api-docs:
+    # OpenAPI JSON 端点路径
+    path: /v3/api-docs
+    # 启用 OpenAPI JSON 端点
+    enabled: true
+    # 分组配置（按模块/Tag 分组展示）
+    groups:
+      enabled: true
+  swagger-ui:
+    # Swagger UI 端点路径
+    path: /swagger-ui.html
+    # 启用 Swagger UI
+    enabled: true
+    # API 文档排序方式：按方法类型分组展示
+    operations-sorter: method
+    # Tag 排序方式：按定义顺序展示
+    tags-sorter: alpha
+    # 默认展开所有 Tag
+    doc-expansion: none
+    # 持久化授权（如使用 Spring Security）
+    persist-authorization: true
+  # 扫描包路径（只扫描 orchestrator 模块）
+  packages-to-scan: com.contentops.orchestrator
+  # 自动生成默认响应（200/400/500）
+  default-flat-param-object: true

@@ -74,5 +74,13 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
         </dependency>
+
+        <!-- SpringDoc OpenAPI 注解 — 供 common 模块 DTO 使用 @Schema 标注 -->
+        <!-- 仅引入注解包（编译期依赖），不引入 Swagger UI 运行时 -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+            <version>${swagger-annotations.version}</version>
+        </dependency>
     </dependencies>
 </project>

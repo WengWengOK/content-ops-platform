@@ -1,5 +1,6 @@
 package com.contentops.common.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,40 +24,43 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "讨论会话 — 多轮对话式选题探索会话。用户通过对话与 AI 讨论模糊创意，逐步明确方向后生成结构化选题方案")
 public class DiscussionSession {
 
-    /** Unique session ID (same as workflowId for pipeline integration) */
+    @Schema(description = "会话唯一标识（与 workflowId 相同，用于流水线集成）", example = "sess-001")
     private String sessionId;
 
-    /** Associated workflow ID */
+    @Schema(description = "关联的工作流 ID")
     private String workflowId;
 
-    /** Current discussion phase */
+    @Schema(description = "当前讨论阶段", example = "IDEATION", allowableValues = {"IDEATION", "CLARIFICATION", "CONFIRMATION", "COMPLETED"})
     private DiscussionPhase phase;
 
-    /** The original fuzzy idea from the user */
+    @Schema(description = "用户提供的原始模糊创意描述", example = "我想写一篇关于职场新人成长的系列文章")
     private String fuzzyIdea;
 
-    /** Account profile for context */
+    @Schema(description = "关联的账号画像信息")
     private TaskContext.AccountProfile accountProfile;
 
-    /** Conversation turns */
+    @Schema(description = "对话轮次列表")
     private List<DiscussionTurn> turns;
 
-    /** Clarifying questions raised by AI */
+    @Schema(description = "AI 提出的澄清问题列表")
     private List<String> clarifyingQuestions;
 
-    /** Proposed directions after clarification */
+    @Schema(description = "澄清后 AI 提议的方向列表")
     private List<String> proposedDirections;
 
-    /** User-confirmed direction */
+    @Schema(description = "用户确认的方向")
     private String confirmedDirection;
 
-    /** Final topic plan result (when COMPLETED) */
+    @Schema(description = "最终选题方案（讨论完成后可用）")
     private TopicPlanResult topicPlanResult;
 
-    /** Timestamps */
+    @Schema(description = "创建时间")
     private LocalDateTime createdAt;
+
+    @Schema(description = "最后更新时间")
     private LocalDateTime updatedAt;
 
     public enum DiscussionPhase {
@@ -70,9 +74,13 @@ public class DiscussionSession {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @Schema(description = "对话轮次 — 单轮讨论消息记录")
     public static class DiscussionTurn {
-        private String role;       // "user" or "assistant"
+        @Schema(description = "消息角色", example = "user", allowableValues = {"user", "assistant"})
+        private String role;
+        @Schema(description = "消息内容")
         private String content;
+        @Schema(description = "消息时间戳")
         private LocalDateTime timestamp;
     }
 }

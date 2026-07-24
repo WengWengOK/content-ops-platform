@@ -9,6 +9,11 @@ import com.contentops.common.enums.AgentStage;
 import com.contentops.common.enums.TaskStatus;
 import com.contentops.orchestrator.service.AgentFeignClients.DiscussionAgentClient;
 import com.contentops.orchestrator.service.WorkflowService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +29,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/workflow")
 @RequiredArgsConstructor
+@Tag(name = "工作流编排", description = "内容运营流水线编排接口 — 管理选题→内容→配图→发布→分析→优化全流程，支持循环优化、渐进式生成、人机协同和讨论模式")
 public class WorkflowController {
 
     private final WorkflowService workflowService;
@@ -34,7 +40,16 @@ public class WorkflowController {
      * This kicks off the pipeline from the Topic Planning stage.
      */
     @PostMapping("/start")
+    @Operation(
+            summary = "启动内容运营工作流",
+            description = "从选题规划阶段（Topic Planning）开始，创建并启动一条完整的内容运营流水线。" +
+                    "工作流会依次经过选题→内容→配图→发布→分析→优化6个阶段，支持循环优化。"
+    )
     public ResponseEntity<AgentResponse<Map<String, Object>>> startWorkflow(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "工作流启动请求，包含账号画像、输入参数和是否需要人工审核",
+                    required = true
+            )
             @RequestBody StartWorkflowRequest request) {
 
         log.info("Starting new content operations workflow for account: {}", 
@@ -69,7 +84,12 @@ public class WorkflowController {
      * Get the current status of a workflow.
      */
     @GetMapping("/{workflowId}/status")
+    @Operation(
+            summary = "查询工作流状态",
+            description = "获取指定工作流的完整上下文信息，包括当前阶段、子阶段、输入输出、累积产物、循环轮次等。"
+    )
     public ResponseEntity<AgentResponse<TaskContext>> getWorkflowStatus(
+            @Parameter(description = "工作流 ID（UUID 格式）", required = true, example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable String workflowId) {
 
         TaskContext context = workflowService.getWorkflowStatus(workflowId);
@@ -83,8 +103,15 @@ public class WorkflowController {
      * Approve the current stage and proceed to the next (for human-in-the-loop).
      */
     @PostMapping("/{workflowId}/approve")
+    @Operation(
+            summary = "审批当前阶段并推进",
+            description = "人工审核通过后，推进工作流到下一阶段。仅当 requireHumanReview=true 时需要调用此接口。" +
+                    "可在 feedback 中传入修改意见，注入到下一阶段的输入中。"
+    )
     public ResponseEntity<AgentResponse<Map<String, Object>>> approveStage(
+            @Parameter(description = "工作流 ID", required = true, example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable String workflowId,
+            @Parameter(description = "可选的审批反馈，key-value 形式，会被注入到下一阶段输入中")
             @RequestParam(required = false) Map<String, Object> feedback) {
 
         workflowService.approveAndProceed(workflowId, feedback);
@@ -111,8 +138,18 @@ public class WorkflowController {
      *                  </ul>
      */
     @PostMapping("/{workflowId}/confirm-substage")
+    @Operation(
+            summary = "确认子阶段并推进到下一步",
+            description = "渐进式生成场景下，用户确认当前子阶段产物后调用此端点推进。" +
+                    "如确认大纲后推进到初稿生成，或确认风格方向后推进到批量生图。" +
+                    "请求体可选传入确认内容（如修改后的大纲或选择的风格）。"
+    )
     public ResponseEntity<AgentResponse<Map<String, Object>>> confirmSubStage(
+            @Parameter(description = "工作流 ID", required = true, example = "550e8400-e29b-41d4-a716-446655440000")
             @PathVariable String workflowId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "可选的确认内容，可包含 confirmedOutline（确认的大纲）或 confirmedStyle（选择的风格方向）"
+            )
             @RequestBody(required = false) Map<String, Object> body) {
 
         log.info("[Workflow:{}] Confirming sub-stage", workflowId);
@@ -128,6 +165,11 @@ public class WorkflowController {
      * Get all pipeline stages.
      */
     @GetMapping("/stages")
+    @Operation(
+            summary = "获取所有流水线阶段",
+            description = "返回6个阶段的完整定义列表，包括阶段顺序、编码、中文名称和描述说明。" +
+                    "前端可据此渲染流水线进度条和阶段说明。"
+    )
     public ResponseEntity<AgentResponse<List<StageInfo>>> getStages() {
         List<StageInfo> stages = java.util.Arrays.stream(AgentStage.values())
                 .map(s -> new StageInfo(s.getOrder(), s.getCode(), s.getNameCn(), s.getDescription()))
@@ -144,7 +186,16 @@ public class WorkflowController {
      * fuzzy idea with the AI to clarify direction before generating a plan.
      */
     @PostMapping("/discuss/start")
+    @Operation(
+            summary = "启动讨论会话",
+            description = "创建一个多轮讨论会话，用户可以与 AI 讨论模糊的创作想法，明确方向后再生成方案。" +
+                    "讨论模式下不走自动流水线，而是通过对话逐步澄清需求。"
+    )
     public ResponseEntity<AgentResponse<DiscussionResponse>> startDiscussion(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "讨论启动请求，包含模糊创意和账号画像",
+                    required = true
+            )
             @RequestBody DiscussStartRequest request) {
 
         log.info("Starting discussion session via orchestrator");
@@ -161,8 +212,17 @@ public class WorkflowController {
      * Continue the discussion with a new user message.
      */
     @PostMapping("/discuss/{sessionId}/chat")
+    @Operation(
+            summary = "继续讨论对话",
+            description = "在已有的讨论会话中发送新消息，AI 会根据上下文继续多轮对话，帮助用户逐步明确创作方向。"
+    )
     public ResponseEntity<AgentResponse<DiscussionResponse>> chat(
+            @Parameter(description = "讨论会话 ID", required = true)
             @PathVariable String sessionId,
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "用户消息内容",
+                    required = true
+            )
             @RequestBody DiscussChatRequest request) {
 
         log.info("Discussion chat via orchestrator: sessionId={}", sessionId);
@@ -185,8 +245,16 @@ public class WorkflowController {
      * @param startPipeline if true, automatically start the pipeline from CONTENT_CREATION
      */
     @PostMapping("/discuss/{sessionId}/finalize")
+    @Operation(
+            summary = "结束讨论并启动流水线",
+            description = "结束讨论会话，将讨论产出的选题方案（TopicPlanResult）作为输入，" +
+                    "从内容创作阶段（CONTENT_CREATION）启动流水线，跳过选题规划阶段。" +
+                    "如果 startPipeline=false，则只返回讨论结果，不自动启动流水线。"
+    )
     public ResponseEntity<AgentResponse<Map<String, Object>>> finalizeDiscussion(
+            @Parameter(description = "讨论会话 ID", required = true)
             @PathVariable String sessionId,
+            @Parameter(description = "是否自动启动流水线（默认 true）", example = "true")
             @RequestParam(required = false, defaultValue = "true") boolean startPipeline) {
 
         log.info("Finalizing discussion: sessionId={}, startPipeline={}", sessionId, startPipeline);
@@ -255,7 +323,12 @@ public class WorkflowController {
      * Get the current discussion session state.
      */
     @GetMapping("/discuss/{sessionId}")
+    @Operation(
+            summary = "获取讨论会话状态",
+            description = "获取指定讨论会话的当前状态，包括会话 ID、对话历史和关联的账号画像。"
+    )
     public ResponseEntity<AgentResponse<DiscussionSession>> getDiscussionSession(
+            @Parameter(description = "讨论会话 ID", required = true)
             @PathVariable String sessionId) {
         AgentResponse<DiscussionSession> response = discussionClient.getSession(sessionId);
         return ResponseEntity.ok(response);
@@ -265,7 +338,12 @@ public class WorkflowController {
      * Clear a discussion session and its conversation memory.
      */
     @DeleteMapping("/discuss/{sessionId}")
+    @Operation(
+            summary = "清除讨论会话",
+            description = "删除指定讨论会话及其对话记忆（Redis ChatMemory）。清除后无法恢复。"
+    )
     public ResponseEntity<AgentResponse<Void>> clearDiscussion(
+            @Parameter(description = "讨论会话 ID", required = true)
             @PathVariable String sessionId) {
         discussionClient.clearSession(sessionId);
         return ResponseEntity.ok(AgentResponse.success("orchestrator", null));
@@ -276,34 +354,48 @@ public class WorkflowController {
     @lombok.Data
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
+    @Schema(description = "启动工作流请求")
     public static class StartWorkflowRequest {
+        @Schema(description = "账号画像信息，包含账号名称、定位领域、目标受众、语气风格、发布平台等", required = true)
         private TaskContext.AccountProfile accountProfile;
+        @Schema(description = "工作流输入参数，键值对形式，如主题关键词、特别要求等")
         private Map<String, Object> inputs;
+        @Schema(description = "是否需要人工审核（为 true 时每个阶段完成后暂停等待审批）", example = "false")
         private boolean requireHumanReview;
     }
 
     @lombok.Data
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
+    @Schema(description = "流水线阶段信息")
     public static class StageInfo {
+        @Schema(description = "阶段顺序号（1-6）", example = "1")
         private int order;
+        @Schema(description = "阶段编码，如 TOPIC_PLANNING", example = "TOPIC_PLANNING")
         private String code;
+        @Schema(description = "阶段中文名称", example = "选题规划")
         private String name;
+        @Schema(description = "阶段描述说明")
         private String description;
     }
 
     @lombok.Data
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
+    @Schema(description = "启动讨论会话请求")
     public static class DiscussStartRequest {
+        @Schema(description = "用户的模糊创意或想法描述", required = true, example = "我想写一篇关于职场新人成长的系列文章")
         private String fuzzyIdea;
+        @Schema(description = "账号画像信息")
         private TaskContext.AccountProfile accountProfile;
     }
 
     @lombok.Data
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
+    @Schema(description = "讨论对话消息请求")
     public static class DiscussChatRequest {
+        @Schema(description = "用户发送的消息内容", required = true, example = "可以更聚焦在时间管理这个角度吗？")
         private String message;
     }
 }

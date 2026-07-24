@@ -1,5 +1,6 @@
 package com.contentops.common.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import java.util.List;
 
@@ -17,26 +18,27 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "讨论响应 — DiscussionAgent 的回复，包含 AI 回复文本、当前讨论阶段、澄清问题和建议方向")
 public class DiscussionResponse {
 
-    /** Session ID (same as workflowId for pipeline integration) */
+    @Schema(description = "会话 ID（与 workflowId 相同，用于流水线集成）", example = "sess-001")
     private String sessionId;
 
-    /** Current discussion phase */
+    @Schema(description = "当前讨论阶段", example = "CLARIFICATION", allowableValues = {"IDEATION", "CLARIFICATION", "CONFIRMATION", "COMPLETED"})
     private DiscussionSession.DiscussionPhase phase;
 
-    /** The AI's natural-language reply */
+    @Schema(description = "AI 的自然语言回复内容", example = "明白了，你想聚焦在职场新人成长。为了更精准地选题，请问你的目标受众年龄段是？")
     private String message;
 
-    /** Clarifying questions raised by the AI (if in CLARIFICATION phase) */
+    @Schema(description = "AI 提出的澄清问题列表（CLARIFICATION 阶段）")
     private List<String> clarifyingQuestions;
 
-    /** Proposed directions (if in CONFIRMATION phase) */
+    @Schema(description = "建议的选题方向列表（CONFIRMATION 阶段）")
     private List<String> proposedDirections;
 
-    /** Whether the user can now call /finalize to get a TopicPlanResult */
+    @Schema(description = "是否可以调用 /finalize 结束讨论并获取 TopicPlanResult", example = "false")
     private boolean canFinalize;
 
-    /** Total conversation turns so far */
+    @Schema(description = "当前对话总轮次", example = "3")
     private int turnCount;
 }

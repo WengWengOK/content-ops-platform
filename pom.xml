@@ -36,6 +36,8 @@
         <langchain4j.version>1.0.1</langchain4j.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <opentelemetry.version>1.39.0</opentelemetry.version>
+        <springdoc.version>2.6.0</springdoc.version>
+        <swagger-annotations.version>2.2.25</swagger-annotations.version>
     </properties>
 
     <dependencyManagement>
@@ -77,6 +79,13 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- SpringDoc OpenAPI — 统一 API 文档框架 (Swagger UI + OpenAPI 3 JSON) -->
+        <!-- 前端项目通过 /v3/api-docs 获取 OpenAPI 3 规范，或通过 /swagger-ui.html 查看交互式文档 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
