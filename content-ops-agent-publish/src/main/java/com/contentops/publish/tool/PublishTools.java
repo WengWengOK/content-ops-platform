@@ -4,6 +4,7 @@ import com.contentops.common.platform.WechatPlatformService;
 import com.contentops.common.platform.DouyinPlatformService;
 import com.contentops.common.platform.BilibiliPlatformService;
 import com.contentops.common.platform.KuaishouPlatformService;
+import com.contentops.common.platform.MarkdownConverter;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.P;
 import lombok.RequiredArgsConstructor;
@@ -21,11 +22,11 @@ import java.util.List;
  *
  * <p><b>P0 Update:</b> Tools now delegate to real platform APIs:
  * <ul>
- *   <li>{@link #publishToWechat} — WeChat Official Account draft box API</li>
+ *   <li>{@link #publishToWechat} — WeChat Official Account draft box API with auto cover image upload</li>
  *   <li>{@link #publishToDouyin} — Douyin image-text creation API</li>
  *   <li>{@link #publishToBilibili} — Bilibili video/article submission API</li>
  *   <li>{@link #publishToKuaishou} — Kuaishou video publish API</li>
- *   <li>{@link #convertToPlatformFormat} — Markdown to platform-specific rich text conversion</li>
+ *   <li>{@link #convertToPlatformFormat} — Real Markdown→HTML conversion via {@link MarkdownConverter}</li>
  * </ul>
  * When a platform's credentials are not configured, methods return graceful fallback messages.
  */
@@ -38,29 +39,36 @@ public class PublishTools {
     private final DouyinPlatformService douyinService;
     private final BilibiliPlatformService bilibiliService;
     private final KuaishouPlatformService kuaishouService;
+    private final MarkdownConverter markdownConverter;
 
     /**
      * Publish an article to the WeChat Official Account draft box (草稿箱).
      *
-     * <p>Calls the WeChat API to add the article to the draft box.
+     * <p>P0 ④: This tool now accepts a cover image URL (e.g. from DALL-E image generation)
+     * and handles the full publishing flow:
+     * <ol>
+     *   <li>If {@code coverImageUrl} is provided, upload it as a permanent material to get {@code media_id}</li>
+     *   <li>Add the article to the WeChat draft box with the uploaded cover</li>
+     * </ol>
      * The article will not be sent to followers until manually published from the dashboard.
      *
-     * @param title        article title (max 64 chars)
-     * @param htmlContent  article content in HTML format
-     * @param thumbMediaId cover image media_id (from WeChat material upload)
-     * @param digest       article summary (max 120 chars)
-     * @param author       author name
+     * @param title         article title (max 64 chars)
+     * @param htmlContent   article content in HTML format (use convertToPlatformFormat to generate)
+     * @param coverImageUrl cover image URL (e.g. DALL-E generated URL), can be empty for no cover
+     * @param digest        article summary (max 120 chars)
+     * @param author        author name
      * @return the draft media_id, or error message
      */
-    @Tool("将文章发布到微信公众号草稿箱，需要HTML格式正文和封面图media_id")
+    @Tool("将文章发布到微信公众号草稿箱。传入封面图URL会自动上传并设置封面，HTML正文建议先用convertToPlatformFormat转换")
     public String publishToWechat(
             @P("文章标题（不超过64字）") String title,
             @P("HTML格式的文章正文") String htmlContent,
-            @P("封面图的media_id（通过微信素材上传接口获取）") String thumbMediaId,
+            @P("封面图URL（可为空，传入则自动上传为微信永久素材）") String coverImageUrl,
             @P("文章摘要（不超过120字）") String digest,
             @P("作者名") String author) {
-        log.info("[Tool] publishToWechat invoked, title: {}, content length: {}",
-                title, htmlContent != null ? htmlContent.length() : 0);
+        log.info("[Tool] publishToWechat invoked, title: {}, content length: {}, hasCover: {}",
+                title, htmlContent != null ? htmlContent.length() : 0,
+                coverImageUrl != null && !coverImageUrl.isBlank());
 
         if (!wechatService.isAvailable()) {
             return "[微信发布不可用] 微信公众号平台未启用或未配置 AppID/AppSecret。\n"
@@ -68,7 +76,9 @@ public class PublishTools {
                     + "文章标题: " + title + "\n已生成HTML内容长度: " + (htmlContent != null ? htmlContent.length() : 0);
         }
 
-        String result = wechatService.addToDraft(title, htmlContent, thumbMediaId, digest, author);
+        // Use the combined method: upload cover image + add to draft box
+        String result = wechatService.publishArticleWithCover(
+                title, htmlContent, coverImageUrl, digest, author);
 
         if (result != null && !result.startsWith("[") && !result.startsWith("{")) {
             return "[微信发布成功] 草稿 media_id: " + result + "\n"
@@ -186,73 +196,44 @@ public class PublishTools {
     }
 
     /**
-     * Convert Markdown to platform-specific rich text format.
-     * This is a text transformation step that doesn't require external APIs.
+     * Convert Markdown to platform-specific rich text format using the real MarkdownConverter.
+     *
+     * <p>P0 ④: This tool now performs genuine Markdown→HTML conversion with platform-specific
+     * inline styles. The output is ready to be used directly in platform publishing APIs:
+     * <ul>
+     *   <li><b>公众号</b>: HTML with inline styles (WeChat strips CSS classes)</li>
+     *   <li><b>头条</b>: HTML with Toutiao-specific styling</li>
+     *   <li><b>小红书</b>: Plain text with emoji decoration</li>
+     *   <li><b>知乎/B站</b>: Clean semantic HTML</li>
+     *   <li><b>抖音/快手</b>: Plain text with length limits</li>
+     * </ul>
+     *
+     * @param markdown the Markdown source content
+     * @param platform target platform (公众号/小红书/头条/知乎/抖音/B站/快手)
+     * @return the converted content in the platform-appropriate format, prefixed with a status header
      */
-    @Tool("将Markdown转换为指定平台的富文本格式")
+    @Tool("将Markdown转换为指定平台的富文本格式，返回可直接用于发布的HTML或纯文本")
     public String convertToPlatformFormat(
             @P("Markdown格式的文章内容") String markdown,
             @P("目标平台：公众号/小红书/头条/知乎/抖音/B站/快手") String platform) {
         log.info("[Tool] convertToPlatformFormat invoked for platform: {}, markdown length: {}",
                 platform, markdown != null ? markdown.length() : 0);
 
-        StringBuilder result = new StringBuilder();
-        result.append("[格式转换] 已将Markdown转换为「").append(platform).append("」平台格式：\n\n");
-
-        switch (platform) {
-            case "公众号" -> {
-                result.append("转换规则：\n");
-                result.append("- 保留加粗(**text** → <strong>text</strong>)与引用(> → <blockquote>)\n");
-                result.append("- 图片标记(![alt](url) → <img src=\"url\" style=\"width:100%;text-align:center;\">)\n");
-                result.append("- 段落间插入空行，生成可直接粘贴的HTML\n");
-                result.append("- 小标题(### → <h3>)，列表保持 <ul><li> 结构\n");
-            }
-            case "小红书" -> {
-                result.append("转换规则：\n");
-                result.append("- 去除Markdown符号，转为纯文本+emoji\n");
-                result.append("- 每段控制在50字内，增加emoji装饰\n");
-                result.append("- 图片穿插标注 [图片1] [图片2]\n");
-                result.append("- 文末添加话题标签 #话题1 #话题2\n");
-            }
-            case "头条" -> {
-                result.append("转换规则：\n");
-                result.append("- 转为基础HTML，小标题用 <h3>\n");
-                result.append("- 文末追加引导关注模块\n");
-                result.append("- 图片居中显示，添加alt描述\n");
-            }
-            case "知乎" -> {
-                result.append("转换规则：\n");
-                result.append("- 保留引用块与有序列表\n");
-                result.append("- 转为知乎富文本兼容格式\n");
-                result.append("- 图片上传至知乎图床\n");
-            }
-            case "抖音" -> {
-                result.append("转换规则：\n");
-                result.append("- 提取核心文案，控制在1000字内\n");
-                result.append("- 图片需通过抖音上传接口获取image_id\n");
-                result.append("- 文案可带#话题和@用户\n");
-            }
-            case "B站" -> {
-                result.append("转换规则：\n");
-                result.append("- 专栏格式：保留标题层级和引用块\n");
-                result.append("- 视频投稿：转为简介格式，控制字数\n");
-                result.append("- 图片需上传至B站图床\n");
-            }
-            case "快手" -> {
-                result.append("转换规则：\n");
-                result.append("- 提取核心文案作为视频描述\n");
-                result.append("- 控制在100字以内\n");
-                result.append("- 视频需通过快手上传接口处理\n");
-            }
-            default -> {
-                result.append("转换规则：\n");
-                result.append("- 通用Markdown转HTML转换\n");
-                result.append("- 保留所有格式标记\n");
-            }
+        if (markdown == null || markdown.isBlank()) {
+            return "[格式转换失败] 输入内容为空。";
         }
 
-        result.append("\n转换后预览（").append(platform).append("）：内容已适配平台规范。\n");
-        result.append("可读性评分：92/100，适配耗时：约0.8秒。");
+        // Use the real MarkdownConverter to produce platform-specific output
+        String converted = markdownConverter.convert(markdown, platform);
+        int convertedLength = converted != null ? converted.length() : 0;
+
+        StringBuilder result = new StringBuilder();
+        result.append("[格式转换成功] 已将Markdown转换为「").append(platform).append("」平台格式\n");
+        result.append("转换后内容长度: ").append(convertedLength).append(" 字符\n\n");
+        result.append("── 转换后内容 ──\n");
+        result.append(converted);
+        result.append("\n── 转换后内容结束 ──\n");
+        result.append("\n提示：以上内容可直接用于该平台的发布接口。");
 
         return result.toString();
     }

@@ -4,10 +4,19 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -91,22 +100,151 @@ public class WechatPlatformService {
     /**
      * Upload an image as permanent material and return the media_id.
      *
-     * @param imageUrl URL of the image to upload (WeChat requires images hosted on their CDN)
+     * <p>P0 ④: Real implementation — downloads the image from the given URL,
+     * then uploads it as multipart/form-data to the WeChat material API.
+     * The returned media_id can be used as {@code thumb_media_id} in {@link #addToDraft}.
+     *
+     * @param imageUrl URL of the image to upload (e.g. DALL-E generated image URL or any public image URL)
      * @return media_id of the uploaded material, or null on failure
      */
     public String uploadPermanentMaterial(String imageUrl) {
         if (!isAvailable()) return null;
         String token = getAccessToken();
         if (token == null) return null;
-        try {
-            // Note: In production, this should download the image and upload as multipart.
-            // For now, we return a placeholder indicating the flow.
-            log.info("Uploading permanent material for image: {}", imageUrl);
-            return null; // Actual implementation requires multipart file upload
-        } catch (Exception e) {
-            log.error("Failed to upload permanent material", e);
+        if (imageUrl == null || imageUrl.isBlank()) {
+            log.warn("uploadPermanentMaterial called with empty imageUrl");
             return null;
         }
+        try {
+            // Step 1: Download the image bytes from the source URL
+            log.info("Downloading image for WeChat material upload: {}", imageUrl);
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(15))
+                    .build();
+            HttpRequest downloadRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(imageUrl))
+                    .timeout(Duration.ofSeconds(30))
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> downloadResponse = httpClient.send(
+                    downloadRequest, HttpResponse.BodyHandlers.ofByteArray());
+
+            if (downloadResponse.statusCode() != 200) {
+                log.error("Failed to download image: HTTP {} for URL {}",
+                        downloadResponse.statusCode(), imageUrl);
+                return null;
+            }
+            byte[] imageBytes = downloadResponse.body();
+            if (imageBytes == null || imageBytes.length == 0) {
+                log.error("Downloaded image is empty: {}", imageUrl);
+                return null;
+            }
+            String contentType = downloadResponse.headers()
+                    .firstValue("Content-Type")
+                    .orElse("image/jpeg");
+            String filename = extractFilename(imageUrl, contentType);
+            log.info("Image downloaded: {} bytes, type={}, filename={}",
+                    imageBytes.length, contentType, filename);
+
+            // Step 2: Wrap image bytes in a named ByteArrayResource
+            ByteArrayResource imageResource = new ByteArrayResource(imageBytes) {
+                @Override
+                public String getFilename() {
+                    return filename;
+                }
+            };
+
+            // Step 3: Build multipart request
+            MultipartBodyBuilder builder = new MultipartBodyBuilder();
+            builder.part("media", imageResource, MediaType.parseMediaType(contentType));
+            MultiValueMap<String, HttpEntity<?>> parts = builder.build();
+
+            // Step 4: Upload to WeChat permanent material API
+            MediaResponse response = restClient.post()
+                    .uri("/cgi-bin/material/add_material?access_token=" + token + "&type=image")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(parts)
+                    .retrieve()
+                    .body(MediaResponse.class);
+
+            if (response != null && response.getMediaId() != null) {
+                log.info("WeChat permanent material uploaded: media_id={}, url={}",
+                        response.getMediaId(), response.getUrl());
+                return response.getMediaId();
+            }
+
+            log.error("Failed to upload WeChat material: errcode={}, errmsg={}",
+                    response != null ? response.getErrcode() : -1,
+                    response != null ? response.getErrmsg() : "null response");
+            return null;
+        } catch (Exception e) {
+            log.error("Failed to upload permanent material for image: {}", imageUrl, e);
+            return null;
+        }
+    }
+
+    /**
+     * Convenience method: upload a cover image and add the article to the WeChat draft box
+     * in a single call. This is the primary entry point for P0 ④ publishing flow.
+     *
+     * <p>If {@code coverImageUrl} is provided, it will be uploaded as a permanent material
+     * first to obtain the {@code thumb_media_id}. If the upload fails or no URL is given,
+     * the article is still added to the draft box without a cover image.
+     *
+     * @param title         article title (max 64 chars)
+     * @param htmlContent   article content in HTML format (from MarkdownConverter)
+     * @param coverImageUrl cover image URL (e.g. DALL-E generated URL), may be null
+     * @param digest        article summary (max 120 chars)
+     * @param author        author name
+     * @return the draft media_id, or error message prefixed with [微信...]
+     */
+    public String publishArticleWithCover(String title, String htmlContent,
+                                          String coverImageUrl, String digest, String author) {
+        if (!isAvailable()) {
+            return "[微信发布不可用] 未配置 AppID/AppSecret 或平台未启用。";
+        }
+
+        // Upload cover image if provided
+        String thumbMediaId = null;
+        if (coverImageUrl != null && !coverImageUrl.isBlank()) {
+            thumbMediaId = uploadPermanentMaterial(coverImageUrl);
+            if (thumbMediaId == null) {
+                log.warn("Cover image upload failed, proceeding without cover: {}", coverImageUrl);
+            }
+        }
+
+        // Add article to draft box
+        String result = addToDraft(title, htmlContent, thumbMediaId, digest, author);
+
+        // Enhance success message with cover info
+        if (result != null && !result.startsWith("[") && !result.startsWith("{")) {
+            String coverInfo = thumbMediaId != null
+                    ? "封面图已上传 (media_id: " + thumbMediaId + ")"
+                    : "未上传封面图（无封面URL或上传失败）";
+            return result + "\n" + coverInfo;
+        }
+        return result;
+    }
+
+    /**
+     * Extract a sensible filename from a URL or generate one from the content type.
+     */
+    private String extractFilename(String imageUrl, String contentType) {
+        String filename = imageUrl.substring(imageUrl.lastIndexOf('/') + 1);
+        if (filename.contains("?")) {
+            filename = filename.substring(0, filename.indexOf("?"));
+        }
+        if (filename.isEmpty() || !filename.contains(".")) {
+            String ext = switch (contentType.toLowerCase()) {
+                case "image/png" -> ".png";
+                case "image/gif" -> ".gif";
+                case "image/webp" -> ".webp";
+                case "image/bmp" -> ".bmp";
+                default -> ".jpg";
+            };
+            filename = "cover_image_" + System.currentTimeMillis() + ext;
+        }
+        return filename;
     }
 
     /**
@@ -370,6 +508,20 @@ public class WechatPlatformService {
     public static class DraftResponse {
         @JsonProperty("media_id")
         private String mediaId;
+        @JsonProperty("errcode")
+        private int errcode;
+        @JsonProperty("errmsg")
+        private String errmsg;
+    }
+
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class MediaResponse {
+        @JsonProperty("media_id")
+        private String mediaId;
+        /** WeChat CDN URL for the uploaded image (only returned for image materials) */
+        @JsonProperty("url")
+        private String url;
         @JsonProperty("errcode")
         private int errcode;
         @JsonProperty("errmsg")
