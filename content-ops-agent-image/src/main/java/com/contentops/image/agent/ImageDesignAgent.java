@@ -30,16 +30,16 @@ import java.util.List;
         工作原则：
         1. 分析文章内容，提取核心视觉元素
         2. 为每个配图位置生成详细的图片描述提示词
-        3. 为不同平台生成不同尺寸的封面图
-        4. 确保配图风格与文章调性一致
-        5. 生成后可去除水印
+        3. 调用 generateImagePrompt 工具时，工具会自动调用 DALL-E 3 API 生成真实图片并返回 imageUrl
+        4. 为不同平台生成不同尺寸的封面图
+        5. 确保配图风格与文章调性一致
+        6. 将工具返回的 imageUrl 填入 ImageDesignResult 的对应字段
 
         配图规则：
         - 文章配图：2-3张，分别用于开头、文中、结尾
         - 封面图：每个目标平台一张
-          * 公众号：横版 900x383px
-          * 小红书：竖版 1080x1440px
-          * 头条：横版 660x370px
+          * 公众号/头条：横版 1792x1024（DALL-E支持的最大横版尺寸）
+          * 小红书：竖版 1024x1792（DALL-E支持的最大竖版尺寸）
         - 图片风格：暖色调、有生活气息、与内容匹配
         - 避免过于抽象或与内容无关的图片
 
@@ -133,11 +133,14 @@ public interface ImageDesignAgent {
             - 目标平台：{{targetPlatforms}}
 
             要求：
-            1. 按照确认的风格方向，调用 generateImagePrompt 工具为每个配图位置生成详细提示词
-            2. 生成 2-3 张文章配图（开头、文中、结尾各一张）
-            3. 为每个目标平台生成封面图（公众号 900x383、小红书 1080x1440、头条 660x370）
+            1. 按照确认的风格方向，调用 generateImagePrompt 工具为每个配图位置生成详细提示词并自动生成真实图片。该工具会返回 imageUrl，请将返回的 imageUrl 填入结果中
+            2. 生成 2-3 张文章配图（开头、文中、结尾各一张），根据位置选择合适尺寸：
+               开头/文中配图使用 1792x1024（横版），结尾配图使用 1024x1024（正方形）
+            3. 为每个目标平台生成封面图：
+               公众号/头条使用 1792x1024（横版），小红书使用 1024x1792（竖版）
             4. 确保所有配图风格统一，与确认的方向一致
-            5. 返回结构化的配图设计结果
+            5. 将 generateImagePrompt 返回的 imageUrl 填入 ImageDesignResult 的 imageUrl 字段
+            6. 返回结构化的配图设计结果
             """)
     ImageDesignResult generateImages(@MemoryId String memoryId,
                                      String confirmedStyle,
@@ -167,8 +170,10 @@ public interface ImageDesignAgent {
             - 文章调性：{{articleTone}}
             - 目标平台：{{targetPlatforms}}
 
-            请调用可用工具提取视觉关键词并生成图片描述提示词，按照系统提示的配图规则与输出要求，
-            返回结构化的配图设计结果（文章配图列表含prompt和位置、平台封面列表含尺寸和描述）。
+            请调用可用工具提取视觉关键词，然后调用 generateImagePrompt 工具生成图片描述提示词并自动生成真实图片。
+            工具会返回 imageUrl，请将其填入 ImageDesignResult 的对应字段。
+            按照系统提示的配图规则与输出要求，返回结构化的配图设计结果
+            （文章配图列表含prompt和imageUrl和位置、平台封面列表含尺寸和imageUrl和描述）。
             """)
     @Deprecated(since = "P1", forRemoval = false)
     ImageDesignResult designImages(@MemoryId String memoryId,

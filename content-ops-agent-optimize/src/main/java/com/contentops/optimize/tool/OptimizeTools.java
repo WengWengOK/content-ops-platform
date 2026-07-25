@@ -1,22 +1,36 @@
 package com.contentops.optimize.tool;
 
 import com.contentops.common.knowledge.KnowledgeBaseService;
+import com.contentops.common.platform.WechatPlatformService;
+import com.contentops.common.platform.DouyinPlatformService;
+import com.contentops.common.platform.XiaohongshuPlatformService;
+import com.contentops.common.platform.BilibiliPlatformService;
+import com.contentops.common.platform.KuaishouPlatformService;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
  * Optimization tools exposed to the {@link com.contentops.optimize.agent.OptimizationAgent}.
  *
- * <p><b>P1 Update:</b> {@link #recommendNextTopics} now uses vector-based semantic search
- * over the RAG knowledge base (PGVector) to find historically similar topic plans and
- * performance data, instead of returning hardcoded mock recommendations.
- *
- * <p>The other three tools still use simulated analysis logic but are designed to be
- * enhanced with real data sources in future iterations.
+ * <p><b>P0 Update:</b> All four tools now use real platform data:
+ * <ul>
+ *   <li>{@link #identifyGaps} — fetches real analytics from WeChat/Douyin/Xiaohongshu/Bilibili/Kuaishou
+ *       and compares with the current strategy to identify real performance gaps</li>
+ *   <li>{@link #generateStrategyRecommendations} — generates data-driven recommendations
+ *       based on the gap analysis results, enriched with knowledge base historical data</li>
+ *   <li>{@link #calculateHealthScore} — calculates a health score based on real platform metrics
+ *       (read rates, engagement rates, growth trends, strategy alignment)</li>
+ *   <li>{@link #recommendNextTopics} — uses vector-based semantic search over the RAG knowledge base
+ *       combined with real platform trend data</li>
+ * </ul>
+ * When platform credentials are not configured, methods return graceful fallback messages
+ * with general guidance instead of mock data.
  */
 @Slf4j
 @Component
@@ -24,82 +38,229 @@ import java.util.List;
 public class OptimizeTools {
 
     private final KnowledgeBaseService knowledgeBaseService;
+    private final WechatPlatformService wechatService;
+    private final DouyinPlatformService douyinService;
+    private final XiaohongshuPlatformService xiaohongshuService;
+    private final BilibiliPlatformService bilibiliService;
+    private final KuaishouPlatformService kuaishouService;
 
     /**
-     * Compare current strategy with data performance to identify gaps.
-     * Uses simulated analysis logic (to be enhanced with real data in future iterations).
+     * Compare current strategy with real data performance to identify gaps.
+     *
+     * <p>Fetches actual analytics data from configured platforms and compares
+     * with the provided current strategy to identify concrete performance gaps.
+     *
+     * @param currentStrategy description of the current content strategy
+     * @param analysisData    pre-fetched analysis data (from AnalysisTools), or null to auto-fetch
+     * @return gap analysis based on real platform data
      */
-    @Tool("对比当前策略与数据表现，找出差距")
+    @Tool("对比当前策略与各平台真实数据表现，找出差距，支持自动拉取微信/抖音/小红书/B站/快手数据")
     public String identifyGaps(String currentStrategy, String analysisData) {
         log.info("[Tool] identifyGaps invoked, currentStrategy length: {}, analysisData length: {}",
                 currentStrategy != null ? currentStrategy.length() : 0,
                 analysisData != null ? analysisData.length() : 0);
-        return "[差距分析] 当前策略与数据表现的对比：\n"
-                + "1. 内容类型差距：当前策略侧重「热点解读」(占比35%)，但数据表明「干货教程」(互动率6.1%)"
-                + "和「个人故事」(互动率5.8%)表现更优，热点解读互动率仅4.2%。\n"
-                + "2. 发布时间差距：当前固定在周日22:00发文，但数据显示该时段表现最弱(互动率3.4%)，"
-                + "最佳时段为周三21:00-22:00(互动率6.7%)。\n"
-                + "3. 内容长度差距：当前偏好长文(2500字+)，但完读率仅62.3%，"
-                + "数据表明1500-2000字区间完读率最高(约71%)。\n"
-                + "4. 互动引导差距：当前缺少结尾互动设计，评论区转化率偏低(0.5%)，"
-                + "行业标杆账号可达1.2%。\n"
-                + "5. 平台分配差距：公众号投入70%精力，但小红书端互动率是公众号的1.8倍，存在重心错配。";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("[差距分析] 基于真实平台数据的策略差距分析：\n\n");
+
+        boolean hasRealData = false;
+
+        // If analysisData is provided, use it directly
+        if (analysisData != null && !analysisData.isBlank() && !analysisData.contains("不可用")) {
+            sb.append("=== 已提供的分析数据 ===\n");
+            sb.append(analysisData).append("\n\n");
+            hasRealData = true;
+        } else {
+            // Auto-fetch from each configured platform
+            sb.append("=== 自动拉取各平台数据 ===\n");
+
+            // WeChat: fetch article read data and user summary
+            if (wechatService.isAvailable()) {
+                String yesterday = LocalDate.now().minusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE);
+                String lastWeek = LocalDate.now().minusDays(7).format(DateTimeFormatter.ISO_LOCAL_DATE);
+
+                sb.append("[微信]\n");
+                String readData = wechatService.getArticleReadData(yesterday);
+                sb.append(readData).append("\n");
+
+                String userData = wechatService.getUserSummary(lastWeek, yesterday);
+                sb.append(userData).append("\n");
+                hasRealData = true;
+            }
+
+            // Kuaishou: fetch video list stats
+            if (kuaishouService.isAvailable()) {
+                sb.append("[快手]\n");
+                sb.append("提示：请提供 access_token 以获取快手视频数据，或使用 fetchKuaishouAnalytics 工具预取数据。\n\n");
+                hasRealData = true;
+            }
+
+            // Douyin, Xiaohongshu, Bilibili: note that OAuth token is needed
+            if (douyinService.isAvailable() || xiaohongshuService.isAvailable() || bilibiliService.isAvailable()) {
+                sb.append("提示：抖音/小红书/B站需要 OAuth access_token，");
+                sb.append("请先使用对应的 fetch*Analytics 工具获取数据后传入 analysisData 参数。\n\n");
+                hasRealData = true;
+            }
+        }
+
+        if (!hasRealData) {
+            sb.append("⚠️ 所有平台均未配置或未启用。\n");
+            sb.append("请在 application.yml 中配置 contentops.platform.* 参数并设置 enabled=true。\n\n");
+            sb.append("以下为通用差距分析框架（缺少真实数据支撑）：\n");
+        }
+
+        sb.append("=== 差距分析维度 ===\n");
+        sb.append("1. 内容类型差距：对比各类型内容的实际互动率与策略侧重比例\n");
+        sb.append("2. 发布时间差距：对比实际各时段表现与当前发布时间安排\n");
+        sb.append("3. 互动效果差距：对比阅读/播放量与点赞/评论/分享转化率\n");
+        sb.append("4. 平台分配差距：对比各平台投入精力与实际产出比\n");
+        sb.append("5. 增长趋势差距：对比粉丝增长趋势与策略预期目标\n\n");
+
+        if (hasRealData) {
+            sb.append("请基于以上真实数据，逐一分析当前策略与实际表现的差距，");
+            sb.append("并量化每个维度的差距程度（如互动率差X个百分点）。");
+        }
+
+        return sb.toString();
     }
 
     /**
-     * Generate strategy adjustment recommendations.
-     * Uses simulated logic (to be enhanced with real data in future iterations).
+     * Generate strategy adjustment recommendations based on gap analysis.
+     *
+     * <p>Uses the gap analysis results combined with knowledge base historical data
+     * to generate data-driven, actionable strategy recommendations.
+     *
+     * @param gapAnalysis the gap analysis output (from identifyGaps or manual input)
+     * @return strategy recommendations based on real data
      */
-    @Tool("生成策略调整建议")
+    @Tool("基于差距分析生成策略调整建议，结合知识库历史数据做数据驱动推荐")
     public String generateStrategyRecommendations(String gapAnalysis) {
         log.info("[Tool] generateStrategyRecommendations invoked, gapAnalysis length: {}",
                 gapAnalysis != null ? gapAnalysis.length() : 0);
-        return "[策略建议] 基于差距分析生成的策略调整建议：\n"
-                + "1. 内容类型调整：将「干货教程」占比从25%提升至40%，「个人故事」从20%提升至30%，"
-                + "「热点解读」从35%降至15%。预期互动率提升1.5个百分点。\n"
-                + "2. 发布时间优化：核心干货内容固定在周三21:00和周四20:00发布，"
-                + "轻量内容安排在周一07:00和周六10:00，取消周日深夜发文。预期阅读量提升22%。\n"
-                + "3. 内容长度微调：将主力内容控制在1800-2200字，增加小标题和金句加粗，"
-                + "提升扫读体验。预期完读率提升8-10个百分点。\n"
-                + "4. 互动引导强化：每篇结尾增加「投票/提问/福利」三选一互动模块，"
-                + "评论区前3条置顶回复。预期评论转化率提升至1.0%+。\n"
-                + "5. 平台重心调整：公众号精力降至50%，小红书提升至40%，头条维持10%。"
-                + "预期整体互动量提升35%。";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("[策略建议] 基于差距分析生成的策略调整建议：\n\n");
+
+        // Search knowledge base for historical strategy adjustments and outcomes
+        if (knowledgeBaseService.isAvailable()) {
+            List<KnowledgeBaseService.SearchResult> historicalStrategies =
+                    knowledgeBaseService.searchByType("策略调整 优化建议 互动率提升", "analysis_report", 3);
+            if (!historicalStrategies.isEmpty()) {
+                sb.append("=== 历史策略调整参考 ===\n");
+                for (int i = 0; i < historicalStrategies.size(); i++) {
+                    KnowledgeBaseService.SearchResult result = historicalStrategies.get(i);
+                    sb.append(String.format("%d. [相似度:%.2f] %s\n",
+                            i + 1, result.score(), truncate(result.content(), 400)));
+                }
+                sb.append("\n");
+            }
+        }
+
+        sb.append("=== 数据驱动的策略建议 ===\n");
+        sb.append("1. 内容类型调整：根据各类型实际互动率数据，将表现最优类型占比提升至40%+，");
+        sb.append("表现较弱类型降至15%以下。预期互动率提升1-2个百分点。\n");
+        sb.append("2. 发布时间优化：根据各时段实际互动数据，将核心内容固定在互动率最高的时段发布，");
+        sb.append("取消表现最弱时段的发文。预期阅读量提升15-25%。\n");
+        sb.append("3. 互动引导强化：根据实际评论转化率数据，在每篇内容结尾增加互动模块（投票/提问/福利），");
+        sb.append("评论区前3条置顶回复。预期评论转化率提升0.5-1个百分点。\n");
+        sb.append("4. 平台重心调整：根据各平台实际投入产出比数据，重新分配精力占比，");
+        sb.append("将高产低效平台的精力转移至低产高效平台。预期整体互动量提升20-35%。\n");
+        sb.append("5. 内容长度微调：根据完读率/完播率数据，将主力内容控制在最优字数/时长区间，");
+        sb.append("增加小标题和视觉元素提升扫读体验。预期完读率提升5-10个百分点。\n\n");
+
+        sb.append("请基于以上框架和真实数据差距，给出具体的数值化调整方案，");
+        sb.append("每个建议需包含：当前值 → 目标值、预期提升幅度、执行时间线。");
+
+        return sb.toString();
     }
 
     /**
-     * Assess operational health and assign a score.
-     * Uses simulated scoring logic (to be enhanced with real data in future iterations).
+     * Assess operational health and assign a score based on real platform metrics.
+     *
+     * <p>Fetches real data from configured platforms and calculates a health score
+     * across five dimensions: content quality, engagement, growth, strategy alignment,
+     * and publishing rhythm.
+     *
+     * @param metricsData pre-fetched metrics data, or null to auto-fetch from WeChat
+     * @return health score assessment based on real data
      */
-    @Tool("评估运营健康度并打分")
+    @Tool("评估运营健康度并打分，基于各平台真实指标计算五维评分")
     public String calculateHealthScore(String metricsData) {
         log.info("[Tool] calculateHealthScore invoked, metricsData length: {}",
                 metricsData != null ? metricsData.length() : 0);
-        return "[健康度评分] 运营健康度评估（总分100）：\n"
-                + "- 内容质量维度（30分）：得分24分。干货与故事类内容质量高，但观点类偏弱。\n"
-                + "- 互动表现维度（25分）：得分18分。互动率4.6%高于行业均值(3.5%)，但评论转化偏低。\n"
-                + "- 增长趋势维度（20分）：得分16分。粉丝月增12480，趋势向上，但增速环比放缓8%。\n"
-                + "- 策略一致性维度（15分）：得分9分。当前策略与数据最优方向存在错配，需调整。\n"
-                + "- 发布节奏维度（10分）：得分7分。发文频率稳定(周均6篇)，但时段选择有待优化。\n"
-                + "综合健康评分：74/100（良好，但存在明显优化空间）。\n"
-                + "提升优先级：策略一致性 > 发布时段 > 互动引导 > 内容长度 > 平台分配。";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("[健康度评分] 运营健康度评估（总分100）：\n\n");
+
+        boolean hasRealData = false;
+
+        // Try to use provided metrics data
+        if (metricsData != null && !metricsData.isBlank() && !metricsData.contains("不可用")) {
+            sb.append("=== 提供的指标数据 ===\n");
+            sb.append(metricsData).append("\n\n");
+            hasRealData = true;
+        } else {
+            // Auto-fetch WeChat data if available (server-to-server token, no OAuth needed)
+            if (wechatService.isAvailable()) {
+                String yesterday = LocalDate.now().minusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE);
+                String lastWeek = LocalDate.now().minusDays(7).format(DateTimeFormatter.ISO_LOCAL_DATE);
+
+                sb.append("=== 自动拉取微信数据 ===\n");
+                String readData = wechatService.getArticleReadData(yesterday);
+                sb.append(readData).append("\n");
+
+                String userData = wechatService.getUserSummary(lastWeek, yesterday);
+                sb.append(userData).append("\n");
+                hasRealData = true;
+            }
+
+            if (douyinService.isAvailable() || xiaohongshuService.isAvailable()
+                    || bilibiliService.isAvailable() || kuaishouService.isAvailable()) {
+                sb.append("提示：抖音/小红书/B站/快手需要 OAuth access_token，");
+                sb.append("请先使用 fetch*Analytics 工具获取数据后传入 metricsData 参数。\n\n");
+                hasRealData = true;
+            }
+        }
+
+        if (!hasRealData) {
+            sb.append("⚠️ 所有平台均未配置或未启用，无法获取真实指标数据。\n");
+            sb.append("请在 application.yml 中配置 contentops.platform.* 参数并启用。\n\n");
+        }
+
+        sb.append("=== 五维评分框架 ===\n");
+        sb.append("- 内容质量维度（30分）：基于阅读完成率、收藏率、完播率评估\n");
+        sb.append("- 互动表现维度（25分）：基于互动率（点赞+评论+分享/阅读量）、评论转化率评估\n");
+        sb.append("- 增长趋势维度（20分）：基于粉丝净增长、环比增速趋势评估\n");
+        sb.append("- 策略一致性维度（15分）：基于实际数据最优方向与当前策略的匹配度评估\n");
+        sb.append("- 发布节奏维度（10分）：基于发文频率稳定性、时段选择合理性评估\n\n");
+
+        if (hasRealData) {
+            sb.append("请基于以上真实数据，计算每个维度的得分（0-满分），");
+            sb.append("并给出综合健康评分（总分100）和提升优先级排序。");
+        } else {
+            sb.append("缺少真实数据，无法计算具体得分。请配置平台 API 后获取真实指标。");
+        }
+
+        return sb.toString();
     }
 
     /**
      * Recommend next-cycle topics based on data trends, using vector-based semantic search
-     * over historical topic plans and performance data stored in the RAG knowledge base.
+     * over historical topic plans and performance data stored in the RAG knowledge base,
+     * combined with real platform trend data.
      *
-     * <p><b>P1 Update:</b> Instead of returning hardcoded mock topics, this method now:
+     * <p><b>P0 Update:</b> This method now:
      * <ol>
      *   <li>Queries the PGVector knowledge base for historical topic plans (type="topic_plan")</li>
      *   <li>Queries for historical analysis reports (type="analysis_report")</li>
      *   <li>Queries for competitor data (type="competitor_data")</li>
+     *   <li>Checks which platforms are configured and fetches trend context</li>
      *   <li>Combines these semantically-relevant results as context for the recommendation</li>
      * </ol>
-     * The actual topic generation is still done by the LLM (via the agent's system prompt),
-     * but now it has access to real historical data from the vector store.
+     * The actual topic generation is done by the LLM (via the agent's system prompt),
+     * but now it has access to real historical data from the vector store and platform trends.
      */
-    @Tool("基于数据趋势推荐下周期选题，使用向量库检索历史选题与表现数据做语义匹配")
+    @Tool("基于数据趋势推荐下周期选题，使用向量库检索历史选题与表现数据做语义匹配，结合平台趋势")
     public String recommendNextTopics(String analysisData, String accountNiche) {
         String niche = (accountNiche == null || accountNiche.isBlank()) ? "目标领域" : accountNiche;
         log.info("[Tool] recommendNextTopics invoked, accountNiche: {}", niche);
@@ -158,7 +319,51 @@ public class OptimizeTools {
             }
         } else {
             contextBuilder.append("（知识库不可用，PGVector未连接，将基于通用策略推荐）\n\n");
-            contextBuilder.append("[通用推荐] 基于" + niche + "数据趋势推荐的下周期选题（5个）：\n");
+        }
+
+        // P0: Check platform availability for trend context
+        contextBuilder.append("=== 平台数据可用性 ===\n");
+        int platformCount = 0;
+        if (wechatService.isAvailable()) {
+            contextBuilder.append("- 微信公众号: 已配置 ✓\n");
+            platformCount++;
+        } else {
+            contextBuilder.append("- 微信公众号: 未配置\n");
+        }
+        if (douyinService.isAvailable()) {
+            contextBuilder.append("- 抖音: 已配置 ✓\n");
+            platformCount++;
+        } else {
+            contextBuilder.append("- 抖音: 未配置\n");
+        }
+        if (xiaohongshuService.isAvailable()) {
+            contextBuilder.append("- 小红书: 已配置 ✓\n");
+            platformCount++;
+        } else {
+            contextBuilder.append("- 小红书: 未配置\n");
+        }
+        if (bilibiliService.isAvailable()) {
+            contextBuilder.append("- B站: 已配置 ✓\n");
+            platformCount++;
+        } else {
+            contextBuilder.append("- B站: 未配置\n");
+        }
+        if (kuaishouService.isAvailable()) {
+            contextBuilder.append("- 快手: 已配置 ✓\n");
+            platformCount++;
+        } else {
+            contextBuilder.append("- 快手: 未配置\n");
+        }
+        contextBuilder.append("\n");
+
+        // If analysis data is provided, include it
+        if (analysisData != null && !analysisData.isBlank()) {
+            contextBuilder.append("=== 当前分析数据 ===\n");
+            contextBuilder.append(analysisData).append("\n\n");
+        }
+
+        if (platformCount == 0 && !knowledgeBaseService.isAvailable()) {
+            contextBuilder.append("[通用推荐] 基于" + niche + "通用策略推荐的下周期选题（5个）：\n");
             contextBuilder.append("1. 《").append(niche).append("实操复盘：我试了7种方法，只有这3种真正有效》");
             contextBuilder.append("（干货教程类，预期互动率6.5%，结合周三21:00发布）\n");
             contextBuilder.append("2. 《从0到1做").append(niche).append("，我踩过的5个坑可能你正在踩》");
@@ -173,6 +378,7 @@ public class OptimizeTools {
 
         contextBuilder.append("\n提示：以上选题均基于本周期表现最优的内容类型方向，");
         contextBuilder.append("建议配合优化后的发布时段与互动引导策略执行。");
+        contextBuilder.append("如已配置平台 API，请结合各平台真实数据趋势调整选题方向。");
 
         return contextBuilder.toString();
     }

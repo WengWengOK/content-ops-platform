@@ -87,6 +87,36 @@ contentops:
         version: v2
         variant: A
 
+  # Platform API configuration (P0: Platform API integration)
+  platform:
+    image-generation:
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      model: dall-e-3
+      size: 1024x1024
+      quality: standard
+      style: vivid
+    wechat:
+      app-id: ${WECHAT_APP_ID:}
+      app-secret: ${WECHAT_APP_SECRET:}
+      enabled: false
+    douyin:
+      client-key: ${DOUYIN_CLIENT_KEY:}
+      client-secret: ${DOUYIN_CLIENT_SECRET:}
+      enabled: false
+    xiaohongshu:
+      app-id: ${XHS_APP_ID:}
+      app-secret: ${XHS_APP_SECRET:}
+      enabled: false
+    bilibili:
+      app-id: ${BILI_APP_ID:}
+      app-secret: ${BILI_APP_SECRET:}
+      enabled: false
+    kuaishou:
+      app-id: ${KS_APP_ID:}
+      app-secret: ${KS_APP_SECRET:}
+      enabled: false
+
 eureka:
   client:
     service-url:
