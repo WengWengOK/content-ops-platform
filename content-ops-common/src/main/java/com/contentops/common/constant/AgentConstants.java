@@ -49,6 +49,15 @@ public final class AgentConstants {
     public static final String SERVICE_OPTIMIZE = "content-ops-agent-optimize";
     public static final String SERVICE_ORCHESTRATOR = "content-ops-orchestrator";
 
+    /** Context paths for each service (must match server.servlet.context-path in application.yml) */
+    public static final String CONTEXT_PATH_TOPIC = "/topic-agent";
+    public static final String CONTEXT_PATH_CONTENT = "/content-agent";
+    public static final String CONTEXT_PATH_IMAGE = "/image-agent";
+    public static final String CONTEXT_PATH_PUBLISH = "/publish-agent";
+    public static final String CONTEXT_PATH_ANALYSIS = "/analysis-agent";
+    public static final String CONTEXT_PATH_OPTIMIZE = "/optimize-agent";
+    public static final String CONTEXT_PATH_ORCHESTRATOR = "/orchestrator";
+
     /** Redis key prefix for discussion sessions */
     public static final String DISCUSSION_SESSION_PREFIX = "contentops:discussion:";
 

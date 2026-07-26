@@ -17,13 +17,13 @@ import java.util.Map;
  */
 public class AgentFeignClients {
 
-    @FeignClient(name = AgentConstants.SERVICE_TOPIC)
+    @FeignClient(name = AgentConstants.SERVICE_TOPIC, path = AgentConstants.CONTEXT_PATH_TOPIC)
     public interface TopicAgentClient {
         @PostMapping("/api/v1/topic/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
     }
 
-    @FeignClient(name = AgentConstants.SERVICE_CONTENT)
+    @FeignClient(name = AgentConstants.SERVICE_CONTENT, path = AgentConstants.CONTEXT_PATH_CONTENT)
     public interface ContentAgentClient {
         @PostMapping("/api/v1/content/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
@@ -37,7 +37,7 @@ public class AgentFeignClients {
         AgentResponse<Map<String, Object>> generateDraft(@RequestBody AgentTaskRequest request);
     }
 
-    @FeignClient(name = AgentConstants.SERVICE_IMAGE)
+    @FeignClient(name = AgentConstants.SERVICE_IMAGE, path = AgentConstants.CONTEXT_PATH_IMAGE)
     public interface ImageAgentClient {
         @PostMapping("/api/v1/image/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
@@ -51,19 +51,19 @@ public class AgentFeignClients {
         AgentResponse<Map<String, Object>> generateImages(@RequestBody AgentTaskRequest request);
     }
 
-    @FeignClient(name = AgentConstants.SERVICE_PUBLISH)
+    @FeignClient(name = AgentConstants.SERVICE_PUBLISH, path = AgentConstants.CONTEXT_PATH_PUBLISH)
     public interface PublishAgentClient {
         @PostMapping("/api/v1/publish/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
     }
 
-    @FeignClient(name = AgentConstants.SERVICE_ANALYSIS)
+    @FeignClient(name = AgentConstants.SERVICE_ANALYSIS, path = AgentConstants.CONTEXT_PATH_ANALYSIS)
     public interface AnalysisAgentClient {
         @PostMapping("/api/v1/analysis/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
     }
 
-    @FeignClient(name = AgentConstants.SERVICE_OPTIMIZE)
+    @FeignClient(name = AgentConstants.SERVICE_OPTIMIZE, path = AgentConstants.CONTEXT_PATH_OPTIMIZE)
     public interface OptimizeAgentClient {
         @PostMapping("/api/v1/optimize/execute")
         AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request);
@@ -73,7 +73,7 @@ public class AgentFeignClients {
      * Feign client for the Discussion Agent (hosted in the Topic Agent service).
      * Supports the multi-turn "把TRAE当讨论对象" discussion workflow.
      */
-    @FeignClient(name = AgentConstants.SERVICE_TOPIC)
+    @FeignClient(name = AgentConstants.SERVICE_TOPIC, path = AgentConstants.CONTEXT_PATH_TOPIC)
     public interface DiscussionAgentClient {
 
         @PostMapping("/api/v1/discussion/start")

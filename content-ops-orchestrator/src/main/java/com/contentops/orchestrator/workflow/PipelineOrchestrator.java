@@ -9,7 +9,11 @@ import com.contentops.common.enums.TaskStatus;
 import com.contentops.common.event.AgentTaskRequest;
 import com.contentops.common.event.StageTransitionEvent;
 import com.contentops.common.util.WorkflowStateManager;
+import com.contentops.common.quality.QualityAssessmentService;
+import com.contentops.common.quality.QualityScore;
+import com.contentops.common.methodology.HumanActionChecklistGenerator;
 import com.contentops.orchestrator.kafka.AsyncTaskProducer;
+import com.contentops.orchestrator.resilience.ResilientAgentClient;
 import com.contentops.orchestrator.service.AgentFeignClients.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +21,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -47,8 +52,13 @@ public class PipelineOrchestrator {
     private final WorkflowStateManager stateManager;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final AsyncTaskProducer asyncTaskProducer;
+    private final ResilientAgentClient resilientClient;
 
-    // Feign clients for each agent
+    // P2 服务集成：质量评估 + 人工行动清单
+    private final QualityAssessmentService qualityAssessmentService;
+    private final HumanActionChecklistGenerator checklistGenerator;
+
+    // Feign clients (kept for legacy compatibility; routed through ResilientAgentClient)
     private final TopicAgentClient topicAgentClient;
     private final ContentAgentClient contentAgentClient;
     private final ImageAgentClient imageAgentClient;
@@ -253,27 +263,29 @@ public class PipelineOrchestrator {
 
     /**
      * Route the task to the appropriate agent microservice (non-sub-stage stages).
+     * P1 修复：通过 ResilientAgentClient 调用，获得熔断 + 重试保护。
      */
     private AgentResponse<Map<String, Object>> routeToAgent(AgentStage stage, AgentTaskRequest request) {
         return switch (stage) {
-            case TOPIC_PLANNING -> topicAgentClient.execute(request);
-            case CONTENT_CREATION -> contentAgentClient.execute(request);
-            case IMAGE_DESIGN -> imageAgentClient.execute(request);
-            case PUBLISHING -> publishAgentClient.execute(request);
-            case DATA_ANALYSIS -> analysisAgentClient.execute(request);
-            case OPTIMIZATION -> optimizeAgentClient.execute(request);
+            case TOPIC_PLANNING -> resilientClient.callTopic(request);
+            case CONTENT_CREATION -> resilientClient.callContentExecute(request);
+            case IMAGE_DESIGN -> resilientClient.callImageExecute(request);
+            case PUBLISHING -> resilientClient.callPublish(request);
+            case DATA_ANALYSIS -> resilientClient.callAnalysis(request);
+            case OPTIMIZATION -> resilientClient.callOptimize(request);
         };
     }
 
     /**
      * Route the task to the appropriate sub-stage endpoint.
+     * P1 修复：通过 ResilientAgentClient 调用，获得熔断 + 重试保护。
      */
     private AgentResponse<Map<String, Object>> routeToSubStage(SubStage subStage, AgentTaskRequest request) {
         return switch (subStage) {
-            case CONTENT_OUTLINE -> contentAgentClient.generateOutline(request);
-            case CONTENT_DRAFT -> contentAgentClient.generateDraft(request);
-            case IMAGE_STYLES -> imageAgentClient.generateStyleDirections(request);
-            case IMAGE_GENERATE -> imageAgentClient.generateImages(request);
+            case CONTENT_OUTLINE -> resilientClient.callContentOutline(request);
+            case CONTENT_DRAFT -> resilientClient.callContentDraft(request);
+            case IMAGE_STYLES -> resilientClient.callImageStyles(request);
+            case IMAGE_GENERATE -> resilientClient.callImageGenerate(request);
         };
     }
 
@@ -397,6 +409,9 @@ public class PipelineOrchestrator {
             context.getAccumulatedArtifacts().put(stage.getCode(), response.getData());
         }
 
+        // P2 集成：质量评估 + 人工行动清单
+        assessAndEnrich(context, stage, response.getData());
+
         // ── A计划：循环边界检查（OPTIMIZATION → TOPIC_PLANNING） ──
         AgentStage nextStage = stage.next();
         if (isCycleBoundary(stage, nextStage)) {
@@ -428,6 +443,105 @@ public class PipelineOrchestrator {
 
             // FIX: 修复自动推进断裂 —— 立即触发下一阶段执行
             executeStage(context);
+        }
+    }
+
+    // ==================== P2 集成：质量评估与人工行动清单 ====================
+
+    /**
+     * P2 集成：对阶段输出进行质量评估，并生成人工行动清单。
+     *
+     * <p>将质量评分和行动清单存储到 accumulatedArtifacts 中，供前端展示和后续优化参考。
+     * 质量评分不阻断流程（低分仅记录警告），由 AutoRetryService 在需要时触发重试。
+     *
+     * @param context 工作流上下文
+     * @param stage   当前阶段
+     * @param data    阶段输出数据
+     */
+    private void assessAndEnrich(TaskContext context, AgentStage stage, Map<String, Object> data) {
+        if (data == null) return;
+
+        try {
+            // 提取文本内容用于质量评估
+            String content = extractTextContent(data);
+
+            // 质量评估
+            QualityScore qualityScore = qualityAssessmentService.assessQuality(stage, content);
+            if (context.getAccumulatedArtifacts() == null) {
+                context.setAccumulatedArtifacts(new java.util.HashMap<>());
+            }
+            Map<String, Object> qualityMeta = new java.util.HashMap<>();
+            qualityMeta.put("score", qualityScore.getTotalScore());
+            qualityMeta.put("logic", qualityScore.getLogic());
+            qualityMeta.put("readability", qualityScore.getReadability());
+            qualityMeta.put("originality", qualityScore.getOriginality());
+            qualityMeta.put("suggestions", qualityScore.getSuggestions());
+            context.getAccumulatedArtifacts().put(stage.getCode() + ":quality", qualityMeta);
+
+            if (qualityScore.getTotalScore() < 60) {
+                log.warn("[Workflow:{}] Stage {} quality score {} below threshold. Suggestions: {}",
+                        context.getWorkflowId(), stage.getCode(),
+                        qualityScore.getTotalScore(), qualityScore.getSuggestions());
+            } else {
+                log.info("[Workflow:{}] Stage {} quality score: {} (logic={}, readability={}, originality={})",
+                        context.getWorkflowId(), stage.getCode(),
+                        qualityScore.getTotalScore(),
+                        qualityScore.getLogic(), qualityScore.getReadability(),
+                        qualityScore.getOriginality());
+            }
+
+            // 人工行动清单（"帮助而非替代"方法论）
+            List<String> checklist = checklistGenerator.generateChecklist(stage, data);
+            if (checklist != null && !checklist.isEmpty()) {
+                context.getAccumulatedArtifacts().put(stage.getCode() + ":checklist", checklist);
+                log.info("[Workflow:{}] Stage {} generated {} human action items",
+                        context.getWorkflowId(), stage.getCode(), checklist.size());
+            }
+        } catch (Exception e) {
+            log.warn("[Workflow:{}] Quality assessment failed for stage {}, continuing pipeline: {}",
+                    context.getWorkflowId(), stage.getCode(), e.getMessage());
+        }
+    }
+
+    /**
+     * 从阶段输出数据中提取文本内容用于质量评估。
+     */
+    private String extractTextContent(Map<String, Object> data) {
+        StringBuilder sb = new StringBuilder();
+        for (Object value : data.values()) {
+            if (value instanceof String s && !s.isBlank()) {
+                sb.append(s).append("\n");
+            } else if (value instanceof Map<?, ?> m) {
+                extractTextFromMap(m, sb);
+            } else if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof String s) {
+                        sb.append(s).append("\n");
+                    } else if (item instanceof Map<?, ?> m) {
+                        extractTextFromMap(m, sb);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void extractTextFromMap(Map<?, ?> map, StringBuilder sb) {
+        for (Object value : map.values()) {
+            if (value instanceof String s && !s.isBlank()) {
+                sb.append(s).append("\n");
+            } else if (value instanceof Map<?, ?> m) {
+                extractTextFromMap(m, sb);
+            } else if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof String s) {
+                        sb.append(s).append("\n");
+                    } else if (item instanceof Map<?, ?> m2) {
+                        extractTextFromMap(m2, sb);
+                    }
+                }
+            }
         }
     }
 

@@ -62,6 +62,44 @@ public class ResilientAgentClient {
     }
 
     /**
+     * Content Agent 一次性调用（带熔断 + 重试，兼容非渐进式路径）。
+     */
+    @CircuitBreaker(name = "contentAgent", fallbackMethod = "contentFallback")
+    @Retry(name = "agentRetry")
+    public AgentResponse<Map<String, Object>> callContentExecute(AgentTaskRequest request) {
+        long start = System.currentTimeMillis();
+        try {
+            AgentResponse<Map<String, Object>> response = contentAgentClient.execute(request);
+            metricsService.recordAgentCall("content-creation", response.isSuccess());
+            metricsService.recordAgentDuration("content-creation",
+                    Duration.ofMillis(System.currentTimeMillis() - start));
+            return response;
+        } catch (Exception e) {
+            metricsService.recordAgentCall("content-creation", false);
+            throw e;
+        }
+    }
+
+    /**
+     * Image Agent 一次性调用（带熔断 + 重试，兼容非渐进式路径）。
+     */
+    @CircuitBreaker(name = "imageAgent", fallbackMethod = "imageFallback")
+    @Retry(name = "agentRetry")
+    public AgentResponse<Map<String, Object>> callImageExecute(AgentTaskRequest request) {
+        long start = System.currentTimeMillis();
+        try {
+            AgentResponse<Map<String, Object>> response = imageAgentClient.execute(request);
+            metricsService.recordAgentCall("image-design", response.isSuccess());
+            metricsService.recordAgentDuration("image-design",
+                    Duration.ofMillis(System.currentTimeMillis() - start));
+            return response;
+        } catch (Exception e) {
+            metricsService.recordAgentCall("image-design", false);
+            throw e;
+        }
+    }
+
+    /**
      * Publish Agent 调用（带熔断 + 重试）。
      */
     @CircuitBreaker(name = "publishAgent", fallbackMethod = "publishFallback")

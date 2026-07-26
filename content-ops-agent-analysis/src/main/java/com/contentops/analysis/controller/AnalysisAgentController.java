@@ -7,6 +7,7 @@ import com.contentops.common.dto.AnalysisReport;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.methodology.TrendAggregationEnforcer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +22,9 @@ import java.util.Map;
  * REST entry point for the Data Analysis Agent.
  *
  * <p>Consumed by the orchestrator (via Feign) at {@code POST /api/v1/analysis/execute}.
+ *
+ * <p><b>P2 集成：</b>通过 {@link TrendAggregationEnforcer} 强制月度趋势聚合，
+ * 确保"趋势而非单篇"方法论在代码层面被执行。
  */
 @Slf4j
 @RestController
@@ -29,6 +33,7 @@ import java.util.Map;
 public class AnalysisAgentController {
 
     private final DataAnalysisAgent dataAnalysisAgent;
+    private final TrendAggregationEnforcer trendEnforcer;
 
     @PostMapping("/execute")
     public AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request) {
@@ -55,6 +60,15 @@ public class AnalysisAgentController {
                     previousAnalysisSummary
             );
 
+            // P2 集成：强制月度趋势聚合（"趋势而非单篇"方法论）
+            trendEnforcer.enforceMonthlyAggregation(result, rawData != null ? rawData : "");
+            TrendAggregationEnforcer.ValidationResult validation =
+                    trendEnforcer.validateTrendCoverage(result);
+            if (!validation.valid()) {
+                log.warn("[Workflow:{}] Trend coverage validation: {}",
+                        request.getWorkflowId(), validation.message());
+            }
+
             Map<String, Object> data = new HashMap<>();
             data.put("keyMetrics", result.getKeyMetrics());
             data.put("categoryPerformance", result.getCategoryPerformance());
@@ -70,10 +84,11 @@ public class AnalysisAgentController {
                     result.getInsights() != null ? result.getInsights().size() : 0);
             metadata.put("recommendationCount",
                     result.getRecommendations() != null ? result.getRecommendations().size() : 0);
+            metadata.put("trendValidation", validation.valid());
 
-            log.info("Data analysis completed: workflowId={}, insightCount={}, recommendationCount={}",
+            log.info("Data analysis completed: workflowId={}, insightCount={}, recommendationCount={}, trendValid={}",
                     request.getWorkflowId(), metadata.get("insightCount"),
-                    metadata.get("recommendationCount"));
+                    metadata.get("recommendationCount"), validation.valid());
             return AgentResponse.success(AgentStage.DATA_ANALYSIS.getCode(), data, metadata);
         } catch (Exception e) {
             log.error("Data analysis failed: workflowId={}", request.getWorkflowId(), e);
