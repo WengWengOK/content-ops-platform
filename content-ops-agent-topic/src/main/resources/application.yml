@@ -113,6 +113,11 @@ management:
   tracing:
     sampling:
       probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://jaeger:4317}
+      transport: grpc
+      export-step: 10s
 
 logging:
   level:

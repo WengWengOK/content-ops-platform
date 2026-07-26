@@ -8,6 +8,8 @@ import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AsyncTaskEvent;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.metrics.TokenEstimator;
+import com.contentops.common.metrics.TokenMetricsService;
 import com.contentops.content.agent.ContentCreationAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +41,7 @@ public class ContentAsyncTaskConsumer {
 
     private final ContentCreationAgent contentCreationAgent;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final TokenMetricsService tokenMetricsService;
 
     /**
      * 消费异步任务请求。
@@ -111,6 +114,10 @@ public class ContentAsyncTaskConsumer {
                 data.put("topic", topic);
                 data.put("stage", "outline");
                 data.put("needsConfirmation", true);
+
+                inputTokens = TokenEstimator.estimate(topic, angle, additionalContext, personalExperience,
+                        profile.getNiche(), profile.getTargetAudience(), profile.getTone());
+                outputTokens = TokenEstimator.estimate(outlineResult);
             }
             case "draft" -> {
                 String topic = getStr(inputs, artifacts, "topic", "selectedTopic");
@@ -130,6 +137,11 @@ public class ContentAsyncTaskConsumer {
                 data.put("tags", draftResult.getTags());
                 data.put("summary", draftResult.getSummary());
                 data.put("stage", "draft");
+
+                inputTokens = TokenEstimator.estimate(confirmedOutline, topic, personalExperience,
+                        profile.getNiche(), profile.getTone());
+                outputTokens = TokenEstimator.estimate(draftResult.getDraftContent(),
+                        draftResult.getOutline(), draftResult.getSummary());
             }
             default -> {
                 return buildFailureResult(request,
@@ -138,6 +150,14 @@ public class ContentAsyncTaskConsumer {
         }
 
         long durationMs = System.currentTimeMillis() - startTime;
+
+        // P1: 记录 token 消耗与调用指标
+        tokenMetricsService.recordTokenUsage(request.getWorkflowId(),
+                AgentStage.CONTENT_CREATION.getCode(), inputTokens, outputTokens);
+        tokenMetricsService.recordAgentCall(AgentStage.CONTENT_CREATION.getCode(), true);
+        tokenMetricsService.recordAgentDuration(AgentStage.CONTENT_CREATION.getCode(),
+                java.time.Duration.ofMillis(durationMs));
+
         return AsyncTaskEvent.AsyncTaskResult.builder()
                 .taskId(request.getTaskId())
                 .workflowId(request.getWorkflowId())

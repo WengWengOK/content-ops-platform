@@ -6,6 +6,8 @@ import com.contentops.common.dto.StyleDirectionResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AsyncTaskEvent;
+import com.contentops.common.metrics.TokenEstimator;
+import com.contentops.common.metrics.TokenMetricsService;
 import com.contentops.image.agent.ImageDesignAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +42,7 @@ public class ImageAsyncTaskConsumer {
 
     private final ImageDesignAgent imageDesignAgent;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final TokenMetricsService tokenMetricsService;
 
     /**
      * 消费异步任务请求。
@@ -99,6 +102,8 @@ public class ImageAsyncTaskConsumer {
                 ? DEFAULT_PLATFORMS : profile.getPlatforms();
 
         Map<String, Object> data;
+        int inputTokens = 0;
+        int outputTokens = 0;
 
         switch (subStage != null ? subStage : "") {
             case "styles" -> {
@@ -110,6 +115,9 @@ public class ImageAsyncTaskConsumer {
                 data.put("articleTitle", articleTitle);
                 data.put("stage", "styles");
                 data.put("needsConfirmation", true);
+
+                inputTokens = TokenEstimator.estimate(articleTitle, articleContent, articleTone);
+                outputTokens = TokenEstimator.estimate(stylesResult);
             }
             case "generate" -> {
                 String confirmedStyle = getStr(inputs, artifacts, "confirmedStyle");
@@ -126,6 +134,9 @@ public class ImageAsyncTaskConsumer {
                 data.put("images", generateResult.getImages());
                 data.put("covers", generateResult.getCovers());
                 data.put("stage", "generate");
+
+                inputTokens = TokenEstimator.estimate(confirmedStyle, articleTitle, articleContent, articleTone);
+                outputTokens = TokenEstimator.estimate(generateResult);
             }
             default -> {
                 return buildFailureResult(request,
@@ -134,6 +145,14 @@ public class ImageAsyncTaskConsumer {
         }
 
         long durationMs = System.currentTimeMillis() - startTime;
+
+        // P1: 记录 token 消耗与调用指标
+        tokenMetricsService.recordTokenUsage(request.getWorkflowId(),
+                AgentStage.IMAGE_DESIGN.getCode(), inputTokens, outputTokens);
+        tokenMetricsService.recordAgentCall(AgentStage.IMAGE_DESIGN.getCode(), true);
+        tokenMetricsService.recordAgentDuration(AgentStage.IMAGE_DESIGN.getCode(),
+                java.time.Duration.ofMillis(durationMs));
+
         return AsyncTaskEvent.AsyncTaskResult.builder()
                 .taskId(request.getTaskId())
                 .workflowId(request.getWorkflowId())
@@ -141,6 +160,8 @@ public class ImageAsyncTaskConsumer {
                 .subStage(subStage)
                 .success(true)
                 .data(data)
+                .inputTokens(inputTokens)
+                .outputTokens(outputTokens)
                 .durationMs(durationMs)
                 .completedAt(LocalDateTime.now())
                 .build();

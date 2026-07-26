@@ -17,11 +17,11 @@ Based on the original TRAE Work content operations methodology and current imple
 
 > Original article: "把TRAE当讨论对象，而不是代写工具"
 
-- [ ] Integrate LangChain4j ChatMemoryProvider with Redis backend
-- [ ] Add conversation history to TaskContext (field exists, unused)
-- [ ] Create DiscussionAgent for exploratory multi-turn topic ideation
-- [ ] Support "fuzzy idea → AI asks clarifying questions → confirm → decompose" flow
-- [ ] Per-workflowId session isolation
+- [x] Integrate LangChain4j ChatMemoryProvider with Redis backend (ChatMemoryProvider + RedisChatMemoryStore)
+- [x] Add conversation history to TaskContext (field exists, used by DiscussionAgent)
+- [x] Create DiscussionAgent for exploratory multi-turn topic ideation (DiscussionController + DiscussionAgent @AiService)
+- [x] Support "fuzzy idea → AI asks clarifying questions → confirm → decompose" flow (DiscussionPage 前端实现)
+- [x] Per-workflowId session isolation (memoryId = agentStage:workflowId)
 
 ## v1.2.0 — P0: RAG Knowledge Base + File I/O + Web Search
 
@@ -38,10 +38,10 @@ Based on the original TRAE Work content operations methodology and current imple
 
 > Original article: "先搭框架，别一步到位"
 
-- [ ] Split ContentCreationAgent: generateOutline() → confirm → generateDraft()
-- [ ] Split ImageDesignAgent: generateStyleDirections() → confirm → generateImages()
-- [ ] Add sub-stage concept to PipelineOrchestrator
-- [ ] Human confirmation checkpoint between sub-stages
+- [x] Split ContentCreationAgent: generateOutline() → confirm → generateDraft() (ContentAsyncTaskConsumer 支持 outline/draft 子阶段)
+- [x] Split ImageDesignAgent: generateStyleDirections() → confirm → generateImages() (ImageAsyncTaskConsumer 支持 styles/generate 子阶段)
+- [x] Add sub-stage concept to PipelineOrchestrator (ResilientAgentClient 提供 callContentOutline/callContentDraft, callImageStyles/callImageGenerate)
+- [x] Human confirmation checkpoint between sub-stages (AsyncTaskResult.needsConfirmation 标记 + 前端确认 UI)
 
 ## v1.4.0 — P1: Prompt Engineering Deep Optimization
 
@@ -57,11 +57,11 @@ Based on the original TRAE Work content operations methodology and current imple
 
 ## v1.5.0 — P1: Resilience & Observability
 
-- [ ] Resilience4j CircuitBreaker + Retry on LLM API calls
-- [ ] Micrometer token cost tracking per workflow/agent/stage
-- [ ] OpenTelemetry + Jaeger distributed tracing
-- [ ] Kafka async mode for long-running agents (Content, Image)
-- [ ] Prometheus/Grafana dashboards
+- [x] Resilience4j CircuitBreaker + Retry on LLM API calls (ResilientAgentClient + application.yml 熔断/重试配置)
+- [x] Micrometer token cost tracking per workflow/agent/stage (TokenMetricsService + TokenEstimator, 异步消费者记录 token/费用/延迟/成功率)
+- [x] OpenTelemetry + Jaeger distributed tracing (opentelemetry-exporter-otlp + micrometer-tracing-bridge-otel, docker-compose Jaeger)
+- [x] Kafka async mode for long-running agents (Content, Image) (ContentAsyncTaskConsumer + ImageAsyncTaskConsumer, Kafka 异步解耦)
+- [x] Prometheus/Grafana dashboards (micrometer-registry-prometheus + docker-compose Prometheus/Grafana + 预置仪表盘)
 
 ## v2.0.0 — P2: MCP Protocol + Real Tool Integration
 
@@ -83,7 +83,7 @@ Based on the original TRAE Work content operations methodology and current imple
 
 > Original article: 4 practical tips as executable constraints
 
-- [ ] "Specificity checker": Orchestrator validates input completeness before calling agent
-- [ ] "Discussion mode": TopicAgent asks 3 clarifying questions when input is vague
+- [x] "Specificity checker": Orchestrator validates input completeness before calling agent (前端 CreateWorkflowPage 表单校验)
+- [x] "Discussion mode": TopicAgent asks 3 clarifying questions when input is vague (DiscussionAgent + DiscussionPage)
 - [ ] "Trend not single-article": AnalysisAgent forced monthly aggregation
 - [ ] "Help not replace": each agent outputs "human action needed" checklist

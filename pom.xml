@@ -63,6 +63,14 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- P1: OpenTelemetry BOM — 管理 opentelemetry-exporter-otlp 版本 -->
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>${opentelemetry.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <!-- Internal modules -->
             <dependency>
                 <groupId>com.contentops</groupId>

@@ -60,12 +60,15 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- P1: OpenTelemetry + Jaeger 分布式链路追踪
-             使用 OTel Java Agent 方式（运行时 -javaagent 挂载），无需代码级依赖。
-             启动参数: java -javaagent:opentelemetry-javaagent.jar
-                      -Dotel.exporter.otlp.endpoint=http://jaeger:4317
-                      -Dotel.service.name=orchestrator -jar app.jar
-             此方式支持自动 instrument Feign/Kafka/Redis/HTTP，无需修改代码。 -->
+        <!-- P1: OpenTelemetry + Jaeger 分布式链路追踪 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
 
         <!-- B计划: LangGraph4j 图编排引擎 -->
         <dependency>
