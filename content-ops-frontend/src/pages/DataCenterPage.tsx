@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Layout } from '@/components/layout/Layout'
+import { useAnalysisReport } from '@/hooks/useWorkflow'
 
 /* ================================================================ */
 /*  Types                                                           */
@@ -995,6 +996,152 @@ function MetricCard({ metric }: { metric: Metric }) {
 }
 
 /* ================================================================ */
+/*  AI Insights Section                                              */
+/* ================================================================ */
+
+function AIInsightsSection() {
+  const { report, loading, error } = useAnalysisReport()
+
+  if (loading) {
+    return (
+      <section className="mb-6" style={{ animation: 'fadeInUp 600ms ease both' }} aria-label="AI 洞察与建议">
+        <div className="bg-white rounded-xl border border-[#E5E6EB] p-6">
+          <h2 className="text-sm font-semibold mb-4" style={{ color: '#1D2129' }}>
+            AI 洞察与建议
+          </h2>
+          <div className="flex items-center justify-center py-8">
+            <div style={{ width: 24, height: 24, border: '2px solid #E5E6EB', borderTopColor: '#165DFF', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span className="ml-2 text-sm" style={{ color: '#86909C' }}>正在获取 AI 分析报告...</span>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (error || !report) {
+    return (
+      <section className="mb-6" style={{ animation: 'fadeInUp 600ms ease both' }} aria-label="AI 洞察与建议">
+        <div className="bg-white rounded-xl border border-[#E5E6EB] p-6">
+          <h2 className="text-sm font-semibold mb-2" style={{ color: '#1D2129' }}>
+            AI 洞察与建议
+          </h2>
+          <p className="text-sm" style={{ color: '#86909C' }}>
+            {error || '暂无 AI 分析报告，完成工作流后将自动生成数据洞察'}
+          </p>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="mb-6" style={{ animation: 'fadeInUp 600ms ease both' }} aria-label="AI 洞察与建议">
+      <div className="bg-white rounded-xl border border-[#E5E6EB] p-6">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#E8F3FF' }}>
+            <svg className="w-4 h-4" fill="none" stroke="#165DFF" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.456-2.456L14.25 6l1.035-.259a3.375 3.375 0 0 0 2.456-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
+            </svg>
+          </div>
+          <h2 className="text-sm font-semibold" style={{ color: '#1D2129' }}>
+            AI 洞察与建议
+          </h2>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#E8F3FF', color: '#165DFF' }}>
+            基于已完成工作流
+          </span>
+        </div>
+
+        {/* Key Metrics */}
+        {report.keyMetrics && Object.keys(report.keyMetrics).length > 0 && (
+          <div className="grid grid-cols-4 gap-3 mb-5">
+            {Object.entries(report.keyMetrics).slice(0, 4).map(([key, value]) => (
+              <div key={key} className="rounded-lg border border-[#E5E6EB] p-3">
+                <div className="text-xs mb-1" style={{ color: '#86909C' }}>{key}</div>
+                <div className="tabular-nums text-lg font-bold" style={{ color: '#1D2129' }}>
+                  {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Insights & Recommendations */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Insights */}
+          {report.insights && report.insights.length > 0 && (
+            <div className="rounded-lg border border-[#E5E6EB] p-4">
+              <h3 className="text-xs font-semibold mb-3 flex items-center gap-1.5" style={{ color: '#1D2129' }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#165DFF' }} />
+                数据洞察
+              </h3>
+              <ul className="space-y-2">
+                {report.insights.map((insight, i) => (
+                  <li key={i} className="text-xs flex items-start gap-2" style={{ color: '#4E5969', lineHeight: 1.6 }}>
+                    <span style={{ color: '#165DFF', flexShrink: 0 }}>•</span>
+                    <span>{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Recommendations */}
+          {report.recommendations && report.recommendations.length > 0 && (
+            <div className="rounded-lg border border-[#E5E6EB] p-4">
+              <h3 className="text-xs font-semibold mb-3 flex items-center gap-1.5" style={{ color: '#1D2129' }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#00B42A' }} />
+                优化建议
+              </h3>
+              <ul className="space-y-2">
+                {report.recommendations.map((rec, i) => (
+                  <li key={i} className="text-xs flex items-start gap-2" style={{ color: '#4E5969', lineHeight: 1.6 }}>
+                    <span style={{ color: '#00B42A', flexShrink: 0 }}>→</span>
+                    <span>{rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Category Performance */}
+        {report.categoryPerformance && report.categoryPerformance.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-xs font-semibold mb-3" style={{ color: '#1D2129' }}>
+              分类表现
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #E5E6EB' }}>
+                    <th className="text-left py-2 px-3 font-medium" style={{ color: '#86909C' }}>分类</th>
+                    <th className="text-right py-2 px-3 font-medium" style={{ color: '#86909C' }}>平均阅读</th>
+                    <th className="text-right py-2 px-3 font-medium" style={{ color: '#86909C' }}>平均点赞</th>
+                    <th className="text-right py-2 px-3 font-medium" style={{ color: '#86909C' }}>互动率</th>
+                    <th className="text-right py-2 px-3 font-medium" style={{ color: '#86909C' }}>文章数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.categoryPerformance.map((cat, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #F2F3F5' }}>
+                      <td className="py-2 px-3 font-medium" style={{ color: '#1D2129' }}>{cat.category}</td>
+                      <td className="text-right py-2 px-3 tabular-nums" style={{ color: '#4E5969' }}>{cat.avgReads.toLocaleString()}</td>
+                      <td className="text-right py-2 px-3 tabular-nums" style={{ color: '#4E5969' }}>{cat.avgLikes.toLocaleString()}</td>
+                      <td className="text-right py-2 px-3 tabular-nums" style={{ color: '#165DFF' }}>{(cat.engagementRate * 100).toFixed(1)}%</td>
+                      <td className="text-right py-2 px-3 tabular-nums" style={{ color: '#4E5969' }}>{cat.articleCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/* ================================================================ */
 /*  Main Component                                                   */
 /* ================================================================ */
 
@@ -1387,6 +1534,11 @@ export function DataCenterPage() {
           </div>
         </div>
       </section>
+
+      {/* ================================================================ */}
+      {/*  SECTION 5: AI Insights & Recommendations                         */}
+      {/* ================================================================ */}
+      <AIInsightsSection />
 
       {/* ================================================================ */}
       {/*  Toast Notification                                               */}

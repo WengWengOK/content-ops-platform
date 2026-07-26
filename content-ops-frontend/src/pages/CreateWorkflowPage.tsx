@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
+import { startWorkflow } from '@/api/workflow'
+import { trackWorkflow } from '@/utils/workflowTracker'
+import type { StartWorkflowRequest, AccountProfile } from '@/types'
 
 /* ================================================================
    Custom CSS — mirrors the design file's <style> block exactly
@@ -227,6 +230,7 @@ export function CreateWorkflowPage() {
   const [tone, setTone] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [accountError, setAccountError] = useState('')
+  const [submitError, setSubmitError] = useState('')
 
   /* ── Derived: list of selected accounts for preview ── */
   const selectedAccountsList = PLATFORMS
@@ -252,19 +256,93 @@ export function CreateWorkflowPage() {
 
   const handleToggleReview = () => setHumanReview((v) => !v)
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const hasAccount = PLATFORMS.some((p) => selectedAccounts[p.name])
     if (!hasAccount) {
       setAccountError('请至少选择一个平台账号')
       return
     }
     setAccountError('')
+    setSubmitError('')
     setSubmitting(true)
-    navigate('/workflow-detail')
+
+    // 组装 AccountProfile
+    const selectedPlatformNames = PLATFORMS
+      .filter((p) => selectedAccounts[p.name])
+      .map((p) => p.name)
+
+    const firstAccount = PLATFORMS.find((p) => selectedAccounts[p.name])
+    const accountValue = firstAccount ? selectedAccounts[firstAccount.name] : ''
+
+    const request: StartWorkflowRequest = {
+      accountProfile: {
+        accountId: accountValue || `acc-${Date.now()}`,
+        accountName:
+          firstAccount?.accounts.find((a) => a.value === accountValue)?.name ||
+          firstAccount?.name ||
+          '默认账号',
+        niche: nicheLabel || niche,
+        targetAudience: audienceLabel || targetAudience,
+        tone: toneLabel || tone,
+        platforms: selectedPlatformNames,
+      },
+      inputs: {
+        additionalContext: direction || undefined,
+      },
+      requireHumanReview: humanReview,
+    }
+
+    try {
+      const result = await startWorkflow(request)
+      // 追踪 workflowId（供 Dashboard 使用）
+      trackWorkflow(result.workflowId, direction || nicheLabel || niche)
+      // 跳转到工作流详情页，带上 workflowId
+      navigate(`/workflow-detail?workflowId=${result.workflowId}`)
+    } catch (err: any) {
+      setSubmitError(err?.message || '启动工作流失败，请重试')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleSaveDraft = () => {
     // Save draft — no critical action needed for now
+  }
+
+  const handleStartDiscussion = () => {
+    const hasAccount = PLATFORMS.some((p) => selectedAccounts[p.name])
+    if (!hasAccount) {
+      setAccountError('请至少选择一个平台账号')
+      return
+    }
+    if (!direction.trim()) return
+
+    // 组装 AccountProfile（与 handleSubmit 一致）
+    const selectedPlatformNames = PLATFORMS
+      .filter((p) => selectedAccounts[p.name])
+      .map((p) => p.name)
+    const firstAccount = PLATFORMS.find((p) => selectedAccounts[p.name])
+    const accountValue = firstAccount ? selectedAccounts[firstAccount.name] : ''
+
+    const accountProfile: AccountProfile = {
+      accountId: accountValue || `acc-${Date.now()}`,
+      accountName:
+        firstAccount?.accounts.find((a) => a.value === accountValue)?.name ||
+        firstAccount?.name ||
+        '默认账号',
+      niche: nicheLabel || niche,
+      targetAudience: audienceLabel || targetAudience,
+      tone: toneLabel || tone,
+      platforms: selectedPlatformNames,
+    }
+
+    // 跳转到讨论页面
+    navigate('/discussion', {
+      state: {
+        accountProfile,
+        fuzzyIdea: direction,
+      },
+    })
   }
 
   const charCount = direction.length
@@ -576,6 +654,20 @@ export function CreateWorkflowPage() {
               </button>
               <button
                 type="button"
+                className="btn-outline"
+                onClick={handleStartDiscussion}
+                disabled={submitting || !direction.trim()}
+                style={{
+                  borderColor: '#165DFF',
+                  color: '#165DFF',
+                  opacity: submitting || !direction.trim() ? 0.5 : 1,
+                  cursor: submitting || !direction.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                讨论模式
+              </button>
+              <button
+                type="button"
                 className="btn-primary"
                 onClick={handleSubmit}
                 disabled={submitting}
@@ -583,6 +675,21 @@ export function CreateWorkflowPage() {
                 {submitting ? '启动中...' : '启动工作流'}
               </button>
             </div>
+            {submitError && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: '8px 12px',
+                  background: '#fff2f0',
+                  border: '1px solid #ffccc7',
+                  borderRadius: 6,
+                  color: '#f53f3f',
+                  fontSize: 13,
+                }}
+              >
+                {submitError}
+              </div>
+            )}
           </div>
           {/* /LEFT COLUMN */}
 

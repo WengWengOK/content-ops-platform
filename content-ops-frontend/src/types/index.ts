@@ -36,20 +36,55 @@ export interface AccountProfile {
 //  Task Context (Workflow State)
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * WorkflowStatus — 对齐后端 com.contentops.common.enums.TaskStatus
+ * 后端使用 TaskStatus.name() 序列化为枚举名字符串。
+ */
 export type WorkflowStatus =
   | 'PENDING'
-  | 'PROCESSING'
-  | 'WAITING_FOR_REVIEW'
+  | 'IN_PROGRESS'
+  | 'AWAITING_HUMAN'
+  | 'AWAITING_ASYNC'
   | 'COMPLETED'
   | 'FAILED'
+  | 'SKIPPED'
 
+/**
+ * StageCode — 对齐后端 com.contentops.common.enums.AgentStage#getCode()
+ * 后端返回 kebab-case 编码（如 "topic-planning"），前端必须使用相同格式。
+ */
 export type StageCode =
-  | 'TOPIC_PLANNING'
-  | 'CONTENT_CREATION'
-  | 'IMAGE_DESIGN'
-  | 'PUBLISHING'
-  | 'DATA_ANALYSIS'
-  | 'OPTIMIZATION'
+  | 'topic-planning'
+  | 'content-creation'
+  | 'image-design'
+  | 'publishing'
+  | 'data-analysis'
+  | 'optimization'
+
+/**
+ * 阶段编码 → 中文名称映射（用于 UI 显示）。
+ */
+export const STAGE_CODE_TO_CN: Record<StageCode, string> = {
+  'topic-planning': '选题策划',
+  'content-creation': '内容创作',
+  'image-design': '配图设计',
+  'publishing': '排版发布',
+  'data-analysis': '数据分析',
+  'optimization': '优化迭代',
+}
+
+/**
+ * WorkflowStatus → 中文标签映射（用于 UI 显示）。
+ */
+export const STATUS_TO_CN: Record<WorkflowStatus, string> = {
+  PENDING: '等待中',
+  IN_PROGRESS: '运行中',
+  AWAITING_HUMAN: '待审核',
+  AWAITING_ASYNC: '异步等待',
+  COMPLETED: '已完成',
+  FAILED: '失败',
+  SKIPPED: '已跳过',
+}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -128,7 +163,8 @@ export interface TopicPlanResult {
 
 export interface ArticleSection {
   heading: string
-  keyPoints: string[]
+  /** 后端 ContentDraftResult.Section.keyPoints 为 String（以换行分隔），前端按需 split */
+  keyPoints: string
   example?: string
 }
 

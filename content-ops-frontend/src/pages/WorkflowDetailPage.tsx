@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
+import { useWorkflowStatus, useApproveStage, useConfirmSubStage } from '@/hooks/useWorkflow'
+import { LoadingView, ErrorView } from '@/components/common/StateViews'
+import type { StageCode, TaskContext } from '@/types'
+import { STAGE_CODE_TO_CN } from '@/types'
 
 /* ============================================================
    Types
@@ -280,6 +284,45 @@ function PreviewModule({
    Main component
    ============================================================ */
 export function WorkflowDetailPage() {
+  const [searchParams] = useSearchParams()
+  const workflowId = searchParams.get('workflowId')
+
+  // 工作流状态轮询
+  const { workflow, loading, error, refresh } = useWorkflowStatus(workflowId, { intervalMs: 5000 })
+  const { approving, approve } = useApproveStage()
+  const { confirming, confirm } = useConfirmSubStage()
+
+  // 根据后端 TaskContext 计算各阶段状态
+  const computeStageStatus = useCallback(
+    (stageId: string): StageStatus => {
+      if (!workflow) return 'pending'
+      const stageOrder: Record<string, number> = {
+        'topic-planning': 1,
+        'content-creation': 2,
+        'image-design': 3,
+        'publishing': 4,
+        'data-analysis': 5,
+        'optimization': 6,
+      }
+      const currentOrder = stageOrder[workflow.currentStage] || 0
+      const targetOrder = stageOrder[stageId] || 0
+      if (targetOrder < currentOrder) return 'completed'
+      if (targetOrder === currentOrder) {
+        if (workflow.status === 'COMPLETED') return 'completed'
+        if (workflow.status === 'FAILED') return 'pending'
+        return 'running'
+      }
+      return 'pending'
+    },
+    [workflow]
+  )
+
+  // 动态生成阶段列表
+  const pipelineStages: PipelineStage[] = PIPELINE_STAGES.map((s) => ({
+    ...s,
+    status: computeStageStatus(s.id),
+  }))
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 1, type: 'system', content: '14:32:01 - 选题策划阶段已完成，进入内容创作阶段' },
     {
@@ -404,18 +447,52 @@ export function WorkflowDetailPage() {
   const toggleChecklist = (idx: number) => {
     setChecklist((prev) => prev.map((v, i) => (i === idx ? !v : v)))
   }
-  const handleApprove = () => {
-    showToast('阶段已通过，管线继续执行', '#00B42A')
-    setShowReviewPanel(false)
+  const handleApprove = async () => {
+    if (!workflowId) {
+      showToast('缺少 workflowId', '#F53F3F')
+      return
+    }
+    const success = await approve(workflowId)
+    if (success) {
+      showToast('阶段已通过，管线继续执行', '#00B42A')
+      setShowReviewPanel(false)
+      refresh()
+    } else {
+      showToast('审批失败，请重试', '#F53F3F')
+    }
   }
-  const handleSubmitFeedback = () => {
+  const handleSubmitFeedback = async () => {
     if (!feedbackText.trim()) {
       showToast('请输入修改意见', '#FF7D00')
       return
     }
-    showToast('修改意见已提交，Agent 将重新执行', '#165DFF')
-    setFeedbackText('')
-    setShowFeedbackArea(false)
+    if (!workflowId) {
+      showToast('缺少 workflowId', '#F53F3F')
+      return
+    }
+    // 用反馈意见作为 feedback 参数调用 approve
+    const success = await approve(workflowId, { feedback: feedbackText })
+    if (success) {
+      showToast('修改意见已提交，Agent 将重新执行', '#165DFF')
+      setFeedbackText('')
+      setShowFeedbackArea(false)
+      refresh()
+    } else {
+      showToast('提交失败，请重试', '#F53F3F')
+    }
+  }
+  const handleConfirmSubStage = async (body?: Record<string, unknown>) => {
+    if (!workflowId) {
+      showToast('缺少 workflowId', '#F53F3F')
+      return
+    }
+    const success = await confirm(workflowId, body)
+    if (success) {
+      showToast('子阶段已确认，继续执行', '#00B42A')
+      refresh()
+    } else {
+      showToast('确认失败，请重试', '#F53F3F')
+    }
   }
   const handleSkip = () => {
     showToast('已跳过该阶段', '#86909C')
@@ -624,17 +701,49 @@ export function WorkflowDetailPage() {
   /* ============================================================
      Render
      ============================================================ */
+  if (!workflowId) {
+    return (
+      <Layout activeNav="dashboard" breadcrumbs={[{ label: '工作流仪表盘', href: '/' }, { label: '工作流详情' }]}>
+        <ErrorView message="缺少 workflowId 参数，请从工作流仪表盘或创建工作流页面进入。" />
+      </Layout>
+    )
+  }
+
+  if (loading && !workflow) {
+    return (
+      <Layout activeNav="dashboard" breadcrumbs={[{ label: '工作流仪表盘', href: '/' }, { label: '工作流详情' }]}>
+        <LoadingView text="正在加载工作流状态..." />
+      </Layout>
+    )
+  }
+
+  if (error && !workflow) {
+    return (
+      <Layout activeNav="dashboard" breadcrumbs={[{ label: '工作流仪表盘', href: '/' }, { label: '工作流详情' }]}>
+        <ErrorView message={error} onRetry={refresh} />
+      </Layout>
+    )
+  }
+
   return (
     <Layout
       activeNav="dashboard"
-      breadcrumbs={[{ label: '工作流仪表盘', href: '/' }, { label: '个人成长选题' }]}
+      breadcrumbs={[{ label: '工作流仪表盘', href: '/' }, { label: workflow?.accountProfile?.accountName || '工作流详情' }]}
       headerRight={
         <div className="flex items-center gap-1.5 text-xs" style={{ color: '#86909C' }}>
           <span
             className="h-1.5 w-1.5 rounded-full animate-pulse-dot"
-            style={{ background: '#165DFF' }}
+            style={{ background: workflow?.status === 'COMPLETED' ? '#00B42A' : '#165DFF' }}
           />
-          <span>实时同步</span>
+          <span>{workflow?.status === 'COMPLETED' ? '已完成' : '实时同步'}</span>
+          {workflow && (
+            <span style={{ marginLeft: 8, color: '#C9CDD4' }}>|</span>
+          )}
+          {workflow && (
+            <span style={{ marginLeft: 8 }}>
+              ID: {workflow.workflowId.substring(0, 8)}...
+            </span>
+          )}
         </div>
       }
     >
@@ -752,7 +861,7 @@ export function WorkflowDetailPage() {
             role="list"
             aria-label="工作流管线阶段"
           >
-            {PIPELINE_STAGES.map((stage, i) => {
+            {pipelineStages.map((stage, i) => {
               const isCompleted = stage.status === 'completed'
               const isRunning = stage.status === 'running'
               const isSelected = selectedStage === stage.id
@@ -836,7 +945,7 @@ export function WorkflowDetailPage() {
                     </div>
                   </button>
 
-                  {i < PIPELINE_STAGES.length - 1 && (
+                  {i < pipelineStages.length - 1 && (
                     <div
                       className="flex items-center self-center"
                       style={{

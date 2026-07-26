@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import { Dashboard } from './pages/Dashboard'
 import { CreateWorkflowPage } from './pages/CreateWorkflowPage'
+import { DiscussionPage } from './pages/DiscussionPage'
 import { WorkflowDetailPage } from './pages/WorkflowDetailPage'
 import { WorkDetailPage } from './pages/WorkDetailPage'
 import { WorkCenterPage } from './pages/WorkCenterPage'
@@ -13,6 +14,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/create-workflow" element={<CreateWorkflowPage />} />
+      <Route path="/discussion" element={<DiscussionPage />} />
       <Route path="/workflow-detail" element={<WorkflowDetailPage />} />
       <Route path="/work-detail" element={<WorkDetailPage />} />
       <Route path="/work-center" element={<WorkCenterPage />} />

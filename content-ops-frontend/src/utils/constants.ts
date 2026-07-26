@@ -1,24 +1,26 @@
 import type { StageCode, WorkflowStatus, DiscussionPhase } from '@/types'
 
 export const STAGE_META: Record<StageCode, { name: string; icon: string; color: string; description: string }> = {
-  TOPIC_PLANNING: { name: '选题规划', icon: 'Lightbulb', color: '#f59e0b', description: '分析热点趋势，生成选题候选' },
-  CONTENT_CREATION: { name: '内容创作', icon: 'PenLine', color: '#3b82f6', description: '生成大纲并撰写内容初稿' },
-  IMAGE_DESIGN: { name: '配图设计', icon: 'ImageIcon', color: '#8b5cf6', description: '生成风格方向并创建配图' },
-  PUBLISHING: { name: '排版发布', icon: 'Send', color: '#10b981', description: '多平台排版并发布内容' },
-  DATA_ANALYSIS: { name: '数据分析', icon: 'BarChart3', color: '#06b6d4', description: '分析运营数据并生成洞察' },
-  OPTIMIZATION: { name: '优化迭代', icon: 'RefreshCw', color: '#ec4899', description: '基于数据优化策略' },
+  'topic-planning': { name: '选题策划', icon: 'Lightbulb', color: '#f59e0b', description: '分析热点趋势，生成选题候选' },
+  'content-creation': { name: '内容创作', icon: 'PenLine', color: '#3b82f6', description: '生成大纲并撰写内容初稿' },
+  'image-design': { name: '配图设计', icon: 'ImageIcon', color: '#8b5cf6', description: '生成风格方向并创建配图' },
+  'publishing': { name: '排版发布', icon: 'Send', color: '#10b981', description: '多平台排版并发布内容' },
+  'data-analysis': { name: '数据分析', icon: 'BarChart3', color: '#06b6d4', description: '分析运营数据并生成洞察' },
+  'optimization': { name: '优化迭代', icon: 'RefreshCw', color: '#ec4899', description: '基于数据优化策略' },
 }
 
 export const STAGE_ORDER: StageCode[] = [
-  'TOPIC_PLANNING', 'CONTENT_CREATION', 'IMAGE_DESIGN', 'PUBLISHING', 'DATA_ANALYSIS', 'OPTIMIZATION'
+  'topic-planning', 'content-creation', 'image-design', 'publishing', 'data-analysis', 'optimization'
 ]
 
 export const STATUS_META: Record<WorkflowStatus, { label: string; color: string; bgColor: string }> = {
   PENDING: { label: '等待中', color: '#6b7280', bgColor: '#f3f4f6' },
-  PROCESSING: { label: '处理中', color: '#3b82f6', bgColor: '#dbeafe' },
-  WAITING_FOR_REVIEW: { label: '待审核', color: '#f59e0b', bgColor: '#fef3c7' },
+  IN_PROGRESS: { label: '运行中', color: '#3b82f6', bgColor: '#dbeafe' },
+  AWAITING_HUMAN: { label: '待审核', color: '#f59e0b', bgColor: '#fef3c7' },
+  AWAITING_ASYNC: { label: '异步等待', color: '#f59e0b', bgColor: '#fef3c7' },
   COMPLETED: { label: '已完成', color: '#10b981', bgColor: '#d1fae5' },
   FAILED: { label: '失败', color: '#ef4444', bgColor: '#fee2e2' },
+  SKIPPED: { label: '已跳过', color: '#9ca3af', bgColor: '#f3f4f6' },
 }
 
 export const DISCUSSION_PHASE_META: Record<DiscussionPhase, { label: string; color: string }> = {
