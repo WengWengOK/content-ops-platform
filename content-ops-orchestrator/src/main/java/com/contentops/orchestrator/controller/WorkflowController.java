@@ -100,6 +100,19 @@ public class WorkflowController {
     }
 
     /**
+     * List all workflows (for Dashboard).
+     */
+    @GetMapping
+    @Operation(
+            summary = "获取所有工作流列表",
+            description = "返回所有工作流的上下文列表，按创建时间倒序排列。前端仪表盘可据此展示工作流概览和统计数据。"
+    )
+    public ResponseEntity<AgentResponse<List<TaskContext>>> listWorkflows() {
+        List<TaskContext> workflows = workflowService.listAllWorkflows();
+        return ResponseEntity.ok(AgentResponse.success("orchestrator", workflows));
+    }
+
+    /**
      * Approve the current stage and proceed to the next (for human-in-the-loop).
      */
     @PostMapping("/{workflowId}/approve")

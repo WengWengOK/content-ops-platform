@@ -8,7 +8,10 @@ import com.contentops.common.constant.AgentConstants;
 import com.contentops.common.dto.TaskContext;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Manages workflow state in Redis.
@@ -84,5 +87,36 @@ public class WorkflowStateManager {
     public void deleteWorkflowState(String workflowId) {
         String key = AgentConstants.WORKFLOW_STATE_PREFIX + workflowId;
         redisTemplate.delete(key);
+    }
+
+    /**
+     * List all workflow states from Redis.
+     * Scans keys with the workflow state prefix and deserializes each into TaskContext.
+     *
+     * @return list of all stored TaskContext objects (may be empty if none exist)
+     */
+    public List<TaskContext> listAllWorkflows() {
+        List<TaskContext> workflows = new ArrayList<>();
+        try {
+            String pattern = AgentConstants.WORKFLOW_STATE_PREFIX + "*";
+            Set<String> keys = redisTemplate.keys(pattern);
+            if (keys == null || keys.isEmpty()) {
+                return workflows;
+            }
+            for (String key : keys) {
+                try {
+                    String json = redisTemplate.opsForValue().get(key);
+                    if (json != null) {
+                        TaskContext ctx = objectMapper.readValue(json, TaskContext.class);
+                        workflows.add(ctx);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to deserialize workflow state for key: {}", key, e);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to list all workflow states", e);
+        }
+        return workflows;
     }
 }

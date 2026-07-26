@@ -10,7 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 工作流服务 — 双引擎切换入口。
@@ -66,6 +69,21 @@ public class WorkflowService {
      */
     public TaskContext getWorkflowStatus(String workflowId) {
         return stateManager.loadWorkflowState(workflowId).orElse(null);
+    }
+
+    /**
+     * List all workflows from Redis, sorted by creation time (newest first).
+     *
+     * @return list of all TaskContext objects, newest first
+     */
+    public List<TaskContext> listAllWorkflows() {
+        List<TaskContext> all = stateManager.listAllWorkflows();
+        return all.stream()
+                .sorted(Comparator.comparing(
+                        TaskContext::getCreatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                ))
+                .collect(Collectors.toList());
     }
 
     /**
