@@ -27,12 +27,12 @@ Based on the original TRAE Work content operations methodology and current imple
 
 > Original article: "直接读写本地文件、联网把资料抓回来"
 
-- [ ] Integrate PGVector/Milvus for historical article storage
-- [ ] Add FileTools: readLocalFile(), writeLocalFile()
-- [ ] TopicResearchTools: real WebSearch API (SerpAPI/Tavily)
-- [ ] RAG retrieval in TopicAgent for similar historical topics
-- [ ] RAG retrieval in OptimizeAgent for historical performance matching
-- [ ] Agent outputs saved as Markdown/JSON files
+- [x] Integrate PGVector/Milvus for historical article storage (KnowledgeBaseService + langchain4j-pgvector + 本地 ONNX 嵌入模型)
+- [x] Add FileTools: readLocalFile(), writeLocalFile() (FileTools @Tool 沙箱化文件读写)
+- [x] TopicResearchTools: real WebSearch API (TavilySearchService 集成 Tavily API)
+- [x] RAG retrieval in TopicAgent for similar historical topics (RagRetrievalEnhancer.retrieveHistoricalContext)
+- [x] RAG retrieval in OptimizeAgent for historical performance matching (RagRetrievalEnhancer.retrievePerformancePatterns)
+- [x] Agent outputs saved as Markdown/JSON files (AgentOutputPersistence 自动序列化+Markdown渲染)
 
 ## v1.3.0 — P1: Progressive Generation (Two-phase Agents)
 
@@ -65,19 +65,19 @@ Based on the original TRAE Work content operations methodology and current imple
 
 ## v2.0.0 — P2: MCP Protocol + Real Tool Integration
 
-- [ ] Wrap @Tool methods as MCP Server
-- [ ] ImageAgent: DALL-E / Stable Diffusion API integration
-- [ ] PublishAgent: WeChat / Xiaohongshu platform API integration
-- [ ] AnalysisAgent: platform backend data API integration
-- [ ] Nacos MCP Registry for tool discovery
+- [x] Wrap @Tool methods as MCP Server (McpToolRegistry + McpToolScanner + McpServerEndpoint, 自动扫描@Tool并注册)
+- [x] ImageAgent: DALL-E / Stable Diffusion API integration (ImageGenerationService DALL-E 3, PlatformToolIntegration 注册)
+- [x] PublishAgent: WeChat / Xiaohongshu platform API integration (WechatPlatformService + XiaohongshuPlatformService, 6平台全覆盖)
+- [x] AnalysisAgent: platform backend data API integration (AnalysisTools 5平台数据API + MetricsParser)
+- [x] Nacos MCP Registry for tool discovery (NacosMcpRegistry 模拟Nacos服务注册与发现)
 
 ## v2.1.0 — P2: Multi-model Routing + Quality Assessment
 
-- [ ] Model routing strategy (creative → high-temp large model, formatting → low-cost model)
-- [ ] QualityAgent: score each stage output (logic/readability/originality)
-- [ ] Competitive mode: parallel calls on key stages, select best result
-- [ ] Streaming responses for ContentAgent
-- [ ] Auto-retry on low quality scores
+- [x] Model routing strategy (creative → high-temp large model, formatting → low-cost model) (ModelRoutingService, 创意类gpt-4o temp0.8 / 格式化类gpt-4o-mini temp0.3)
+- [x] QualityAgent: score each stage output (logic/readability/originality) (QualityAssessmentService, 启发式三维评分 0-100)
+- [x] Competitive mode: parallel calls on key stages, select best result (CompetitiveModeService, 质量评分选最优)
+- [x] Streaming responses for ContentAgent (StreamingSupport + StreamingResponseHandler, 可配置按阶段启用)
+- [x] Auto-retry on low quality scores (AutoRetryService, 低于阈值自动重试+改进建议注入)
 
 ## v2.2.0 — P2: Methodology Prompt Systematization
 
@@ -85,5 +85,5 @@ Based on the original TRAE Work content operations methodology and current imple
 
 - [x] "Specificity checker": Orchestrator validates input completeness before calling agent (前端 CreateWorkflowPage 表单校验)
 - [x] "Discussion mode": TopicAgent asks 3 clarifying questions when input is vague (DiscussionAgent + DiscussionPage)
-- [ ] "Trend not single-article": AnalysisAgent forced monthly aggregation
-- [ ] "Help not replace": each agent outputs "human action needed" checklist
+- [x] "Trend not single-article": AnalysisAgent forced monthly aggregation (TrendAggregationEnforcer, 强制月度趋势检查+自动补足)
+- [x] "Help not replace": each agent outputs "human action needed" checklist (HumanActionChecklistGenerator, 6阶段差异化行动清单)
