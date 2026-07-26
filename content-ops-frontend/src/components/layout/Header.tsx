@@ -1,47 +1,90 @@
-import { useState } from 'react'
-import { Menu, Github, Bell } from 'lucide-react'
-import { Button } from '@/components/ui/Button'
+import { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { BreadcrumbItem } from './Layout'
 
 interface HeaderProps {
-  onToggleSidebar?: () => void
+  pageTitle?: string
+  breadcrumbs?: BreadcrumbItem[]
+  showBackButton?: boolean
+  backHref?: string
+  headerRight?: ReactNode
 }
 
-export function Header({ onToggleSidebar }: HeaderProps) {
-  const [showNotif, setShowNotif] = useState(false)
-
+export function Header({ pageTitle, breadcrumbs, showBackButton, backHref, headerRight }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-white/80 px-6 backdrop-blur">
-      <div className="flex items-center gap-3">
-        {onToggleSidebar && (
-          <button onClick={onToggleSidebar} className="rounded-lg p-1.5 hover:bg-gray-100 lg:hidden">
-            <Menu className="h-5 w-5 text-gray-600" />
-          </button>
+    <header
+      className="sticky top-0 z-30 flex items-center justify-between h-16 px-6 border-b"
+      style={{ background: '#FFFFFF', borderColor: '#E5E6EB' }}
+    >
+      {/* Left: Page Title or Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm">
+        {showBackButton && backHref && (
+          <Link
+            to={backHref}
+            className="flex items-center gap-1 hover:underline"
+            style={{ color: '#86909C' }}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m7.5 7.5 3-7.5m-3 7.5V4.5" />
+            </svg>
+          </Link>
         )}
-        <div className="hidden items-center gap-2 text-sm text-gray-500 lg:flex">
-          <span>Content Ops Agent Platform</span>
-        </div>
+        {breadcrumbs ? (
+          <nav className="flex items-center gap-2 text-sm">
+            {breadcrumbs.map((crumb, i) => (
+              <span key={i} className="flex items-center gap-2">
+                {crumb.href ? (
+                  <Link to={crumb.href} className="hover:underline" style={{ color: '#86909C' }}>
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span style={{ color: '#1D2129', fontWeight: 500 }}>{crumb.label}</span>
+                )}
+                {i < breadcrumbs.length - 1 && <span style={{ color: '#C9CDD4' }}>/</span>}
+              </span>
+            ))}
+          </nav>
+        ) : (
+          pageTitle && (
+            <h1 className="text-[16px] font-semibold" style={{ color: '#1D2129' }}>
+              {pageTitle}
+            </h1>
+          )
+        )}
       </div>
-      <div className="flex items-center gap-2">
+
+      {/* Right: Actions */}
+      <div className="flex items-center gap-4">
+        {headerRight}
+        {/* Notification Bell */}
         <button
-          onClick={() => setShowNotif(!showNotif)}
-          className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          className="relative p-2 rounded-xl transition-colors hover:bg-[#FFF0F5]"
+          aria-label="通知"
         >
-          <Bell className="h-[18px] w-[18px]" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500"></span>
+          <svg className="w-5 h-5" style={{ color: '#4E5969' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+          </svg>
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: '#FF2D5E' }} />
         </button>
-        <a
-          href="https://github.com/WengWengOK/content-ops-platform"
-          target="_blank"
-          rel="noopener noreferrer"
+
+        {/* User Avatar Dropdown */}
+        <button
+          className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl transition-colors hover:bg-[#F2F3F5]"
+          aria-label="用户菜单"
         >
-          <Button variant="ghost" size="sm">
-            <Github className="h-4 w-4" />
-            GitHub
-          </Button>
-        </a>
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">
-          A
-        </div>
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+            style={{ background: 'linear-gradient(135deg, #FF2D5E, #FF5C8A)' }}
+          >
+            U
+          </div>
+          <span className="text-sm font-medium" style={{ color: '#4E5969' }}>
+            用户名
+          </span>
+          <svg className="w-4 h-4" style={{ color: '#86909C' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
       </div>
     </header>
   )

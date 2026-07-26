@@ -1,172 +1,301 @@
-import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import {
-  Workflow, MessageSquareText, Bot, Sparkles,
-  ArrowRight, Activity, Zap, CheckCircle2
-} from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { useWorkflowStore } from '@/store/workflowStore'
-import { STAGE_META, STAGE_ORDER } from '@/utils/constants'
+import { Link } from 'react-router-dom'
+import { Layout } from '@/components/layout/Layout'
+
+/* ────────────────────────────── Mock Data ────────────────────────────── */
+
+interface StatItem {
+  label: string
+  value: number
+  color: string
+  hint: string
+}
+
+const stats: StatItem[] = [
+  { label: '运行中工作流', value: 3, color: '#165DFF', hint: '正在执行的工作流' },
+  { label: '待审核', value: 2, color: '#FF7D00', hint: '需要人工审核' },
+  { label: '已完成', value: 12, color: '#00B42A', hint: '已发布内容' },
+  { label: '本周期内容', value: 8, color: '#FF2D5E', hint: '本周产出内容' },
+]
+
+interface Badge {
+  label: string
+  color: string
+  bg: string
+}
+
+interface Workflow {
+  title: string
+  status: Badge
+  stage: Badge
+  progress: number
+  progressColor: string
+  timeAgo: string
+}
+
+const workflows: Workflow[] = [
+  {
+    title: '个人成长选题',
+    status: { label: '运行中', color: '#165DFF', bg: '#E8F3FF' },
+    stage: { label: '内容创作', color: '#E8164A', bg: '#FFF0F5' },
+    progress: 33,
+    progressColor: '#165DFF',
+    timeAgo: '2小时前',
+  },
+  {
+    title: '职场干货合集',
+    status: { label: '待审核', color: '#FF7D00', bg: '#FFF7E8' },
+    stage: { label: '选题策划', color: '#E56E00', bg: '#FFF7E8' },
+    progress: 17,
+    progressColor: '#FF7D00',
+    timeAgo: '5小时前',
+  },
+  {
+    title: '读书笔记系列',
+    status: { label: '已完成', color: '#00B42A', bg: '#E8F8F0' },
+    stage: { label: '优化迭代', color: '#009A24', bg: '#E8F8F0' },
+    progress: 100,
+    progressColor: '#00B42A',
+    timeAgo: '1天前',
+  },
+]
+
+interface Activity {
+  title: string
+  desc: string
+  time: string
+  color: string
+  pulse: boolean
+}
+
+const activities: Activity[] = [
+  {
+    title: '内容创作进行中',
+    desc: '「个人成长选题」正在生成内容草稿',
+    time: '30分钟前',
+    color: '#165DFF',
+    pulse: true,
+  },
+  {
+    title: '选题策划完成',
+    desc: '「职场干货合集」选题已通过审核',
+    time: '1小时前',
+    color: '#00B42A',
+    pulse: false,
+  },
+  {
+    title: '工作流已启动',
+    desc: '「个人成长选题」工作流开始执行',
+    time: '2小时前',
+    color: '#FF2D5E',
+    pulse: false,
+  },
+  {
+    title: '数据分析报告生成',
+    desc: '「读书笔记系列」数据分析报告已生成',
+    time: '1天前',
+    color: '#C9CDD4',
+    pulse: false,
+  },
+]
+
+/* ────────────────────────────── Component ─────────────────────────────── */
 
 export function Dashboard() {
-  const navigate = useNavigate()
-  const { stages, fetchStages, accountProfile } = useWorkflowStore()
-
-  useEffect(() => {
-    fetchStages()
-  }, [fetchStages])
-
-  const features = [
-    {
-      title: '一键启动工作流',
-      desc: '配置账号信息，从选题到优化全流程自动化',
-      icon: Workflow,
-      action: () => navigate('/workflow'),
-      color: 'bg-blue-500',
-    },
-    {
-      title: '对话式选题讨论',
-      desc: '通过自然语言对话，与AI共同打磨内容方向',
-      icon: MessageSquareText,
-      action: () => navigate('/discussion'),
-      color: 'bg-amber-500',
-    },
-    {
-      title: 'Agent 独立调用',
-      desc: '直接调用单个Agent服务，灵活组合使用',
-      icon: Bot,
-      action: () => navigate('/agents'),
-      color: 'bg-purple-500',
-    },
-  ]
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="rounded-2xl bg-gradient-to-r from-brand-600 to-brand-800 p-8 text-white">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">Content Ops Agent Platform</h1>
-        </div>
-        <p className="mt-2 text-brand-100">AI 驱动的多 Agent 内容运营协作平台 — 从选题到优化，全链路自动化</p>
-        <div className="mt-4 flex gap-3">
-          <Button variant="secondary" onClick={() => navigate('/workflow')}>
-            启动工作流 <ArrowRight className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" className="text-white hover:bg-white/10" onClick={() => navigate('/discussion')}>
-            讨论选题
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        {features.map((f, i) => (
-          <Card key={i} className="cursor-pointer transition-transform hover:scale-[1.02]" >
-            <CardContent className="pt-6">
-              <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-lg ${f.color}`}>
-                <f.icon className="h-5 w-5 text-white" />
-              </div>
-              <h3 className="font-semibold text-gray-900">{f.title}</h3>
-              <p className="mt-1 text-sm text-gray-500">{f.desc}</p>
-              <button onClick={f.action} className="mt-3 flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700">
-                进入 <ArrowRight className="h-3 w-3" />
-              </button>
-            </CardContent>
-          </Card>
+    <Layout activeNav="dashboard" pageTitle="工作流仪表盘">
+      {/* ───────────── Stats Cards Row ───────────── */}
+      <section
+        className="grid grid-cols-4 gap-4 mb-8 animate-fadeInUp"
+        style={{ animationDelay: '400ms' }}
+        aria-label="数据统计概览"
+      >
+        {stats.map((stat) => (
+          <div
+            key={stat.label}
+            className="card-hover bg-white rounded-lg border border-[#E5E6EB] p-5"
+            role="button"
+            tabIndex={0}
+            aria-label={`${stat.label}: ${stat.value}`}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ background: stat.color }}
+              />
+              <span className="text-sm font-medium" style={{ color: '#4E5969' }}>
+                {stat.label}
+              </span>
+            </div>
+            <div
+              className="tabular-nums text-[32px] font-bold leading-none mb-1"
+              style={{ color: '#1D2129' }}
+            >
+              {stat.value}
+            </div>
+            <div className="text-xs" style={{ color: '#86909C' }}>
+              {stat.hint}
+            </div>
+          </div>
         ))}
-      </div>
+      </section>
 
-      <Card>
-        <CardContent className="pt-6">
-          <div className="mb-4 flex items-center gap-2">
-            <Activity className="h-5 w-5 text-brand-500" />
-            <h2 className="text-lg font-semibold">流水线阶段</h2>
-          </div>
-          <div className="grid gap-3 md:grid-cols-6">
-            {STAGE_ORDER.map((code, i) => {
-              const meta = STAGE_META[code]
-              return (
-                <div key={code} className="relative">
-                  <div className="rounded-lg border border-gray-200 p-3 text-center">
-                    <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white"
-                      style={{ backgroundColor: meta.color }}>
-                      {i + 1}
-                    </div>
-                    <p className="text-sm font-medium text-gray-900">{meta.name}</p>
-                    <p className="mt-0.5 text-xs text-gray-400">{meta.description}</p>
-                  </div>
-                  {i < STAGE_ORDER.length - 1 && (
-                    <ArrowRight className="absolute -right-2 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-gray-300 md:block" />
-                  )}
+      {/* ───────────── Workflow List ───────────── */}
+      <section
+        className="mb-8 animate-fadeInUp"
+        style={{ animationDelay: '500ms' }}
+        aria-label="我的工作流列表"
+      >
+        {/* Section Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[16px] font-semibold" style={{ color: '#1D2129' }}>
+            我的工作流
+          </h2>
+          <Link
+            to="/create-workflow"
+            className="btn-primary inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              strokeWidth={2.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 4.5v15m7.5-7.5h-15"
+              />
+            </svg>
+            新建工作流
+          </Link>
+        </div>
+
+        {/* Workflow Cards */}
+        <div className="space-y-4">
+          {workflows.map((wf) => (
+            <Link
+              key={wf.title}
+              to="/workflow-detail"
+              className="card-hover bg-white rounded-lg border border-[#E5E6EB] p-5 block"
+            >
+              {/* title + status badge + time */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-[14px] font-semibold" style={{ color: '#1D2129' }}>
+                    {wf.title}
+                  </h3>
+                  <span
+                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={{ color: wf.status.color, background: wf.status.bg }}
+                  >
+                    {wf.status.label}
+                  </span>
                 </div>
-              )
-            })}
+                <span className="text-xs" style={{ color: '#86909C' }}>
+                  {wf.timeAgo}
+                </span>
+              </div>
+
+              {/* current stage + progress on the SAME line */}
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xs" style={{ color: '#86909C' }}>
+                  当前阶段:
+                </span>
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                  style={{ color: wf.stage.color, background: wf.stage.bg }}
+                >
+                  {wf.stage.label}
+                </span>
+                <span className="text-xs tabular-nums" style={{ color: '#86909C' }}>
+                  进度 {wf.progress}%
+                </span>
+              </div>
+
+              {/* progress bar */}
+              <div className="progress-track mb-4">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${wf.progress}%`, background: wf.progressColor }}
+                />
+              </div>
+
+              {/* view detail link */}
+              <div className="flex items-center justify-end">
+                <span
+                  className="inline-flex items-center gap-1 text-sm font-medium transition-all duration-200 hover:underline"
+                  style={{ color: '#165DFF', textDecoration: 'none' }}
+                >
+                  查看详情
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m8.25 4.5 7.5 7.5-7.5 7.5"
+                    />
+                  </svg>
+                </span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ───────────── Recent Activity Timeline ───────────── */}
+      <section
+        className="bg-white rounded-lg border border-[#E5E6EB] p-6 animate-fadeInUp"
+        style={{ animationDelay: '600ms' }}
+        aria-label="最近动态"
+      >
+        <h2 className="text-[16px] font-semibold mb-6" style={{ color: '#1D2129' }}>
+          最近动态
+        </h2>
+
+        <div className="relative">
+          {/* vertical timeline line */}
+          <div
+            className="absolute left-[3px] top-1 bottom-1 w-px rounded-full"
+            style={{ background: '#E5E6EB' }}
+          />
+
+          <div className="space-y-6">
+            {activities.map((item, i) => (
+              <div key={i} className="relative flex items-start gap-4 pl-5">
+                {/* dot */}
+                <div
+                  className={`absolute left-0 top-1 w-2 h-2 rounded-full flex-shrink-0 ${
+                    item.pulse ? 'animate-pulse-dot' : ''
+                  }`}
+                  style={{ background: item.color }}
+                />
+                <div className="flex-1 flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-medium" style={{ color: '#1D2129' }}>
+                      {item.title}
+                    </span>
+                    <p className="text-xs mt-1" style={{ color: '#86909C' }}>
+                      {item.desc}
+                    </p>
+                  </div>
+                  <span
+                    className="text-xs flex-shrink-0 ml-4 tabular-nums"
+                    style={{ color: '#86909C' }}
+                  >
+                    {item.time}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="mb-3 flex items-center gap-2">
-              <Zap className="h-5 w-5 text-amber-500" />
-              <h3 className="font-semibold">当前账号配置</h3>
-            </div>
-            <dl className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-gray-500">领域</dt>
-                <dd className="font-medium text-gray-900">{accountProfile.niche}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-500">目标受众</dt>
-                <dd className="font-medium text-gray-900">{accountProfile.targetAudience}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-500">调性</dt>
-                <dd className="font-medium text-gray-900">{accountProfile.tone}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-gray-500">平台</dt>
-                <dd className="font-medium text-gray-900">{accountProfile.platforms.join('、')}</dd>
-              </div>
-            </dl>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate('/workflow')}>
-              修改配置
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="mb-3 flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-500" />
-              <h3 className="font-semibold">系统状态</h3>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">编排器 (Orchestrator)</span>
-                <span className="flex items-center gap-1 text-green-600">
-                  <span className="h-2 w-2 rounded-full bg-green-500"></span> 就绪
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">Agent 服务</span>
-                <span className="flex items-center gap-1 text-green-600">
-                  <span className="h-2 w-2 rounded-full bg-green-500"></span> 6 个已注册
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">引擎模式</span>
-                <span className="text-gray-700">Legacy / LangGraph</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">人工审核</span>
-                <span className="text-gray-700">已启用</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+        </div>
+      </section>
+    </Layout>
   )
 }
