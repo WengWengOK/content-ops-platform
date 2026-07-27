@@ -73,7 +73,7 @@ public class AgentFeignClients {
      * Feign client for the Discussion Agent (hosted in the Topic Agent service).
      * Supports the multi-turn "把TRAE当讨论对象" discussion workflow.
      */
-    @FeignClient(name = AgentConstants.SERVICE_TOPIC, path = AgentConstants.CONTEXT_PATH_TOPIC)
+    @FeignClient(name = AgentConstants.SERVICE_TOPIC, path = AgentConstants.CONTEXT_PATH_TOPIC, contextId = "discussionAgent")
     public interface DiscussionAgentClient {
 
         @PostMapping("/api/v1/discussion/start")

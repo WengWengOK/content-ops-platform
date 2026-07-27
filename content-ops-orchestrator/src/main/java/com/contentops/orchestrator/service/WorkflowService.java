@@ -49,19 +49,30 @@ public class WorkflowService {
     /**
      * Start a new workflow by executing the first stage.
      *
-     * <p>根据配置选择执行引擎。
+     * <p>根据配置选择执行引擎。工作流执行为异步——先保存状态并立即返回，
+     * 管线在后台线程中执行。若 Agent 服务不可用，工作流状态会被标记为 FAILED。
      */
     public void startWorkflow(TaskContext context) {
         stateManager.saveWorkflowState(context.getWorkflowId(), context);
 
-        if (useLangGraph()) {
-            log.info("[Workflow:{}] Using LangGraph4j engine", context.getWorkflowId());
-            langGraphEngine.executeWorkflow(context);
-            stateManager.saveWorkflowState(context.getWorkflowId(), context);
-        } else {
-            log.info("[Workflow:{}] Using legacy engine", context.getWorkflowId());
-            orchestrator.executeStage(context);
-        }
+        // 异步执行管线，避免阻塞 HTTP 请求
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                if (useLangGraph()) {
+                    log.info("[Workflow:{}] Using LangGraph4j engine", context.getWorkflowId());
+                    langGraphEngine.executeWorkflow(context);
+                } else {
+                    log.info("[Workflow:{}] Using legacy engine", context.getWorkflowId());
+                    orchestrator.executeStage(context);
+                }
+                stateManager.saveWorkflowState(context.getWorkflowId(), context);
+            } catch (Exception e) {
+                log.error("[Workflow:{}] Pipeline execution failed: {}", context.getWorkflowId(), e.getMessage(), e);
+                context.setStatus(TaskStatus.FAILED.name());
+                context.setErrorMessage("Pipeline execution failed: " + e.getMessage());
+                stateManager.saveWorkflowState(context.getWorkflowId(), context);
+            }
+        });
     }
 
     /**
