@@ -31,7 +31,7 @@ public class OptimizeAgentController {
     private final OptimizationAgent optimizationAgent;
 
     @PostMapping("/execute")
-    public AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
         log.info("Received optimization task: workflowId={}, taskId={}",
                 request.getWorkflowId(), request.getTaskId());
         try {

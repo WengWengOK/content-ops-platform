@@ -2,6 +2,8 @@ server:
   port: 8080
 
 spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}  # 默认开发环境，生产环境通过 SPRING_PROFILES_ACTIVE=prod 覆盖
   application:
     name: content-ops-server
   mvc:
@@ -33,14 +35,14 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized  # 生产环境不暴露健康检查详情，开发环境在 application-dev.yml 中覆盖
   tracing:
     sampling:
       probability: 1.0
 
 logging:
   level:
-    com.contentops: DEBUG
+    com.contentops: INFO
     org.springframework.ai: INFO
 
 # ════════════════════════════════════════════════════════════════

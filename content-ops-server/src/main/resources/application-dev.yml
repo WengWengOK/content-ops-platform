@@ -1,0 +1,28 @@
+# ════════════════════════════════════════════════════════════════
+# 开发环境配置 (Dev Profile)
+# 启动方式: SPRING_PROFILES_ACTIVE=dev （默认）
+# ════════════════════════════════════════════════════════════════
+
+# 开发环境开启 DEBUG 日志，便于调试
+logging:
+  level:
+    com.contentops: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.web: DEBUG
+
+# 开发环境暴露健康检查详情
+management:
+  endpoint:
+    health:
+      show-details: always
+
+# 开发环境开启 Swagger UI
+springdoc:
+  swagger-ui:
+    enabled: true
+
+# 开发环境 Redis 无需密码
+spring:
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:}

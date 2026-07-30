@@ -34,7 +34,7 @@ public class PublishAgentController {
     private final PublishingAgent publishingAgent;
 
     @PostMapping("/execute")
-    public AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
         log.info("Received publishing task: workflowId={}, taskId={}",
                 request.getWorkflowId(), request.getTaskId());
         try {

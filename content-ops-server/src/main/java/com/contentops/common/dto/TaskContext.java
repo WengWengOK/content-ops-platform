@@ -172,6 +172,7 @@ public class TaskContext {
         @Schema(description = "账号 ID", example = "acc-001")
         private String accountId;
         @Schema(description = "账号名称", example = "成长观察室", required = true)
+        @jakarta.validation.constraints.NotBlank(message = "accountName 不能为空")
         private String accountName;
         @Schema(description = "定位领域/赛道", example = "个人成长")
         private String niche;

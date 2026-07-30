@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -50,7 +51,7 @@ public class WorkflowController {
                     description = "工作流启动请求，包含账号画像、输入参数和是否需要人工审核",
                     required = true
             )
-            @RequestBody StartWorkflowRequest request) {
+            @Valid @RequestBody StartWorkflowRequest request) {
 
         log.info("Starting new content operations workflow for account: {}", 
                 request.getAccountProfile().getAccountName());
@@ -209,7 +210,7 @@ public class WorkflowController {
                     description = "讨论启动请求，包含模糊创意和账号画像",
                     required = true
             )
-            @RequestBody DiscussStartRequest request) {
+            @Valid @RequestBody DiscussStartRequest request) {
 
         log.info("Starting discussion session via orchestrator");
 
@@ -236,7 +237,7 @@ public class WorkflowController {
                     description = "用户消息内容",
                     required = true
             )
-            @RequestBody DiscussChatRequest request) {
+            @Valid @RequestBody DiscussChatRequest request) {
 
         log.info("Discussion chat via orchestrator: sessionId={}", sessionId);
 
@@ -370,6 +371,7 @@ public class WorkflowController {
     @Schema(description = "启动工作流请求")
     public static class StartWorkflowRequest {
         @Schema(description = "账号画像信息，包含账号名称、定位领域、目标受众、语气风格、发布平台等", required = true)
+        @jakarta.validation.constraints.NotNull(message = "accountProfile 不能为空")
         private TaskContext.AccountProfile accountProfile;
         @Schema(description = "工作流输入参数，键值对形式，如主题关键词、特别要求等")
         private Map<String, Object> inputs;
@@ -398,6 +400,7 @@ public class WorkflowController {
     @Schema(description = "启动讨论会话请求")
     public static class DiscussStartRequest {
         @Schema(description = "用户的模糊创意或想法描述", required = true, example = "我想写一篇关于职场新人成长的系列文章")
+        @jakarta.validation.constraints.NotBlank(message = "fuzzyIdea 不能为空")
         private String fuzzyIdea;
         @Schema(description = "账号画像信息")
         private TaskContext.AccountProfile accountProfile;
@@ -409,6 +412,7 @@ public class WorkflowController {
     @Schema(description = "讨论对话消息请求")
     public static class DiscussChatRequest {
         @Schema(description = "用户发送的消息内容", required = true, example = "可以更聚焦在时间管理这个角度吗？")
+        @jakarta.validation.constraints.NotBlank(message = "message 不能为空")
         private String message;
     }
 }

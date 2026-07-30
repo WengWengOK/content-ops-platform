@@ -4,6 +4,8 @@ import lombok.*;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+import jakarta.validation.constraints.NotBlank;
+
 /**
  * Request to execute a specific agent stage.
  * Sent from orchestrator to agent via Kafka or REST.
@@ -17,10 +19,12 @@ public class AgentTaskRequest {
     /** Unique task ID within a workflow */
     private String taskId;
 
-    /** Workflow ID */
+    /** Workflow ID — 必填 */
+    @NotBlank(message = "workflowId 不能为空")
     private String workflowId;
 
-    /** Agent stage code */
+    /** Agent stage code — 必填 */
+    @NotBlank(message = "stageCode 不能为空")
     private String stageCode;
 
     /** Account profile */

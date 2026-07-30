@@ -36,7 +36,7 @@ public class AnalysisAgentController {
     private final TrendAggregationEnforcer trendEnforcer;
 
     @PostMapping("/execute")
-    public AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
         log.info("Received data analysis task: workflowId={}, taskId={}",
                 request.getWorkflowId(), request.getTaskId());
         try {

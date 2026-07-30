@@ -10,6 +10,7 @@ import com.contentops.topic.service.DiscussionSessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +44,7 @@ public class DiscussionController {
      */
     @PostMapping("/start")
     public AgentResponse<DiscussionResponse> startDiscussion(
-            @RequestBody StartDiscussionRequest request) {
+            @Valid @RequestBody StartDiscussionRequest request) {
 
         log.info("Starting discussion session: fuzzyIdea length={}",
                 request.getFuzzyIdea() != null ? request.getFuzzyIdea().length() : 0);
@@ -99,7 +100,7 @@ public class DiscussionController {
     @PostMapping("/{sessionId}/chat")
     public AgentResponse<DiscussionResponse> chat(
             @PathVariable String sessionId,
-            @RequestBody ChatRequest request) {
+            @Valid @RequestBody ChatRequest request) {
 
         log.info("Discussion chat: sessionId={}, message length={}",
                 sessionId, request.getMessage() != null ? request.getMessage().length() : 0);
@@ -233,7 +234,8 @@ public class DiscussionController {
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
     public static class StartDiscussionRequest {
-        /** The user's fuzzy/vague idea */
+        /** The user's fuzzy/vague idea — 必填 */
+        @jakarta.validation.constraints.NotBlank(message = "fuzzyIdea 不能为空")
         private String fuzzyIdea;
         /** Optional account profile for context */
         private AccountProfile accountProfile;
@@ -243,7 +245,8 @@ public class DiscussionController {
     @lombok.AllArgsConstructor
     @lombok.NoArgsConstructor
     public static class ChatRequest {
-        /** The user's message for this turn */
+        /** The user's message for this turn — 必填 */
+        @jakarta.validation.constraints.NotBlank(message = "message 不能为空")
         private String message;
     }
 }

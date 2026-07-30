@@ -46,7 +46,7 @@ public class ImageAgentController {
      * 分析文章内容，返回 3 个候选风格方向供人工选择。
      */
     @PostMapping("/styles")
-    public AgentResponse<Map<String, Object>> generateStyleDirections(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> generateStyleDirections(@Valid @RequestBody AgentTaskRequest request) {
         log.info("[阶段一-风格] workflowId={}, taskId={}", request.getWorkflowId(), request.getTaskId());
         try {
             AccountProfile profile = request.getAccountProfile();
@@ -110,7 +110,7 @@ public class ImageAgentController {
      * 需要在 inputs 或 accumulatedArtifacts 中传入 confirmedStyle。
      */
     @PostMapping("/generate")
-    public AgentResponse<Map<String, Object>> generateImages(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> generateImages(@Valid @RequestBody AgentTaskRequest request) {
         log.info("[阶段二-生图] workflowId={}, taskId={}", request.getWorkflowId(), request.getTaskId());
         try {
             AccountProfile profile = request.getAccountProfile();
@@ -180,7 +180,7 @@ public class ImageAgentController {
      * 新流程建议使用 /styles → /generate 两阶段方式。
      */
     @PostMapping("/execute")
-    public AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
         log.info("[兼容-一次性] workflowId={}, taskId={}", request.getWorkflowId(), request.getTaskId());
         try {
             AccountProfile profile = request.getAccountProfile();

@@ -43,7 +43,7 @@ public class ContentAgentController {
      * 调用 generateOutline()，返回大纲结构供人工确认。
      */
     @PostMapping("/outline")
-    public AgentResponse<Map<String, Object>> generateOutline(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> generateOutline(@Valid @RequestBody AgentTaskRequest request) {
         log.info("[阶段一-大纲] workflowId={}, taskId={}", request.getWorkflowId(), request.getTaskId());
         try {
             AccountProfile profile = request.getAccountProfile();
@@ -101,7 +101,7 @@ public class ContentAgentController {
      * 需要在 inputs 或 accumulatedArtifacts 中传入 confirmedOutline。
      */
     @PostMapping("/draft")
-    public AgentResponse<Map<String, Object>> generateDraft(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> generateDraft(@Valid @RequestBody AgentTaskRequest request) {
         log.info("[阶段二-初稿] workflowId={}, taskId={}", request.getWorkflowId(), request.getTaskId());
         try {
             AccountProfile profile = request.getAccountProfile();
@@ -169,7 +169,7 @@ public class ContentAgentController {
      * 新流程建议使用 /outline → /draft 两阶段方式。
      */
     @PostMapping("/execute")
-    public AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
         log.info("[兼容-一次性] workflowId={}, taskId={}", request.getWorkflowId(), request.getTaskId());
         try {
             AccountProfile profile = request.getAccountProfile();

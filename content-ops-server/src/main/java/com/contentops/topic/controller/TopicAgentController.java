@@ -34,7 +34,7 @@ public class TopicAgentController {
     private final TopicPlanningAgent topicPlanningAgent;
 
     @PostMapping("/execute")
-    public AgentResponse<Map<String, Object>> execute(@RequestBody AgentTaskRequest request) {
+    public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
         log.info("Received topic planning task: workflowId={}, taskId={}",
                 request.getWorkflowId(), request.getTaskId());
         try {
