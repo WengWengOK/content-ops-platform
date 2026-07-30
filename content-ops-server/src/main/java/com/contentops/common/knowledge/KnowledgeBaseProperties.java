@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
  *     pg-port: 5432
  *     pg-database: contentops
  *     pg-user: contentops
- *     pg-password: contentops123
+ *     pg-password: ${DATABASE_PASSWORD}  # 必须通过环境变量注入，禁止硬编码
  *     table-name: content_embeddings
  *     max-results: 5
  *     min-score: 0.7
@@ -38,8 +38,8 @@ public class KnowledgeBaseProperties {
     /** PostgreSQL username */
     private String pgUser = "contentops";
 
-    /** PostgreSQL password */
-    private String pgPassword = "contentops123";
+    /** PostgreSQL password — must be injected via environment variable, no hardcoded default */
+    private String pgPassword = "";
 
     /** Table name for storing embeddings in PGVector */
     private String tableName = "content_embeddings";

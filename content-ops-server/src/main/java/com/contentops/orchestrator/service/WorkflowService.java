@@ -10,9 +10,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -26,6 +34,12 @@ import java.util.stream.Collectors;
  *
  * <p>灰度切换：通过 Nacos 配置中心动态修改 engine 值即可切换，无需重启（配合 @RefreshScope）。
  * 回滚：改回 legacy 即可，原引擎代码完全保留。
+ *
+ * <p><b>P0 修复：</b>
+ * <ul>
+ *   <li>使用自定义有界线程池替代 ForkJoinPool.commonPool()，防止 I/O 任务耗尽默认线程池</li>
+ *   <li>approveAndProceed / confirmSubStage 使用分布式锁保护，防止并发状态修改</li>
+ * </ul>
  */
 @Slf4j
 @Service
@@ -39,6 +53,51 @@ public class WorkflowService {
     @Value("${contentops.orchestrator.engine:legacy}")
     private String engineType;
 
+    /** 自定义线程池：用于异步执行工作流管线 */
+    private ExecutorService workflowExecutor;
+
+    @PostConstruct
+    void initExecutor() {
+        int corePoolSize = 4;
+        int maxPoolSize = 16;
+        int queueCapacity = 50;
+        ThreadFactory threadFactory = new ThreadFactory() {
+            private final AtomicInteger counter = new AtomicInteger(0);
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "workflow-exec-" + counter.getAndIncrement());
+                t.setDaemon(true);
+                return t;
+            }
+        };
+        this.workflowExecutor = new ThreadPoolExecutor(
+                corePoolSize,
+                maxPoolSize,
+                60L, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                threadFactory,
+                new ThreadPoolExecutor.CallerRunsPolicy()  // 队列满时由调用线程执行，实现背压
+        );
+        log.info("Workflow executor initialized: core={}, max={}, queue={}",
+                corePoolSize, maxPoolSize, queueCapacity);
+    }
+
+    @PreDestroy
+    void shutdownExecutor() {
+        if (workflowExecutor != null) {
+            workflowExecutor.shutdown();
+            try {
+                if (!workflowExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    workflowExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                workflowExecutor.shutdownNow();
+            }
+            log.info("Workflow executor shutdown complete");
+        }
+    }
+
     /**
      * 判断是否使用 LangGraph4j 引擎。
      */
@@ -51,11 +110,14 @@ public class WorkflowService {
      *
      * <p>根据配置选择执行引擎。工作流执行为异步——先保存状态并立即返回，
      * 管线在后台线程中执行。若 Agent 服务不可用，工作流状态会被标记为 FAILED。
+     *
+     * <p><b>P0 修复：</b>使用自定义有界线程池替代 ForkJoinPool.commonPool()，
+     * 避免 I/O 密集型任务耗尽 JVM 默认线程池。
      */
     public void startWorkflow(TaskContext context) {
         stateManager.saveWorkflowState(context.getWorkflowId(), context);
 
-        // 异步执行管线，避免阻塞 HTTP 请求
+        // 使用自定义线程池异步执行管线，避免阻塞 HTTP 请求
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
                 if (useLangGraph()) {
@@ -72,7 +134,7 @@ public class WorkflowService {
                 context.setErrorMessage("Pipeline execution failed: " + e.getMessage());
                 stateManager.saveWorkflowState(context.getWorkflowId(), context);
             }
-        });
+        }, workflowExecutor);
     }
 
     /**
@@ -101,6 +163,8 @@ public class WorkflowService {
      * Approve current stage and proceed to the next.
      * This is called after human review.
      *
+     * <p><b>P0 修复：</b>使用分布式锁保护状态修改，防止并发 approve 导致状态不一致。
+     *
      * <p><b>双引擎支持：</b>
      * <ul>
      *   <li>LangGraph 模式：调用 {@link LangGraphWorkflowEngine#resumeWorkflow}</li>
@@ -108,66 +172,72 @@ public class WorkflowService {
      * </ul>
      */
     public void approveAndProceed(String workflowId, Map<String, Object> feedback) {
-        TaskContext context = stateManager.loadWorkflowState(workflowId)
-                .orElseThrow(() -> new RuntimeException("Workflow not found: " + workflowId));
+        stateManager.executeWithLock(workflowId, wfId -> {
+            TaskContext context = stateManager.loadWorkflowState(wfId)
+                    .orElseThrow(() -> new RuntimeException("Workflow not found: " + wfId));
 
-        if (!TaskStatus.AWAITING_HUMAN.name().equals(context.getStatus())) {
-            throw new RuntimeException("Workflow is not awaiting human review. Current status: "
-                    + context.getStatus());
-        }
-
-        if (useLangGraph()) {
-            log.info("[Workflow:{}] Resuming via LangGraph engine", workflowId);
-            langGraphEngine.resumeWorkflow(context, feedback);
-            stateManager.saveWorkflowState(context.getWorkflowId(), context);
-            return;
-        }
-
-        // Legacy 模式：保留 A计划的循环边界检查逻辑
-        if (feedback != null && !feedback.isEmpty()) {
-            if (context.getInputs() == null) {
-                context.setInputs(new java.util.HashMap<>());
+            if (!TaskStatus.AWAITING_HUMAN.name().equals(context.getStatus())) {
+                throw new RuntimeException("Workflow is not awaiting human review. Current status: "
+                        + context.getStatus());
             }
-            context.getInputs().put("humanFeedback", feedback);
-        }
 
-        com.contentops.common.enums.AgentStage currentStage =
-                com.contentops.common.enums.AgentStage.fromCode(context.getCurrentStage());
-        com.contentops.common.enums.AgentStage nextStage = currentStage.next();
+            if (useLangGraph()) {
+                log.info("[Workflow:{}] Resuming via LangGraph engine", wfId);
+                langGraphEngine.resumeWorkflow(context, feedback);
+                stateManager.saveWorkflowState(wfId, context);
+                return;
+            }
 
-        if (orchestrator.checkAndHandleCycleBoundary(context, currentStage, nextStage)) {
-            log.info("[Workflow:{}] Cycle boundary handled in approveAndProceed. cycle={}",
-                    workflowId, context.getCycleCount());
-            return;
-        }
+            // Legacy 模式：保留 A计划的循环边界检查逻辑
+            if (feedback != null && !feedback.isEmpty()) {
+                if (context.getInputs() == null) {
+                    context.setInputs(new java.util.HashMap<>());
+                }
+                context.getInputs().put("humanFeedback", feedback);
+            }
 
-        context.setCurrentStage(nextStage.getCode());
-        context.setStatus(TaskStatus.PENDING.name());
+            com.contentops.common.enums.AgentStage currentStage =
+                    com.contentops.common.enums.AgentStage.fromCode(context.getCurrentStage());
+            com.contentops.common.enums.AgentStage nextStage = currentStage.next();
 
-        log.info("[Workflow:{}] Human approved. Advancing {} → {}",
-                workflowId, currentStage.getCode(), nextStage.getCode());
+            if (orchestrator.checkAndHandleCycleBoundary(context, currentStage, nextStage)) {
+                log.info("[Workflow:{}] Cycle boundary handled in approveAndProceed. cycle={}",
+                        wfId, context.getCycleCount());
+                return;
+            }
 
-        orchestrator.executeStage(context);
+            context.setCurrentStage(nextStage.getCode());
+            context.setStatus(TaskStatus.PENDING.name());
+
+            log.info("[Workflow:{}] Human approved. Advancing {} → {}",
+                    wfId, currentStage.getCode(), nextStage.getCode());
+
+            orchestrator.executeStage(context);
+        });
     }
 
     /**
      * Retry the current stage after a failure.
+     *
+     * <p><b>P0 修复：</b>使用分布式锁保护状态修改。
      */
     public void retryStage(String workflowId) {
-        TaskContext context = stateManager.loadWorkflowState(workflowId)
-                .orElseThrow(() -> new RuntimeException("Workflow not found: " + workflowId));
+        stateManager.executeWithLock(workflowId, wfId -> {
+            TaskContext context = stateManager.loadWorkflowState(wfId)
+                    .orElseThrow(() -> new RuntimeException("Workflow not found: " + wfId));
 
-        context.setStatus(TaskStatus.PENDING.name());
-        context.setErrorMessage(null);
+            context.setStatus(TaskStatus.PENDING.name());
+            context.setErrorMessage(null);
 
-        log.info("[Workflow:{}] Retrying stage: {}", workflowId, context.getCurrentStage());
+            log.info("[Workflow:{}] Retrying stage: {}", wfId, context.getCurrentStage());
 
-        if (useLangGraph()) {
-            langGraphEngine.executeWorkflow(context);
-        } else {
-            orchestrator.executeStage(context);
-        }
-        stateManager.saveWorkflowState(context.getWorkflowId(), context);
+            if (useLangGraph()) {
+                langGraphEngine.executeWorkflow(context);
+            } else {
+                orchestrator.executeStage(context);
+            }
+            stateManager.saveWorkflowState(wfId, context);
+        });
     }
 
     /**
@@ -179,31 +249,35 @@ public class WorkflowService {
      * <p><b>LangGraph 模式</b>下，子阶段确认通过 {@link LangGraphWorkflowEngine#resumeWorkflow} 处理，
      * 因为 LangGraph4j 的 interruptBefore 机制会自动在 content/image 节点前暂停。
      *
+     * <p><b>P0 修复：</b>使用分布式锁保护状态修改。
+     *
      * @param workflowId 工作流 ID
      * @param feedback   可选的反馈/修改（如修改后的大纲、选择的风格方向）
      */
     public void confirmSubStage(String workflowId, Map<String, Object> feedback) {
-        TaskContext context = stateManager.loadWorkflowState(workflowId)
-                .orElseThrow(() -> new RuntimeException("Workflow not found: " + workflowId));
+        stateManager.executeWithLock(workflowId, wfId -> {
+            TaskContext context = stateManager.loadWorkflowState(wfId)
+                    .orElseThrow(() -> new RuntimeException("Workflow not found: " + wfId));
 
-        if (!TaskStatus.AWAITING_HUMAN.name().equals(context.getStatus())) {
-            throw new RuntimeException("Workflow is not awaiting confirmation. Current status: "
-                    + context.getStatus());
-        }
+            if (!TaskStatus.AWAITING_HUMAN.name().equals(context.getStatus())) {
+                throw new RuntimeException("Workflow is not awaiting confirmation. Current status: "
+                        + context.getStatus());
+            }
 
-        if (useLangGraph()) {
-            log.info("[Workflow:{}] Confirming via LangGraph resume", workflowId);
-            langGraphEngine.resumeWorkflow(context, feedback);
-            stateManager.saveWorkflowState(context.getWorkflowId(), context);
-            return;
-        }
+            if (useLangGraph()) {
+                log.info("[Workflow:{}] Confirming via LangGraph resume", wfId);
+                langGraphEngine.resumeWorkflow(context, feedback);
+                stateManager.saveWorkflowState(wfId, context);
+                return;
+            }
 
-        // Legacy 模式
-        if (context.getCurrentSubStage() == null || context.getCurrentSubStage().isBlank()) {
-            throw new RuntimeException("No current sub-stage to confirm. This may be a regular stage approval.");
-        }
+            // Legacy 模式
+            if (context.getCurrentSubStage() == null || context.getCurrentSubStage().isBlank()) {
+                throw new RuntimeException("No current sub-stage to confirm. This may be a regular stage approval.");
+            }
 
-        log.info("[Workflow:{}] Confirming sub-stage: {}", workflowId, context.getCurrentSubStage());
-        orchestrator.confirmAndProceedSubStage(context, feedback);
+            log.info("[Workflow:{}] Confirming sub-stage: {}", wfId, context.getCurrentSubStage());
+            orchestrator.confirmAndProceedSubStage(context, feedback);
+        });
     }
 }

@@ -64,7 +64,8 @@ public class BilibiliPlatformService {
         }
         try {
             CategoryListResponse response = restClient.get()
-                    .uri("/openapi/x/v2/channel/list?access_token=" + accessToken)
+                    .uri("/openapi/x/v2/channel/list")
+                    .header("Authorization", "Bearer " + accessToken)
                     .retrieve()
                     .body(CategoryListResponse.class);
             return formatCategoryList(response);

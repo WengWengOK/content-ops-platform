@@ -392,6 +392,39 @@ public class MarkdownConverter {
 
     // ════════════════ Inline formatting ════════════════
 
+    /** Allowed URL protocols for markdown links and images */
+    private static final Pattern SAFE_URL_PROTOCOL =
+            Pattern.compile("^(https?://|mailto:|data:image/|#)", Pattern.CASE_INSENSITIVE);
+
+    /** Pattern for detecting javascript: and other dangerous protocol prefixes */
+    private static final Pattern DANGEROUS_PROTOCOL =
+            Pattern.compile("^(javascript|vbscript|file|data(?!:image/)):", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Validate and sanitize a URL for use in an HTML attribute.
+     * <p>Rejects dangerous protocols (javascript:, vbscript:, etc.) and
+     * HTML-escapes the URL to prevent attribute injection.
+     *
+     * @param rawUrl the raw URL extracted from Markdown
+     * @return sanitized URL safe for HTML attribute, or empty string if dangerous
+     */
+    private String sanitizeUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            return "";
+        }
+        String url = rawUrl.trim();
+        // Reject dangerous protocols
+        if (DANGEROUS_PROTOCOL.matcher(url).matches()) {
+            return "";
+        }
+        // If URL has a protocol, ensure it's safe
+        if (url.contains("://") && !SAFE_URL_PROTOCOL.matcher(url).matches()) {
+            return "";
+        }
+        // HTML-escape to prevent attribute breakout (quotes, angle brackets)
+        return escapeHtml(url);
+    }
+
     /**
      * Apply inline Markdown formatting: bold, italic, strikethrough,
      * inline code, images, links.
@@ -401,13 +434,29 @@ public class MarkdownConverter {
             return "";
         }
 
-        // Images: ![alt](url) → <img>
-        text = text.replaceAll("!\\[(.*?)]\\((.+?)\\)",
-                "<img src=\"$2\" alt=\"$1\" />");
+        // Images: ![alt](url) → <img> (with URL sanitization + XSS prevention)
+        Matcher imgMatcher = Pattern.compile("!\\[(.*?)]\\((.+?)\\)").matcher(text);
+        StringBuilder imgResult = new StringBuilder();
+        while (imgMatcher.find()) {
+            String alt = escapeHtml(imgMatcher.group(1));
+            String safeUrl = sanitizeUrl(imgMatcher.group(2));
+            imgMatcher.appendReplacement(imgResult,
+                    Matcher.quoteReplacement("<img src=\"" + safeUrl + "\" alt=\"" + alt + "\" />"));
+        }
+        imgMatcher.appendTail(imgResult);
+        text = imgResult.toString();
 
-        // Links: [text](url) → <a>
-        text = text.replaceAll("\\[(.*?)]\\(([^)]+)\\)",
-                "<a href=\"$2\">$1</a>");
+        // Links: [text](url) → <a> (with URL sanitization + XSS prevention)
+        Matcher linkMatcher = Pattern.compile("\\[(.*?)]\\(([^)]+)\\)").matcher(text);
+        StringBuilder linkResult = new StringBuilder();
+        while (linkMatcher.find()) {
+            String linkText = escapeHtml(linkMatcher.group(1));
+            String safeUrl = sanitizeUrl(linkMatcher.group(2));
+            linkMatcher.appendReplacement(linkResult,
+                    Matcher.quoteReplacement("<a href=\"" + safeUrl + "\">" + linkText + "</a>"));
+        }
+        linkMatcher.appendTail(linkResult);
+        text = linkResult.toString();
 
         // Inline code: `code` → <code> (must be before bold/italic)
         text = text.replaceAll("`([^`]+)`", "<code>$1</code>");

@@ -4,9 +4,11 @@ server:
 spring:
   application:
     name: content-ops-server
+  mvc:
+    throw-exception-if-no-handler-found: true  # 404 时抛出 NoHandlerFoundException，由全局异常处理器统一处理
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      api-key: ${OPENAI_API_KEY:}  # 必须通过环境变量注入，禁止硬编码
       base-url: ${OPENAI_BASE_URL:https://api.openai.com}
       chat:
         options:
@@ -19,7 +21,7 @@ spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/contentops}
     username: ${DATABASE_USER:contentops}
-    password: ${DATABASE_PASS:contentops}
+    password: ${DATABASE_PASS:}  # 必须通过环境变量注入，禁止硬编码
 
 # ════════════════════════════════════════════════════════════════
 # Metrics & Observability (simplified for monolithic mode)

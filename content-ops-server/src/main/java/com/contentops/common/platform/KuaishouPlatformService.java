@@ -64,9 +64,15 @@ public class KuaishouPlatformService {
     public StartUploadResponse startUpload(String accessToken) {
         if (!isAvailable()) return null;
         try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("app_id", config.getAppId());
+            body.put("access_token", accessToken);
+
             StartUploadResponse response = restClient.post()
-                    .uri("/openapi/photo/start_upload?app_id=" + config.getAppId()
-                            + "&access_token=" + accessToken)
+                    .uri("/openapi/photo/start_upload")
+                    .header("Authorization", "Bearer " + accessToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
                     .retrieve()
                     .body(StartUploadResponse.class);
 
@@ -96,14 +102,16 @@ public class KuaishouPlatformService {
         }
         try {
             Map<String, Object> body = new HashMap<>();
+            body.put("app_id", config.getAppId());
+            body.put("access_token", accessToken);
             body.put("caption", caption);
             if (coverUrl != null && !coverUrl.isBlank()) {
                 body.put("cover_url", coverUrl);
             }
 
             PublishResponse response = restClient.post()
-                    .uri("/openapi/photo/publish?app_id=" + config.getAppId()
-                            + "&access_token=" + accessToken)
+                    .uri("/openapi/photo/publish")
+                    .header("Authorization", "Bearer " + accessToken)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
@@ -132,8 +140,8 @@ public class KuaishouPlatformService {
         }
         try {
             UserInfoResponse response = restClient.get()
-                    .uri("/openapi/user_info?app_id=" + config.getAppId()
-                            + "&access_token=" + accessToken)
+                    .uri("/openapi/user_info?app_id=" + config.getAppId())
+                    .header("Authorization", "Bearer " + accessToken)
                     .retrieve()
                     .body(UserInfoResponse.class);
 
@@ -159,8 +167,8 @@ public class KuaishouPlatformService {
         try {
             VideoListResponse response = restClient.get()
                     .uri("/openapi/photo/list?app_id=" + config.getAppId()
-                            + "&access_token=" + accessToken
                             + "&page=" + page + "&count=" + Math.min(count, 20))
+                    .header("Authorization", "Bearer " + accessToken)
                     .retrieve()
                     .body(VideoListResponse.class);
 
@@ -185,8 +193,8 @@ public class KuaishouPlatformService {
         try {
             VideoDetailResponse response = restClient.get()
                     .uri("/openapi/photo/info?app_id=" + config.getAppId()
-                            + "&access_token=" + accessToken
                             + "&photo_id=" + photoId)
+                    .header("Authorization", "Bearer " + accessToken)
                     .retrieve()
                     .body(VideoDetailResponse.class);
 
