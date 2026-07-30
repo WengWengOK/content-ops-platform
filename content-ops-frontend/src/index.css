@@ -1,0 +1,481 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   ContentOps Platform UI - Design System
+   Color Role System: 5 roles, ≤12 colors
+   ============================================ */
+:root {
+  /* ── Primary (Brand) ── 1 color, global unique ── */
+  --color-primary-50: #FFF0F5;
+  --color-primary-100: #FFD6E7;
+  --color-primary-200: #FFADC8;
+  --color-primary-300: #FF84A9;
+  --color-primary-400: #FF5C8A;
+  --color-primary-500: #FF2D5E;
+  --color-primary-600: #E8164A;
+  --color-primary-700: #C40E3A;
+  --color-primary-800: #9F0B2F;
+
+  /* ── Functional Colors ── semantic, never swap with primary ── */
+  --color-success-50: #E8F8F0;
+  --color-success-500: #00B42A;
+  --color-success-600: #009A24;
+  --color-warning-50: #FFF7E8;
+  --color-warning-500: #FF7D00;
+  --color-warning-600: #E56E00;
+  --color-error-50: #FFECE8;
+  --color-error-500: #F53F3F;
+  --color-error-600: #D63131;
+  --color-info-50: #E8F3FF;
+  --color-info-500: #165DFF;
+  --color-info-600: #0E42D2;
+
+  /* ── Neutral Scale ── WCAG AA compliant contrast ── */
+  --color-neutral-50: #F7F8FA;
+  --color-neutral-100: #F2F3F5;
+  --color-neutral-200: #E5E6EB;
+  --color-neutral-300: #C9CDD4;
+  --color-neutral-400: #86909C;
+  --color-neutral-500: #4E5969;
+  --color-neutral-600: #1D2129;
+  --color-neutral-700: #17171A;
+  --color-neutral-800: #0E0E10;
+
+  /* ── Chart Data Palette ── 6 colors, colorblind safe ── */
+  --chart-1: #165DFF;
+  --chart-2: #F77234;
+  --chart-3: #7B61FF;
+  --chart-4: #F7BA1E;
+  --chart-5: #14C9C9;
+  --chart-6: #9FDB1D;
+
+  /* ── Dark Mode ── separately tuned, not inverted ── */
+  --dark-bg: #17171A;
+  --dark-card: #232324;
+  --dark-border: #2E2E30;
+  --dark-text-1: #FFFFFFDE;
+  --dark-text-2: #FFFFFF99;
+  --dark-text-3: #FFFFFF66;
+
+  /* ── Semantic Aliases ── */
+  --background: #FFFFFF;
+  --foreground: #1D2129;
+  --card: #FFFFFF;
+  --card-foreground: #1D2129;
+  --popover: #FFFFFF;
+  --popover-foreground: #1D2129;
+  --primary: #FF2D5E;
+  --primary-foreground: #FFFFFF;
+  --muted: #F2F3F5;
+  --muted-foreground: #86909C;
+  --border: #E5E6EB;
+  --input: #E5E6EB;
+  --ring: #FF2D5E;
+
+  /* ── Brand Prefix Aliases ── */
+  --cop-background: #FFFFFF;
+  --cop-foreground: #1D2129;
+  --cop-card: #FFFFFF;
+  --cop-card-foreground: #1D2129;
+  --cop-popover: #FFFFFF;
+  --cop-popover-foreground: #1D2129;
+  --cop-primary: #FF2D5E;
+  --cop-primary-foreground: #FFFFFF;
+  --cop-muted: #F2F3F5;
+  --cop-muted-foreground: #86909C;
+  --cop-border: #E5E6EB;
+  --cop-input: #E5E6EB;
+  --cop-ring: #FF2D5E;
+
+  /* ── Radius Scale (restrained) ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ── Spacing: 8pt grid ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ── Shadows (border-first, alpha ≤ 0.05 for static) ── */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md: 0 4px 8px -1px rgba(0,0,0,0.05);
+
+  /* ── Typography ── */
+  --font-display: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-body: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Button States ── */
+  --btn-primary-bg: #165DFF;
+  --btn-primary-hover: #4080FF;
+  --btn-primary-active: #0E42D2;
+  --btn-primary-disabled: rgba(22, 93, 255, 0.3);
+  --btn-danger-bg: #F53F3F;
+  --btn-danger-hover: #F76560;
+}
+
+/* ── Base Styles ── */
+@layer base {
+  body {
+    font-family: var(--font-body);
+    margin: 0;
+    background: var(--color-neutral-50);
+    color: var(--color-neutral-600);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  *:focus-visible {
+    outline: 2px solid #165DFF;
+    outline-offset: 2px;
+  }
+}
+
+/* ── Animations (max 2 types per page) ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(120%); }
+  to { transform: translateX(0); }
+}
+
+/* ── Utility Classes ── */
+@layer components {
+  /* Button Primary */
+  .btn-primary {
+    background: var(--btn-primary-bg);
+    color: #fff;
+    transition: all 150ms ease;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-primary:hover { background: var(--btn-primary-hover); }
+  .btn-primary:active { background: var(--btn-primary-active); transform: scale(0.98); }
+  .btn-primary:disabled { background: var(--btn-primary-disabled); cursor: not-allowed; pointer-events: none; }
+
+  /* Button Outline */
+  .btn-outline {
+    border: 1px solid #E5E6EB;
+    color: #4E5969;
+    background: #fff;
+    border-radius: 8px;
+    padding: 10px 24px;
+    transition: all 150ms ease;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-outline:hover { border-color: #C9CDD4; background: #F7F8FA; }
+
+  /* Button Danger Outline */
+  .btn-danger-outline {
+    border: 1px solid #F53F3F;
+    color: #F53F3F;
+    background: #fff;
+    border-radius: 8px;
+    padding: 10px 24px;
+    transition: all 150ms ease;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-danger-outline:hover { background: #FFECE8; }
+
+  /* Card */
+  .card {
+    border: 1px solid #E5E6EB;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  /* Card Hover */
+  .card-hover {
+    transition: transform 200ms ease, border-color 200ms ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    border-color: #C9CDD4;
+  }
+
+  /* Input Field */
+  .input-field {
+    border: 1px solid #E5E6EB;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: #1D2129;
+    width: 100%;
+    transition: border-color 150ms ease;
+    background: #fff;
+    box-sizing: border-box;
+  }
+  .input-field:focus {
+    border-color: #165DFF;
+    box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1);
+    outline: none;
+  }
+  .input-field::placeholder { color: #C9CDD4; }
+
+  /* Nav Item */
+  .nav-item-3d {
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+  .nav-item-3d:hover {
+    background: #FFF0F5;
+    color: #FF2D5E;
+  }
+  .nav-item-3d.active {
+    background: linear-gradient(135deg, #FF2D5E, #FF5C8A);
+    color: #fff;
+  }
+
+  /* Toggle Switch */
+  .toggle-track {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: #C9CDD4;
+    position: relative;
+    cursor: pointer;
+    transition: background 200ms ease;
+    flex-shrink: 0;
+  }
+  .toggle-track.active { background: #165DFF; }
+  .toggle-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 200ms ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+  .toggle-track.active .toggle-thumb { transform: translateX(20px); }
+
+  /* Progress Bar */
+  .progress-track {
+    height: 4px;
+    background: #F2F3F5;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 300ms ease;
+  }
+
+  /* Skeleton */
+  .skeleton {
+    background: linear-gradient(90deg, #F2F3F5 0px, #E5E6EB 40px, #F2F3F5 80px);
+    background-size: 200px 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 100;
+    transform: translateX(120%);
+    transition: transform 200ms ease;
+  }
+  .toast.show { transform: translateX(0); }
+
+  /* Tabular Numbers */
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+
+  /* Spinner */
+  .animate-spin { animation: spin 1s linear infinite; display: inline-block; }
+  .animate-fadeInUp { animation: fadeInUp 400ms ease both; }
+  .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+  /* Platform card left bar */
+  .platform-card {
+    position: relative;
+    overflow: hidden;
+  }
+  .platform-card-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+  }
+
+  /* Work Card (Work Center) */
+  .work-card {
+    background: #fff;
+    border: 1px solid #E5E6EB;
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+    display: block;
+  }
+  .work-card:hover {
+    transform: translateY(-2px);
+    border-color: #C9CDD4;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  }
+  .work-card:focus-visible {
+    outline: 2px solid #165DFF;
+    outline-offset: 2px;
+  }
+
+  /* Work Card Cover */
+  .work-card-cover {
+    height: 200px;
+    border-radius: 12px 12px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .work-card-cover-text {
+    color: #fff;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    user-select: none;
+  }
+
+  /* Status Badge */
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .status-badge.published { background: #E8F8F0; color: #00B42A; }
+  .status-badge.draft { background: #FFF7E8; color: #FF7D00; }
+  .status-badge.generating { background: #E8F3FF; color: #165DFF; }
+  .status-badge.generating::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #165DFF;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  /* Filter Tab */
+  .filter-tab {
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #4E5969;
+    transition: all 200ms ease;
+  }
+  .filter-tab:hover { background: #F2F3F5; }
+  .filter-tab.active { background: #FF2D5E; color: #fff; border-color: #FF2D5E; }
+
+  /* Search Input (Work Center) */
+  .search-input::placeholder { color: #C9CDD4; }
+  .search-input:focus {
+    border-color: #165DFF;
+    box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1);
+    outline: none;
+  }
+}
+
+/* ── Scrollbar ── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Custom Scrollbar for Chat ── */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E6EB; border-radius: 2px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #C9CDD4; }
+
+/* ── Select arrow ── */
+select.input-field {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%2386909C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+  cursor: pointer;
+}
+
+/* ── Chart Bar tooltip ── */
+.chart-bar {
+  position: relative;
+  cursor: pointer;
+  transition: opacity 200ms ease;
+}
+.chart-bar:hover { opacity: 0.8; }
+.chart-bar::after {
+  content: attr(data-value);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1D2129;
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+  margin-bottom: 4px;
+}
+.chart-bar:hover::after { opacity: 1; }

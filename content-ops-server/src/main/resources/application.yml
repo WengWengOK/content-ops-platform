@@ -1,0 +1,77 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: content-ops-server
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${LLM_MODEL:gpt-4o}
+          temperature: 0.3
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/contentops}
+    username: ${DATABASE_USER:contentops}
+    password: ${DATABASE_PASS:contentops}
+
+# ════════════════════════════════════════════════════════════════
+# Metrics & Observability (simplified for monolithic mode)
+# ════════════════════════════════════════════════════════════════
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  level:
+    com.contentops: DEBUG
+    org.springframework.ai: INFO
+
+# ════════════════════════════════════════════════════════════════
+# Content Ops Platform Configuration
+# ════════════════════════════════════════════════════════════════
+contentops:
+  mode: monolithic
+  orchestrator:
+    engine: ${CONTENTOPS_ENGINE:legacy}
+
+# ════════════════════════════════════════════════════════════════
+# SpringDoc OpenAPI Configuration
+# ════════════════════════════════════════════════════════════════
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+    groups:
+      enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    doc-expansion: none
+    persist-authorization: true
+  packages-to-scan:
+    - com.contentops.server
+    - com.contentops.orchestrator
+    - com.contentops.topic
+    - com.contentops.content
+    - com.contentops.image
+    - com.contentops.publish
+    - com.contentops.analysis
+    - com.contentops.optimize
+  default-flat-param-object: true
