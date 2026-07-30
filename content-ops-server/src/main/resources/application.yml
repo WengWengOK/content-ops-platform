@@ -52,6 +52,35 @@ contentops:
   mode: monolithic
   orchestrator:
     engine: ${CONTENTOPS_ENGINE:legacy}
+  # 竞品画像系统（P0 定向竞品监控，com.contentops.common.profile.competitor）
+  competitor-profile:
+    default-monitor-frequency-hours: 24    # 监控频率默认值（小时）
+    cache-ttl-minutes: 30                  # 画像缓存 TTL（分钟）
+    cache-max-size: 500                    # 画像缓存最大条目数
+    top-works-count: 10                    # 采集 TOP 作品数量
+    hit-rate-threshold: 0.10               # 爆款阈值（TOP10%）
+    follower-growth-spike-threshold: 0.20  # 粉丝增长率突变灵敏度
+    posting-frequency-change-threshold: 0.30 # 发文频率变化灵敏度
+    topic-direction-change-threshold: 0.40 # 内容方向转变灵敏度
+    min-similarity-score: 0.50             # 相似度检索最低分
+    style-vector-dim: 128                  # 风格向量维度
+    competition-intensity-scale: 100       # 竞争烈度满分基准
+  # 风格画像系统（P0 改造：从静态 tone 字段升级为基于作品分析的风格特征提取，com.contentops.common.profile.style）
+  style-profile:
+    analysis-mode: ${CONTENTOPS_STYLE_MODE:heuristic}  # heuristic / llm / hybrid（默认启发式，保证核心功能不依赖外部 API）
+    cache-ttl-minutes: 60                  # 画像缓存 TTL（分钟），默认 1 小时
+    cache-maximum-size: 500                # 画像缓存最大条目数
+    similarity-threshold: 0.60             # 相似风格账号检索的最低相似度阈值
+    similar-default-limit: 5               # 相似检索默认返回上限
+    max-contents: 50                       # 单次聚合分析的最大内容篇数
+    llm-enabled: ${CONTENTOPS_STYLE_LLM_ENABLED:false}  # 是否允许 LLM 增强分析（默认关闭，纯启发式；设 true 时无 Key 会自动降级）
+    domain-terms:                          # 领域术语词典（专业术语密度检测，空时回退生僻字估算）
+      - 矩阵
+      - 转化
+      - 留存
+      - 闭环
+      - 赋能
+      - 颗粒度
   cache:
     # 平台配置缓存（低频变更）
     platform-config:
@@ -153,4 +182,6 @@ springdoc:
     - com.contentops.publish
     - com.contentops.analysis
     - com.contentops.optimize
+    - com.contentops.common.profile.style
+    - com.contentops.common.profile.competitor
   default-flat-param-object: true

@@ -23,6 +23,8 @@ public class CacheConfig {
     public static final String CACHE_PLATFORM_CONFIG = "platform-config";
     public static final String CACHE_AGENT_STAGES = "agent-stages";
     public static final String CACHE_PROMPT_TEMPLATES = "prompt-templates";
+    /** 风格画像缓存（com.contentops.common.profile.style）—— TTL 1 小时 */
+    public static final String CACHE_STYLE_PROFILES = "style-profiles";
 
     /**
      * 自定义 Caffeine CacheManager — 为不同缓存设置不同的过期策略。
@@ -46,6 +48,13 @@ public class CacheConfig {
                     Caffeine.newBuilder()
                             .maximumSize(200)
                             .expireAfterWrite(10, TimeUnit.MINUTES)
+                            .recordStats()
+                            .build());
+            // 风格画像缓存：1 小时 TTL，按 contentops.style-profile.cache-ttl-minutes 可在配置中扩展
+            cacheManager.registerCustomCache(CACHE_STYLE_PROFILES,
+                    Caffeine.newBuilder()
+                            .maximumSize(500)
+                            .expireAfterWrite(1, TimeUnit.HOURS)
                             .recordStats()
                             .build());
         };

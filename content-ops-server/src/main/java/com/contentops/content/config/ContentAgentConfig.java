@@ -2,12 +2,14 @@ package com.contentops.content.config;
 
 import com.contentops.common.knowledge.FileTools;
 import com.contentops.common.memory.RedisChatMemoryProvider;
+import com.contentops.common.profile.style.StyleEnricher;
 import com.contentops.common.prompt.PromptFragmentService;
 import com.contentops.common.prompt.PromptVersionService;
 import com.contentops.content.agent.ContentCreationAgent;
 import com.contentops.content.tool.ContentTools;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -25,6 +27,10 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class ContentAgentConfig {
 
+    /** 风格注入器（可选注入，未配置时降级为空） */
+    @Autowired(required = false)
+    private StyleEnricher styleEnricher;
+
     @Bean
     public ContentCreationAgent contentCreationAgent(ChatModel chatModel,
                                                       ContentTools contentTools,
@@ -38,10 +44,30 @@ public class ContentAgentConfig {
                 .chatMemoryProvider(chatMemoryProvider);
 
         // P1: 动态 Prompt 拼接——启用时用 PromptFragmentService 组装，否则回退到 @SystemMessage
+        // P0增强：动态 Prompt 拼接时，额外注入风格画像保持内容风格一致性
         if (promptVersionService.isDynamicPromptEnabled()) {
-            builder.systemMessageProvider(promptFragmentService::assembleContentSystemMessage);
+            builder.systemMessageProvider(variables -> {
+                String basePrompt = promptFragmentService.assembleContentSystemMessage(variables);
+                // 注入风格画像（让AI生成的内容像创作者自己写的）
+                if (styleEnricher != null) {
+                    String accountId = extractAccountId(variables);
+                    basePrompt = styleEnricher.enrichContentCreationPrompt(accountId, basePrompt);
+                }
+                return basePrompt;
+            });
         }
 
         return builder.build();
+    }
+
+    /**
+     * 从变量Map中提取accountId。
+     */
+    private String extractAccountId(Object variables) {
+        if (variables instanceof java.util.Map<?, ?> map) {
+            Object id = map.get("accountId");
+            return id != null ? id.toString() : null;
+        }
+        return null;
     }
 }
