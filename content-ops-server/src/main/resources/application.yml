@@ -81,6 +81,18 @@ contentops:
       - 闭环
       - 赋能
       - 颗粒度
+  # 受众画像系统（P1 用户画像扩展，com.contentops.common.profile.audience）
+  audience-profile:
+    cache-ttl-minutes: 60                # 画像缓存 TTL（分钟），默认 1 小时
+    cache-max-size: 500                  # 缓存最大条目数
+    region-stat-count: 5                 # 地域分布统计数量（TOP N）
+    time-slot-granularity: 2             # 活跃时段粒度（小时，如 2 表示 2 小时一个时段）
+    max-topic-keywords: 10               # 选题关键词最大数量（TOP N）
+    max-tag-preferences: 10              # 内容偏好标签最大数量
+    default-platform: wechat             # 默认拉取平台
+    rapid-growth-threshold: 0.10         # 快速增长判定阈值（30日增长率超过 10% 视为快速增长）
+    decline-threshold: -0.05             # 粉丝流失判定阈值（30日增长率低于 -5% 视为流失）
+    enable-content-profile: true         # 是否启用内容画像（关闭后仅构建受众画像）
   cache:
     # 平台配置缓存（低频变更）
     platform-config:
@@ -184,4 +196,5 @@ springdoc:
     - com.contentops.optimize
     - com.contentops.common.profile.style
     - com.contentops.common.profile.competitor
+    - com.contentops.common.profile.audience
   default-flat-param-object: true

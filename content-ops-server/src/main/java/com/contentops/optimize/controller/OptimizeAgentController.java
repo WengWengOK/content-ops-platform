@@ -6,6 +6,7 @@ import com.contentops.common.dto.OptimizationResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.profile.audience.ProfileEnricher;
 import com.contentops.common.util.RequestInputResolver;
 import com.contentops.optimize.agent.OptimizationAgent;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,9 @@ import java.util.Map;
  * REST entry point for the Optimization Agent.
  *
  * <p>Consumed by the orchestrator (via Feign) at {@code POST /api/v1/optimize/execute}.
+ *
+ * <p><b>P1 集成：</b>通过 {@link ProfileEnricher} 在调用 OptimizationAgent 前将内容画像与历史表现
+ * 注入到 historicalPerformance 中，使策略优化能基于真实的历史数据展开；无画像时原样返回，不影响执行。
  */
 @Slf4j
 @RestController
@@ -31,6 +35,7 @@ import java.util.Map;
 public class OptimizeAgentController {
 
     private final OptimizationAgent optimizationAgent;
+    private final ProfileEnricher profileEnricher;
 
     @PostMapping("/execute")
     public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
@@ -48,13 +53,18 @@ public class OptimizeAgentController {
             String currentStrategy = RequestInputResolver.resolve(request, "currentStrategy");
             String historicalPerformance = RequestInputResolver.resolve(request, "historicalPerformance");
 
+            // P1 集成：注入内容画像与历史表现到优化 Prompt（无画像时原样返回）
+            String accountId = profile.getAccountId();
+            String enrichedHistoricalPerformance = profileEnricher.enrichOptimizationPrompt(accountId, historicalPerformance);
+            log.debug("Enriched optimization prompt with content profile: accountId={}", accountId);
+
             OptimizationResult result = optimizationAgent.optimizeStrategy(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
                             AgentStage.OPTIMIZATION.getCode(), request.getWorkflowId()),
                     accountNiche,
                     analysisSummary,
                     currentStrategy,
-                    historicalPerformance
+                    enrichedHistoricalPerformance
             );
 
             Map<String, Object> data = new HashMap<>();

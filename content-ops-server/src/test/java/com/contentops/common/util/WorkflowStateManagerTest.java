@@ -167,7 +167,7 @@ class WorkflowStateManagerTest {
                 .thenReturn("{\"workflowId\":\"" + workflowId + "\",\"status\":\"PENDING\"}");
 
         stateManager.updateWorkflowStateAtomically(workflowId, ctx -> {
-            ctx.setStatus(TaskStatus.PROCESSING.name());
+            ctx.setStatus(TaskStatus.IN_PROGRESS.name());
         });
 
         // 验证锁被获取和释放

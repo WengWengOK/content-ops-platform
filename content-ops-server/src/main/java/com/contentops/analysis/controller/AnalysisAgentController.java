@@ -7,8 +7,9 @@ import com.contentops.common.dto.AnalysisReport;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
-import com.contentops.common.util.RequestInputResolver;
 import com.contentops.common.methodology.TrendAggregationEnforcer;
+import com.contentops.common.profile.audience.ProfileEnricher;
+import com.contentops.common.util.RequestInputResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,6 +26,9 @@ import java.util.Map;
  *
  * <p>Consumed by the orchestrator (via Feign) at {@code POST /api/v1/analysis/execute}.
  *
+ * <p><b>P1 集成：</b>通过 {@link ProfileEnricher} 在调用 DataAnalysisAgent 前将受众画像注入到
+ * rawData 中，使分析能基于真实的粉丝属性与行为偏好展开；无画像时原样返回，不影响执行。
+ *
  * <p><b>P2 集成：</b>通过 {@link TrendAggregationEnforcer} 强制月度趋势聚合，
  * 确保"趋势而非单篇"方法论在代码层面被执行。
  */
@@ -36,6 +40,7 @@ public class AnalysisAgentController {
 
     private final DataAnalysisAgent dataAnalysisAgent;
     private final TrendAggregationEnforcer trendEnforcer;
+    private final ProfileEnricher profileEnricher;
 
     @PostMapping("/execute")
     public AgentResponse<Map<String, Object>> execute(@Valid @RequestBody AgentTaskRequest request) {
@@ -53,11 +58,16 @@ public class AnalysisAgentController {
             String timeRange = RequestInputResolver.resolve(request, "timeRange");
             String previousAnalysisSummary = RequestInputResolver.resolve(request, "previousAnalysisSummary");
 
+            // P1 集成：注入受众画像到分析 Prompt（无画像时原样返回）
+            String accountId = profile.getAccountId();
+            String enrichedRawData = profileEnricher.enrichAnalysisPrompt(accountId, rawData);
+            log.debug("Enriched analysis prompt with audience profile: accountId={}", accountId);
+
             AnalysisReport result = dataAnalysisAgent.analyzePerformance(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
                             AgentStage.DATA_ANALYSIS.getCode(), request.getWorkflowId()),
                     accountNiche,
-                    rawData,
+                    enrichedRawData,
                     timeRange,
                     previousAnalysisSummary
             );
