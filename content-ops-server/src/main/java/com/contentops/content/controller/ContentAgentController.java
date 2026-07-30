@@ -7,6 +7,7 @@ import com.contentops.common.dto.OutlineResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.util.RequestInputResolver;
 import com.contentops.content.agent.ContentCreationAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -51,17 +53,17 @@ public class ContentAgentController {
                 return AgentResponse.failure(AgentStage.CONTENT_CREATION.getCode(), "Missing accountProfile");
             }
 
-            String topic = resolveInput(request, "topic");
-            if (topic == null || topic.isBlank()) topic = resolveInput(request, "selectedTopic");
+            String topic = RequestInputResolver.resolve(request, "topic");
+            if (topic == null || topic.isBlank()) topic = RequestInputResolver.resolve(request, "selectedTopic");
             if (topic == null || topic.isBlank()) {
                 return AgentResponse.failure(AgentStage.CONTENT_CREATION.getCode(),
                         "Missing 'topic' (topic planning stage must run first)");
             }
 
-            String angle = resolveInput(request, "angle");
-            String additionalContext = resolveInput(request, "additionalContext");
+            String angle = RequestInputResolver.resolve(request, "angle");
+            String additionalContext = RequestInputResolver.resolve(request, "additionalContext");
             // P1: 提取个人经历/真实素材（优先从 inputs 取，其次从 AccountProfile 取）
-            String personalExperience = resolveInput(request, "personalExperience");
+            String personalExperience = RequestInputResolver.resolve(request, "personalExperience");
             if ((personalExperience == null || personalExperience.isBlank())
                     && profile.getPersonalExperience() != null) {
                 personalExperience = profile.getPersonalExperience();
@@ -109,22 +111,22 @@ public class ContentAgentController {
                 return AgentResponse.failure(AgentStage.CONTENT_CREATION.getCode(), "Missing accountProfile");
             }
 
-            String topic = resolveInput(request, "topic");
-            if (topic == null || topic.isBlank()) topic = resolveInput(request, "selectedTopic");
+            String topic = RequestInputResolver.resolve(request, "topic");
+            if (topic == null || topic.isBlank()) topic = RequestInputResolver.resolve(request, "selectedTopic");
             if (topic == null || topic.isBlank()) {
                 return AgentResponse.failure(AgentStage.CONTENT_CREATION.getCode(),
                         "Missing 'topic'");
             }
 
             // 从 inputs 或 accumulatedArtifacts 中获取确认的大纲
-            String confirmedOutline = resolveInput(request, "confirmedOutline");
+            String confirmedOutline = RequestInputResolver.resolve(request, "confirmedOutline");
             if (confirmedOutline == null || confirmedOutline.isBlank()) {
                 return AgentResponse.failure(AgentStage.CONTENT_CREATION.getCode(),
                         "Missing 'confirmedOutline' (call /outline first, then pass the result here)");
             }
 
             // P1: 提取个人经历/真实素材（优先从 inputs 取，其次从 AccountProfile 取）
-            String personalExperience = resolveInput(request, "personalExperience");
+            String personalExperience = RequestInputResolver.resolve(request, "personalExperience");
             if ((personalExperience == null || personalExperience.isBlank())
                     && profile.getPersonalExperience() != null) {
                 personalExperience = profile.getPersonalExperience();
@@ -178,18 +180,18 @@ public class ContentAgentController {
                         "Missing accountProfile in request");
             }
 
-            String topic = resolveInput(request, "topic");
-            if (topic == null || topic.isBlank()) topic = resolveInput(request, "selectedTopic");
+            String topic = RequestInputResolver.resolve(request, "topic");
+            if (topic == null || topic.isBlank()) topic = RequestInputResolver.resolve(request, "selectedTopic");
             if (topic == null || topic.isBlank()) {
                 return AgentResponse.failure(AgentStage.CONTENT_CREATION.getCode(),
                         "Missing required input 'topic' (topic planning stage must run first)");
             }
 
-            String angle = resolveInput(request, "angle");
-            String outline = resolveInput(request, "outline");
-            String additionalContext = resolveInput(request, "additionalContext");
+            String angle = RequestInputResolver.resolve(request, "angle");
+            String outline = RequestInputResolver.resolve(request, "outline");
+            String additionalContext = RequestInputResolver.resolve(request, "additionalContext");
             // P1: 提取个人经历/真实素材（优先从 inputs 取，其次从 AccountProfile 取）
-            String personalExperience = resolveInput(request, "personalExperience");
+            String personalExperience = RequestInputResolver.resolve(request, "personalExperience");
             if ((personalExperience == null || personalExperience.isBlank())
                     && profile.getPersonalExperience() != null) {
                 personalExperience = profile.getPersonalExperience();
@@ -223,23 +225,5 @@ public class ContentAgentController {
             log.error("[兼容-一次性] 失败: workflowId={}", request.getWorkflowId(), e);
             return AgentResponse.failure(AgentStage.CONTENT_CREATION.getCode(), e.getMessage());
         }
-    }
-
-    /**
-     * Resolves a string input, preferring {@code inputs} and falling back to
-     * {@code accumulatedArtifacts} carried over from previous pipeline stages.
-     */
-    private String resolveInput(AgentTaskRequest request, String key) {
-        Map<String, Object> inputs = request.getInputs();
-        if (inputs != null && inputs.containsKey(key)) {
-            Object value = inputs.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        Map<String, Object> artifacts = request.getAccumulatedArtifacts();
-        if (artifacts != null && artifacts.containsKey(key)) {
-            Object value = artifacts.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        return null;
     }
 }

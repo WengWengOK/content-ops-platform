@@ -6,6 +6,7 @@ import com.contentops.common.dto.PublishResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.util.RequestInputResolver;
 import com.contentops.publish.agent.PublishingAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.List;
@@ -45,18 +47,18 @@ public class PublishAgentController {
             }
 
             // Article title and content typically come from the previous content-creation stage.
-            String articleTitle = resolveInput(request, "articleTitle");
+            String articleTitle = RequestInputResolver.resolve(request, "articleTitle");
             if (articleTitle == null || articleTitle.isBlank()) {
-                articleTitle = resolveInput(request, "topic");
+                articleTitle = RequestInputResolver.resolve(request, "topic");
             }
             if (articleTitle == null || articleTitle.isBlank()) {
                 return AgentResponse.failure(AgentStage.PUBLISHING.getCode(),
                         "Missing required input 'articleTitle' (content creation stage must run first)");
             }
 
-            String articleContent = resolveInput(request, "articleContent");
+            String articleContent = RequestInputResolver.resolve(request, "articleContent");
             if (articleContent == null || articleContent.isBlank()) {
-                articleContent = resolveInput(request, "draftContent");
+                articleContent = RequestInputResolver.resolve(request, "draftContent");
             }
             if (articleContent == null || articleContent.isBlank()) {
                 return AgentResponse.failure(AgentStage.PUBLISHING.getCode(),
@@ -64,9 +66,9 @@ public class PublishAgentController {
             }
 
             // Cover image URL typically comes from the previous image-design stage.
-            String coverImageUrl = resolveInput(request, "coverImageUrl");
+            String coverImageUrl = RequestInputResolver.resolve(request, "coverImageUrl");
 
-            String tone = resolveInput(request, "tone");
+            String tone = RequestInputResolver.resolve(request, "tone");
             if (tone == null || tone.isBlank()) {
                 tone = profile.getTone();
             }
@@ -104,23 +106,5 @@ public class PublishAgentController {
             log.error("Publishing failed: workflowId={}", request.getWorkflowId(), e);
             return AgentResponse.failure(AgentStage.PUBLISHING.getCode(), e.getMessage());
         }
-    }
-
-    /**
-     * Resolves a string input, preferring {@code inputs} and falling back to
-     * {@code accumulatedArtifacts} carried over from previous pipeline stages.
-     */
-    private String resolveInput(AgentTaskRequest request, String key) {
-        Map<String, Object> inputs = request.getInputs();
-        if (inputs != null && inputs.containsKey(key)) {
-            Object value = inputs.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        Map<String, Object> artifacts = request.getAccumulatedArtifacts();
-        if (artifacts != null && artifacts.containsKey(key)) {
-            Object value = artifacts.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        return null;
     }
 }

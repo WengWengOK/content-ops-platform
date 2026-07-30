@@ -52,6 +52,19 @@ contentops:
   mode: monolithic
   orchestrator:
     engine: ${CONTENTOPS_ENGINE:legacy}
+  cache:
+    # 平台配置缓存（低频变更）
+    platform-config:
+      maximum-size: 100
+      expire-after-write: 30m
+    # Agent阶段枚举缓存（几乎不变）
+    agent-stages:
+      maximum-size: 10
+      expire-after-write: 1h
+    # Prompt模板缓存
+    prompt-templates:
+      maximum-size: 200
+      expire-after-write: 10m
 
 # ════════════════════════════════════════════════════════════════
 # SpringDoc OpenAPI Configuration

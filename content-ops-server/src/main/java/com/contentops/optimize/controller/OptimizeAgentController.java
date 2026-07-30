@@ -6,6 +6,7 @@ import com.contentops.common.dto.OptimizationResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.util.RequestInputResolver;
 import com.contentops.optimize.agent.OptimizationAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -42,9 +44,9 @@ public class OptimizeAgentController {
             }
 
             String accountNiche = profile.getNiche();
-            String analysisSummary = resolveInput(request, "analysisSummary");
-            String currentStrategy = resolveInput(request, "currentStrategy");
-            String historicalPerformance = resolveInput(request, "historicalPerformance");
+            String analysisSummary = RequestInputResolver.resolve(request, "analysisSummary");
+            String currentStrategy = RequestInputResolver.resolve(request, "currentStrategy");
+            String historicalPerformance = RequestInputResolver.resolve(request, "historicalPerformance");
 
             OptimizationResult result = optimizationAgent.optimizeStrategy(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
@@ -78,23 +80,5 @@ public class OptimizeAgentController {
             log.error("Optimization failed: workflowId={}", request.getWorkflowId(), e);
             return AgentResponse.failure(AgentStage.OPTIMIZATION.getCode(), e.getMessage());
         }
-    }
-
-    /**
-     * Resolves a string input, preferring {@code inputs} and falling back to
-     * {@code accumulatedArtifacts} carried over from previous pipeline stages.
-     */
-    private String resolveInput(AgentTaskRequest request, String key) {
-        Map<String, Object> inputs = request.getInputs();
-        if (inputs != null && inputs.containsKey(key)) {
-            Object value = inputs.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        Map<String, Object> artifacts = request.getAccumulatedArtifacts();
-        if (artifacts != null && artifacts.containsKey(key)) {
-            Object value = artifacts.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        return null;
     }
 }

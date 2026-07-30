@@ -6,6 +6,7 @@ import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.dto.TopicPlanResult;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.util.RequestInputResolver;
 import com.contentops.topic.agent.TopicPlanningAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.List;
@@ -47,7 +49,7 @@ public class TopicAgentController {
             List<String> platforms = (profile.getPlatforms() == null || profile.getPlatforms().isEmpty())
                     ? DEFAULT_PLATFORMS
                     : profile.getPlatforms();
-            String additionalContext = resolveInput(request, "additionalContext");
+            String additionalContext = RequestInputResolver.resolve(request, "additionalContext");
 
             TopicPlanResult result = topicPlanningAgent.planTopics(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
@@ -78,21 +80,5 @@ public class TopicAgentController {
             log.error("Topic planning failed: workflowId={}", request.getWorkflowId(), e);
             return AgentResponse.failure(AgentStage.TOPIC_PLANNING.getCode(), e.getMessage());
         }
-    }
-
-    /**
-     * Resolves a string input, preferring {@code inputs} and falling back to
-     * {@code accumulatedArtifacts} carried over from previous pipeline stages.
-     */
-    private String resolveInput(AgentTaskRequest request, String key) {
-        Map<String, Object> inputs = request.getInputs();
-        if (inputs != null && inputs.containsKey(key)) {
-            return String.valueOf(inputs.get(key));
-        }
-        Map<String, Object> artifacts = request.getAccumulatedArtifacts();
-        if (artifacts != null && artifacts.containsKey(key)) {
-            return String.valueOf(artifacts.get(key));
-        }
-        return null;
     }
 }

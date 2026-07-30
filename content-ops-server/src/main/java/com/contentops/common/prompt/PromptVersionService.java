@@ -1,7 +1,9 @@
 package com.contentops.common.prompt;
 
+import com.contentops.common.config.CacheConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,6 +40,7 @@ public class PromptVersionService {
      * @param agentKey Agent 标识（topic/content/analysis/image/publish/optimize）
      * @return 版本号（如 "v2"）
      */
+    @Cacheable(value = CacheConfig.CACHE_PROMPT_TEMPLATES, key = "#agentKey")
     public String getVersion(String agentKey) {
         String version = properties.getVersion(agentKey);
         log.debug("[PromptVersion] Agent={}, version={}", agentKey, version);

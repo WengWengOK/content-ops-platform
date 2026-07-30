@@ -86,6 +86,28 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 业务异常 — 客户端可纠正的错误（4xx）。
+     */
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<AgentResponse<Void>> handleBusinessException(BusinessException e) {
+        log.warn("Business exception [{}]: {}", e.getErrorCode().getCode(), e.getMessage());
+        return ResponseEntity
+                .status(e.getErrorCode().getHttpStatus())
+                .body(AgentResponse.failure("system", e.getMessage()));
+    }
+
+    /**
+     * 系统异常 — 服务端内部错误（5xx）。
+     */
+    @ExceptionHandler(SystemException.class)
+    public ResponseEntity<AgentResponse<Void>> handleSystemException(SystemException e) {
+        log.error("System exception [{}]: {}", e.getErrorCode().getCode(), e.getMessage(), e);
+        return ResponseEntity
+                .status(e.getErrorCode().getHttpStatus())
+                .body(AgentResponse.failure("system", e.getMessage()));
+    }
+
+    /**
      * 请求路径不存在。
      */
     @ExceptionHandler(NoHandlerFoundException.class)
@@ -118,6 +140,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<AgentResponse<Void>> handleRuntimeException(
             RuntimeException e) {
+        // BaseException 子类已被上方 handler 处理，不会到达这里
         log.error("Runtime exception", e);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)

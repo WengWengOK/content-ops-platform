@@ -2,6 +2,8 @@ package com.contentops.orchestrator.service;
 
 import com.contentops.common.dto.TaskContext;
 import com.contentops.common.enums.TaskStatus;
+import com.contentops.common.exception.BusinessException;
+import com.contentops.common.exception.ErrorCode;
 import com.contentops.common.util.WorkflowStateManager;
 import com.contentops.orchestrator.graph.LangGraphWorkflowEngine;
 import com.contentops.orchestrator.workflow.PipelineOrchestrator;
@@ -131,7 +133,7 @@ public class WorkflowService {
             } catch (Exception e) {
                 log.error("[Workflow:{}] Pipeline execution failed: {}", context.getWorkflowId(), e.getMessage(), e);
                 context.setStatus(TaskStatus.FAILED.name());
-                context.setErrorMessage("Pipeline execution failed: " + e.getMessage());
+                context.setErrorMessage(e.getMessage());
                 stateManager.saveWorkflowState(context.getWorkflowId(), context);
             }
         }, workflowExecutor);
@@ -174,11 +176,10 @@ public class WorkflowService {
     public void approveAndProceed(String workflowId, Map<String, Object> feedback) {
         stateManager.executeWithLock(workflowId, wfId -> {
             TaskContext context = stateManager.loadWorkflowState(wfId)
-                    .orElseThrow(() -> new RuntimeException("Workflow not found: " + wfId));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.WORKFLOW_NOT_FOUND, wfId));
 
             if (!TaskStatus.AWAITING_HUMAN.name().equals(context.getStatus())) {
-                throw new RuntimeException("Workflow is not awaiting human review. Current status: "
-                        + context.getStatus());
+                throw new BusinessException(ErrorCode.WORKFLOW_NOT_AWAITING_REVIEW, context.getStatus());
             }
 
             if (useLangGraph()) {
@@ -224,7 +225,7 @@ public class WorkflowService {
     public void retryStage(String workflowId) {
         stateManager.executeWithLock(workflowId, wfId -> {
             TaskContext context = stateManager.loadWorkflowState(wfId)
-                    .orElseThrow(() -> new RuntimeException("Workflow not found: " + wfId));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.WORKFLOW_NOT_FOUND, wfId));
 
             context.setStatus(TaskStatus.PENDING.name());
             context.setErrorMessage(null);
@@ -257,11 +258,10 @@ public class WorkflowService {
     public void confirmSubStage(String workflowId, Map<String, Object> feedback) {
         stateManager.executeWithLock(workflowId, wfId -> {
             TaskContext context = stateManager.loadWorkflowState(wfId)
-                    .orElseThrow(() -> new RuntimeException("Workflow not found: " + wfId));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.WORKFLOW_NOT_FOUND, wfId));
 
             if (!TaskStatus.AWAITING_HUMAN.name().equals(context.getStatus())) {
-                throw new RuntimeException("Workflow is not awaiting confirmation. Current status: "
-                        + context.getStatus());
+                throw new BusinessException(ErrorCode.WORKFLOW_NOT_AWAITING_CONFIRMATION, context.getStatus());
             }
 
             if (useLangGraph()) {
@@ -273,7 +273,7 @@ public class WorkflowService {
 
             // Legacy 模式
             if (context.getCurrentSubStage() == null || context.getCurrentSubStage().isBlank()) {
-                throw new RuntimeException("No current sub-stage to confirm. This may be a regular stage approval.");
+                throw new BusinessException(ErrorCode.NO_SUBSTAGE_TO_CONFIRM);
             }
 
             log.info("[Workflow:{}] Confirming sub-stage: {}", wfId, context.getCurrentSubStage());

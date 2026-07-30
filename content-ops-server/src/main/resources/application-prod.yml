@@ -33,20 +33,21 @@ springdoc:
 
 # 生产环境 Redis 必须配置密码
 spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: contentops-hikari-prod
   data:
     redis:
       password: ${REDIS_PASSWORD:?REDIS_PASSWORD is required in production}
       lettuce:
         pool:
-          max-active: 16
-          max-idle: 8
-          min-idle: 2
-
-# 生产环境数据库连接池配置
-  datasource:
-    hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+          max-wait: 30000ms
+        shutdown-timeout: 200ms

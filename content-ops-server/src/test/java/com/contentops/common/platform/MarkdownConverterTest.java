@@ -25,7 +25,8 @@ class MarkdownConverterTest {
 
     @BeforeEach
     void setUp() {
-        converter = new MarkdownConverter();
+        // MarkdownConverter now delegates core parsing to MarkdownParser (P2-13 refactor)
+        converter = new MarkdownConverter(new MarkdownParser());
     }
 
     // ════════════════ XSS 防护测试 ════════════════

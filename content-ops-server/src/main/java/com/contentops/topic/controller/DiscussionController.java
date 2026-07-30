@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * REST entry point for the Discussion Agent — multi-turn topic ideation.

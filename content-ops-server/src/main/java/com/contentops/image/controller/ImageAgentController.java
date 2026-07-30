@@ -7,6 +7,7 @@ import com.contentops.common.dto.StyleDirectionResult;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.util.RequestInputResolver;
 import com.contentops.image.agent.ImageDesignAgent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.List;
@@ -54,21 +56,21 @@ public class ImageAgentController {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(), "Missing accountProfile");
             }
 
-            String articleTitle = resolveInput(request, "articleTitle");
-            if (articleTitle == null || articleTitle.isBlank()) articleTitle = resolveInput(request, "topic");
+            String articleTitle = RequestInputResolver.resolve(request, "articleTitle");
+            if (articleTitle == null || articleTitle.isBlank()) articleTitle = RequestInputResolver.resolve(request, "topic");
             if (articleTitle == null || articleTitle.isBlank()) {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(),
                         "Missing 'articleTitle' (content creation stage must run first)");
             }
 
-            String articleContent = resolveInput(request, "articleContent");
-            if (articleContent == null || articleContent.isBlank()) articleContent = resolveInput(request, "draftContent");
+            String articleContent = RequestInputResolver.resolve(request, "articleContent");
+            if (articleContent == null || articleContent.isBlank()) articleContent = RequestInputResolver.resolve(request, "draftContent");
             if (articleContent == null || articleContent.isBlank()) {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(),
                         "Missing 'articleContent' (content creation stage must run first)");
             }
 
-            String articleTone = resolveInput(request, "tone");
+            String articleTone = RequestInputResolver.resolve(request, "tone");
             if (articleTone == null || articleTone.isBlank()) articleTone = profile.getTone();
 
             List<String> platforms = (profile.getPlatforms() == null || profile.getPlatforms().isEmpty())
@@ -118,28 +120,28 @@ public class ImageAgentController {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(), "Missing accountProfile");
             }
 
-            String articleTitle = resolveInput(request, "articleTitle");
-            if (articleTitle == null || articleTitle.isBlank()) articleTitle = resolveInput(request, "topic");
+            String articleTitle = RequestInputResolver.resolve(request, "articleTitle");
+            if (articleTitle == null || articleTitle.isBlank()) articleTitle = RequestInputResolver.resolve(request, "topic");
             if (articleTitle == null || articleTitle.isBlank()) {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(),
                         "Missing 'articleTitle'");
             }
 
-            String articleContent = resolveInput(request, "articleContent");
-            if (articleContent == null || articleContent.isBlank()) articleContent = resolveInput(request, "draftContent");
+            String articleContent = RequestInputResolver.resolve(request, "articleContent");
+            if (articleContent == null || articleContent.isBlank()) articleContent = RequestInputResolver.resolve(request, "draftContent");
             if (articleContent == null || articleContent.isBlank()) {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(),
                         "Missing 'articleContent'");
             }
 
             // 从 inputs 或 accumulatedArtifacts 中获取确认的风格方向
-            String confirmedStyle = resolveInput(request, "confirmedStyle");
+            String confirmedStyle = RequestInputResolver.resolve(request, "confirmedStyle");
             if (confirmedStyle == null || confirmedStyle.isBlank()) {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(),
                         "Missing 'confirmedStyle' (call /styles first, then pass the selected direction here)");
             }
 
-            String articleTone = resolveInput(request, "tone");
+            String articleTone = RequestInputResolver.resolve(request, "tone");
             if (articleTone == null || articleTone.isBlank()) articleTone = profile.getTone();
 
             List<String> platforms = (profile.getPlatforms() == null || profile.getPlatforms().isEmpty())
@@ -189,21 +191,21 @@ public class ImageAgentController {
                         "Missing accountProfile in request");
             }
 
-            String articleTitle = resolveInput(request, "articleTitle");
-            if (articleTitle == null || articleTitle.isBlank()) articleTitle = resolveInput(request, "topic");
+            String articleTitle = RequestInputResolver.resolve(request, "articleTitle");
+            if (articleTitle == null || articleTitle.isBlank()) articleTitle = RequestInputResolver.resolve(request, "topic");
             if (articleTitle == null || articleTitle.isBlank()) {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(),
                         "Missing required input 'articleTitle' (content creation stage must run first)");
             }
 
-            String articleContent = resolveInput(request, "articleContent");
-            if (articleContent == null || articleContent.isBlank()) articleContent = resolveInput(request, "draftContent");
+            String articleContent = RequestInputResolver.resolve(request, "articleContent");
+            if (articleContent == null || articleContent.isBlank()) articleContent = RequestInputResolver.resolve(request, "draftContent");
             if (articleContent == null || articleContent.isBlank()) {
                 return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(),
                         "Missing required input 'articleContent' (content creation stage must run first)");
             }
 
-            String articleTone = resolveInput(request, "tone");
+            String articleTone = RequestInputResolver.resolve(request, "tone");
             if (articleTone == null || articleTone.isBlank()) articleTone = profile.getTone();
 
             List<String> platforms = (profile.getPlatforms() == null || profile.getPlatforms().isEmpty())
@@ -234,23 +236,5 @@ public class ImageAgentController {
             log.error("[兼容-一次性] 失败: workflowId={}", request.getWorkflowId(), e);
             return AgentResponse.failure(AgentStage.IMAGE_DESIGN.getCode(), e.getMessage());
         }
-    }
-
-    /**
-     * Resolves a string input, preferring {@code inputs} and falling back to
-     * {@code accumulatedArtifacts} carried over from previous pipeline stages.
-     */
-    private String resolveInput(AgentTaskRequest request, String key) {
-        Map<String, Object> inputs = request.getInputs();
-        if (inputs != null && inputs.containsKey(key)) {
-            Object value = inputs.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        Map<String, Object> artifacts = request.getAccumulatedArtifacts();
-        if (artifacts != null && artifacts.containsKey(key)) {
-            Object value = artifacts.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        return null;
     }
 }

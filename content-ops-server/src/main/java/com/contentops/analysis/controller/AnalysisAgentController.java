@@ -7,6 +7,7 @@ import com.contentops.common.dto.AnalysisReport;
 import com.contentops.common.dto.TaskContext.AccountProfile;
 import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.util.RequestInputResolver;
 import com.contentops.common.methodology.TrendAggregationEnforcer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -47,9 +49,9 @@ public class AnalysisAgentController {
             }
 
             String accountNiche = profile.getNiche();
-            String rawData = resolveInput(request, "rawData");
-            String timeRange = resolveInput(request, "timeRange");
-            String previousAnalysisSummary = resolveInput(request, "previousAnalysisSummary");
+            String rawData = RequestInputResolver.resolve(request, "rawData");
+            String timeRange = RequestInputResolver.resolve(request, "timeRange");
+            String previousAnalysisSummary = RequestInputResolver.resolve(request, "previousAnalysisSummary");
 
             AnalysisReport result = dataAnalysisAgent.analyzePerformance(
                     String.format(AgentConstants.MEMORY_ID_FORMAT,
@@ -94,23 +96,5 @@ public class AnalysisAgentController {
             log.error("Data analysis failed: workflowId={}", request.getWorkflowId(), e);
             return AgentResponse.failure(AgentStage.DATA_ANALYSIS.getCode(), e.getMessage());
         }
-    }
-
-    /**
-     * Resolves a string input, preferring {@code inputs} and falling back to
-     * {@code accumulatedArtifacts} carried over from previous pipeline stages.
-     */
-    private String resolveInput(AgentTaskRequest request, String key) {
-        Map<String, Object> inputs = request.getInputs();
-        if (inputs != null && inputs.containsKey(key)) {
-            Object value = inputs.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        Map<String, Object> artifacts = request.getAccumulatedArtifacts();
-        if (artifacts != null && artifacts.containsKey(key)) {
-            Object value = artifacts.get(key);
-            return value == null ? null : String.valueOf(value);
-        }
-        return null;
     }
 }

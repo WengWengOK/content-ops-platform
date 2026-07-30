@@ -275,7 +275,7 @@ public class MockAgentGateway implements AgentGateway {
         DiscussionResponse response = new DiscussionResponse();
         response.setSessionId(UUID.randomUUID().toString());
         response.setMessage("你好！很高兴和你一起探索内容选题。为了帮你找到最合适的方向，我想先了解几个问题：\n\n1. 你想做的内容领域是？（比如：职场、成长、科技、生活...）\n2. 你的目标受众是哪类人？\n3. 你希望内容达到什么效果？（涨粉/变现/个人品牌/...）");
-        response.setQuestions(Arrays.asList(
+        response.setClarifyingQuestions(Arrays.asList(
                 "你想做的内容领域是？",
                 "你的目标受众是哪类人？",
                 "你希望内容达到什么效果？"
@@ -302,7 +302,7 @@ public class MockAgentGateway implements AgentGateway {
                 "你更倾向于哪个方向？或者有其他想法？",
                 userMessage != null ? userMessage : "你的内容方向"));
         response.setTurnCount(2);
-        response.setClarifyingQuestion("你更倾向于哪个方向？");
+        response.setClarifyingQuestions(List.of("你更倾向于哪个方向？"));
 
         return AgentResponse.success("discussion", response);
     }
@@ -314,12 +314,15 @@ public class MockAgentGateway implements AgentGateway {
 
         TopicPlanResult result = new TopicPlanResult();
         result.setTopics(Arrays.asList(
-                Map.of("title", "方向一：干货方法论", "angle", "系统分享知识"),
-                Map.of("title", "方向二：真实经历分享", "angle", "故事化表达"),
-                Map.of("title", "方向三：工具资源推荐", "angle", "实用信息集合")
+                TopicPlanResult.TopicCandidate.builder()
+                        .title("方向一：干货方法论").angle("系统分享知识")
+                        .rationale("干货内容的搜索流量稳定，适合长期积累个人品牌").build(),
+                TopicPlanResult.TopicCandidate.builder()
+                        .title("方向二：真实经历分享").angle("故事化表达").build(),
+                TopicPlanResult.TopicCandidate.builder()
+                        .title("方向三：工具资源推荐").angle("实用信息集合").build()
         ));
         result.setRecommendedDirection("方向一：干货方法论");
-        result.setRationale("干货内容的搜索流量稳定，适合长期积累个人品牌");
 
         return AgentResponse.success(AgentStage.TOPIC_PLANNING.getCode(), result);
     }
@@ -328,8 +331,13 @@ public class MockAgentGateway implements AgentGateway {
     public AgentResponse<DiscussionSession> getDiscussionSession(String sessionId) {
         DiscussionSession session = new DiscussionSession();
         session.setSessionId(sessionId);
-        session.setStatus("active");
-        session.setTurnCount(2);
+        session.setPhase(DiscussionSession.DiscussionPhase.CLARIFICATION);
+        session.setTurns(Arrays.asList(
+                DiscussionSession.DiscussionTurn.builder()
+                        .role("user").content("我想做职场成长方向的内容").timestamp(LocalDateTime.now()).build(),
+                DiscussionSession.DiscussionTurn.builder()
+                        .role("assistant").content("很好，职场成长是个优质方向，我们可以从几个角度切入...").timestamp(LocalDateTime.now()).build()
+        ));
 
         return AgentResponse.success("discussion", session);
     }
