@@ -65,6 +65,68 @@ contentops:
     prompt-templates:
       maximum-size: 200
       expire-after-write: 10m
+  # 多 Agent 协作框架（com.contentops.common.agent）
+  multi-agent:
+    enabled: true
+    task-timeout-seconds: 120      # 单个任务执行超时（秒），超时后降级
+    max-retries: 2                 # 单任务失败重试次数（不含首次）
+    retry-backoff-ms: 500          # 重试退避间隔（毫秒）
+    react:
+      max-iterations: 10           # ReAct 循环最大迭代次数
+      intermediate-cache-size: 100 # 中间结果缓存容量
+      llm-timeout-seconds: 60      # ReAct 异步执行整体超时（秒）
+    plan-and-execute:
+      max-replan-count: 2          # 最大重新规划次数
+      parallel-subtasks: true      # 是否允许子任务并行执行
+      subtask-timeout-seconds: 90  # 子任务默认超时（秒）
+    communication:
+      queue-capacity: 1000         # Agent 邮箱（BlockingQueue）容量
+      default-poll-timeout-ms: 1000
+    thread-pool:
+      core-pool-size: 4            # 协作线程池核心线程数
+      max-pool-size: 16            # 协作线程池最大线程数
+      queue-capacity: 100          # 工作队列容量
+      keep-alive-seconds: 60       # 空闲线程存活时间
+      thread-name-prefix: multi-agent-
+  # AI 安全与合规框架（com.contentops.common.safety）
+  safety:
+    enabled: true                   # 是否启用整个安全框架（关闭时所有检测放行）
+    fail-open: false                # 检测异常时是否放行（true=放行/可用性优先，false=阻断/安全优先）
+    log-violations: true            # 是否记录违规日志
+    injection:                      # Prompt 注入检测
+      enabled: true
+      confidence-threshold: 0.6     # 置信度阈值，高于此值判定为恶意注入
+      detect-encoded: true          # 是否检测编码绕过（Base64/Unicode/URL）
+      sanitize: true                # 是否净化检测到的注入内容
+    content-filter:                 # 内容安全过滤
+      enabled: true
+      level: MODERATE               # STRICT / MODERATE / LENIENT
+      redact-pii: true              # 是否对 PII 进行脱敏
+      check-sensitive-words: true   # 是否检测敏感词
+      check-harmful-content: true   # 是否检测有害内容
+      sensitive-word-threshold: 1   # 敏感词命中数达此值判定为违规
+      custom-sensitive-words: {}    # 自定义敏感词库（按分类：政治/色情/暴力/广告）
+      custom-harmful-words: {}      # 自定义有害内容词库（按分类：自我伤害/仇恨言论/非法活动）
+    output-guard:                   # 输出护栏
+      enabled: true
+      check-sensitive-leak: true    # 敏感信息泄露检查
+      check-harmful-advice: true    # 有害建议检查
+      check-copyright: true         # 版权风险检查
+      copyright-similarity-threshold: 0.8  # 版权相似度阈值
+      check-hallucination: true     # 幻觉检测
+      hallucination-claim-threshold: 3     # 无来源事实声明数量阈值
+      check-format: true            # 格式验证
+      expected-format: none         # 预期格式：json / markdown / plain / none
+      copyrighted-texts: []         # 已知受版权保护文本片段
+    pii:                            # PII 检测与脱敏
+      enabled: true
+      detect-phone: true            # 中国手机号
+      detect-id-card: true          # 身份证号（含校验位验证）
+      detect-email: true            # 邮箱地址
+      detect-bank-card: true        # 银行卡号（含 Luhn 校验）
+      detect-ip: true               # IP 地址
+      detect-wechat: true           # 微信号
+      mask-char: "*"                # 脱敏掩码字符
 
 # ════════════════════════════════════════════════════════════════
 # SpringDoc OpenAPI Configuration
