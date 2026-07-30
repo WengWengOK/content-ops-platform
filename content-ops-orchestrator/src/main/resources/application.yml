@@ -1,0 +1,153 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /orchestrator
+
+spring:
+  application:
+    name: content-ops-orchestrator
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${LLM_MODEL:gpt-4o}
+          temperature: 0.3
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: orchestrator-group
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.contentops"
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+# ════════════════════════════════════════════════════════════════
+# P1: 弹性与可观测性 — Resilience4j 熔断 + 重试配置
+# ════════════════════════════════════════════════════════════════
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        sliding-window-type: COUNT_BASED
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      topicAgent:
+        base-config: default
+      contentAgent:
+        base-config: default
+      imageAgent:
+        base-config: default
+      publishAgent:
+        base-config: default
+      analysisAgent:
+        base-config: default
+      optimizeAgent:
+        base-config: default
+  retry:
+    instances:
+      agentRetry:
+        max-attempts: 3
+        wait-duration: 5s
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - feign.FeignException
+          - org.springframework.web.client.ResourceAccessException
+
+# ════════════════════════════════════════════════════════════════
+# P1: 弹性与可观测性 — OpenTelemetry + Jaeger 分布式链路追踪
+# ════════════════════════════════════════════════════════════════
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://jaeger:4317}
+      transport: grpc
+      export-step: 10s
+
+logging:
+  level:
+    com.contentops: DEBUG
+    org.springframework.ai: INFO
+    io.github.resilience4j: INFO
+
+# ════════════════════════════════════════════════════════════════
+# B计划: LangGraph4j 双引擎切换配置
+# ════════════════════════════════════════════════════════════════
+contentops:
+  orchestrator:
+    # 引擎选择：legacy（原 PipelineOrchestrator）或 langgraph（LangGraph4j）
+    # 灰度切换：通过 Nacos 配置中心动态修改此值，配合 @RefreshScope 无需重启
+    # 回滚：改回 legacy 即可，原引擎代码完全保留
+    engine: ${CONTENTOPS_ENGINE:legacy}
+
+# ════════════════════════════════════════════════════════════════
+# SpringDoc OpenAPI 配置 — 前端对接 API 文档
+# ════════════════════════════════════════════════════════════════
+# 前端项目集成方式：
+#   1. Swagger UI: http://localhost:8080/orchestrator/swagger-ui.html
+#   2. OpenAPI 3 JSON: http://localhost:8080/orchestrator/v3/api-docs
+#   3. 前端代码生成: 使用 openapi-generator 基于 /v3/api-docs 生成 TypeScript/JS 客户端
+springdoc:
+  api-docs:
+    # OpenAPI JSON 端点路径
+    path: /v3/api-docs
+    # 启用 OpenAPI JSON 端点
+    enabled: true
+    # 分组配置（按模块/Tag 分组展示）
+    groups:
+      enabled: true
+  swagger-ui:
+    # Swagger UI 端点路径
+    path: /swagger-ui.html
+    # 启用 Swagger UI
+    enabled: true
+    # API 文档排序方式：按方法类型分组展示
+    operations-sorter: method
+    # Tag 排序方式：按定义顺序展示
+    tags-sorter: alpha
+    # 默认展开所有 Tag
+    doc-expansion: none
+    # 持久化授权（如使用 Spring Security）
+    persist-authorization: true
+  # 扫描包路径（只扫描 orchestrator 模块）
+  packages-to-scan: com.contentops.orchestrator
+  # 自动生成默认响应（200/400/500）
+  default-flat-param-object: true

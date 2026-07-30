@@ -1,0 +1,116 @@
+server:
+  port: 8082
+  servlet:
+    context-path: /content-agent
+
+spring:
+  application:
+    name: content-ops-agent-content
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${LLM_MODEL:gpt-4o}
+          temperature: 0.8
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: content-agent-group
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.contentops"
+
+# LangChain4j OpenAI auto-configuration: creates the OpenAiChatModel (ChatModel) bean
+# consumed by ContentAgentConfig to build the ContentCreationAgent AI Service.
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: ${OPENAI_API_KEY:sk-placeholder}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      model-name: ${LLM_MODEL:gpt-4o}
+      temperature: 0.8
+      log-requests: true
+      log-responses: true
+
+# Chat Memory configuration (P0: Agent Memory & Multi-turn Dialogue)
+contentops:
+  chat-memory:
+    window-size: 20          # Max messages retained per conversation window
+    ttl-hours: 24            # Redis TTL for chat memory entries
+    key-prefix: "contentops:chat-memory:"
+  # Tavily web search configuration (P1: RAG + File I/O + Web Search)
+  tavily:
+    api-key: ${TAVILY_API_KEY:}
+    max-results: 5
+    search-depth: basic
+    timeout-seconds: 15
+
+  # Knowledge base (PGVector) configuration (P1: RAG knowledge base)
+  knowledge-base:
+    pg-host: ${POSTGRES_HOST:localhost}
+    pg-port: 5432
+    pg-database: contentops
+    pg-user: ${POSTGRES_USER:contentops}
+    pg-password: ${POSTGRES_PASSWORD:contentops123}
+    table-name: content_embeddings
+    max-results: 5
+    min-score: 0.6
+    create-table: true
+    use-index: true
+
+  # File tools configuration (P1: File I/O)
+  file-tools:
+    base-dir: ${FILE_OUTPUT_DIR:./content-outputs}
+    allowed-extensions: md,json,txt,csv
+
+  # Prompt 版本管理与 A/B 测试配置（P1: Prompt 工程深度优化）
+  prompt:
+    enabled: true
+    default-version: v2
+    default-variant: A
+    ab-testing:
+      enabled: false
+      traffic-split: 50
+    agents:
+      content:
+        version: v2
+        variant: A
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://jaeger:4317}
+      transport: grpc
+      export-step: 10s
+
+logging:
+  level:
+    com.contentops: DEBUG
+    dev.langchain4j: INFO
