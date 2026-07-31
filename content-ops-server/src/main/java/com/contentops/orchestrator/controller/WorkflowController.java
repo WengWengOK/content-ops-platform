@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
@@ -95,7 +96,9 @@ public class WorkflowController {
 
         TaskContext context = workflowService.getWorkflowStatus(workflowId);
         if (context == null) {
-            return ResponseEntity.ok(AgentResponse.failure("orchestrator", "Workflow not found: " + workflowId));
+            return ResponseEntity
+                    .status(HttpStatus.NOT_FOUND)
+                    .body(AgentResponse.failure("orchestrator", "Workflow not found: " + workflowId));
         }
         return ResponseEntity.ok(AgentResponse.success("orchestrator", context));
     }
@@ -105,12 +108,32 @@ public class WorkflowController {
      */
     @GetMapping
     @Operation(
-            summary = "获取所有工作流列表",
-            description = "返回所有工作流的上下文列表，按创建时间倒序排列。前端仪表盘可据此展示工作流概览和统计数据。"
+            summary = "获取工作流列表（分页）",
+            description = "分页返回工作流列表，按创建时间倒序排列。支持 page/size 参数分页。"
     )
-    public ResponseEntity<AgentResponse<List<TaskContext>>> listWorkflows() {
-        List<TaskContext> workflows = workflowService.listAllWorkflows();
-        return ResponseEntity.ok(AgentResponse.success("orchestrator", workflows));
+    public ResponseEntity<AgentResponse<Map<String, Object>>> listWorkflows(
+            @Parameter(description = "页码（从 0 开始，默认 0）", example = "0")
+            @RequestParam(required = false, defaultValue = "0") int page,
+            @Parameter(description = "每页条数（默认 20，最大 100）", example = "20")
+            @RequestParam(required = false, defaultValue = "20") int size) {
+
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 100);
+
+        List<TaskContext> all = workflowService.listAllWorkflows();
+        int total = all.size();
+        int fromIndex = Math.min(safePage * safeSize, total);
+        int toIndex = Math.min(fromIndex + safeSize, total);
+        List<TaskContext> pageData = all.subList(fromIndex, toIndex);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", pageData);
+        result.put("page", safePage);
+        result.put("size", safeSize);
+        result.put("total", total);
+        result.put("totalPages", (int) Math.ceil((double) total / safeSize));
+
+        return ResponseEntity.ok(AgentResponse.success("orchestrator", result));
     }
 
     /**

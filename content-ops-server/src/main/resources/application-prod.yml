@@ -11,8 +11,11 @@ logging:
     org.springframework.web: WARN
     org.hibernate.SQL: WARN
 
-# 生产环境健康检查不暴露详情
+# 生产环境健康检查不暴露详情，Actuator 端点限制
 management:
+  server:
+    # 独立管理端口，便于防火墙隔离（仅内网访问）
+    port: 9090
   endpoint:
     health:
       show-details: when-authorized
@@ -20,7 +23,11 @@ management:
     web:
       exposure:
         include: health,prometheus
-        exclude: info,metrics
+        exclude: info,metrics,env,beans,configprops,loggers
+  # Prometheus 指标端点安全配置
+  metrics:
+    tags:
+      application: content-ops-server
 
 # 生产环境数据库连接池配置
 spring:
@@ -50,3 +57,11 @@ springdoc:
     enabled: false
   api-docs:
     enabled: false
+
+# P2 安全加固：Actuator 端点 API Key 鉴权
+contentops:
+  actuator:
+    security:
+      enabled: true
+      api-key: ${ACTUATOR_API_KEY:?ACTUATOR_API_KEY is required in production}
+      header-name: X-Actuator-Key

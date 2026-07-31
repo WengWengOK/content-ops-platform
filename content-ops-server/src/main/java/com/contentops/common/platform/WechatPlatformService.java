@@ -11,6 +11,7 @@ import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -99,9 +100,11 @@ public class WechatPlatformService {
 
     // 安全说明：WeChat API 要求 access_token 作为 URL 查询参数传递（平台 API 限制），
     // 无法使用 Authorization Header。已通过以下措施缓解风险：
-    // 1. access_token 不出现在日志中（仅记录 media_id 等业务标识）
-    // 2. 生产环境建议通过 HTTPS 代理层过滤访问日志中的 token 参数
-    // 3. token 有效期约 2 小时，过期自动刷新
+    // 1. 使用 UriComponentsBuilder 构建 URI（替代字符串拼接），减少 token 暴露面
+    // 2. access_token 不出现在日志中（TokenLogSanitizer 自动脱敏 access_token=xxx）
+    // 3. MDC 日志过滤器仅记录 path，不记录 query 参数
+    // 4. 生产环境建议通过 HTTPS 代理层过滤访问日志中的 token 参数
+    // 5. token 有效期约 2 小时，过期自动刷新
 
     /**
      * Upload an image as permanent material and return the media_id.
@@ -166,8 +169,12 @@ public class WechatPlatformService {
             MultiValueMap<String, HttpEntity<?>> parts = builder.build();
 
             // Step 4: Upload to WeChat permanent material API
+            URI uploadUri = UriComponentsBuilder.fromPath("/cgi-bin/material/add_material")
+                    .queryParam("access_token", token)
+                    .queryParam("type", "image")
+                    .build().toUri();
             MediaResponse response = restClient.post()
-                    .uri("/cgi-bin/material/add_material?access_token=" + token + "&type=image")
+                    .uri(uploadUri)
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(parts)
                     .retrieve()
@@ -287,7 +294,9 @@ public class WechatPlatformService {
             body.put("articles", List.of(article));
 
             DraftResponse response = restClient.post()
-                    .uri("/cgi-bin/draft/add?access_token=" + token)
+                    .uri(UriComponentsBuilder.fromPath("/cgi-bin/draft/add")
+                            .queryParam("access_token", token)
+                            .build().toUri())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
@@ -328,7 +337,9 @@ public class WechatPlatformService {
             body.put("end_date", queryDate);
 
             ArticleReadResponse response = restClient.post()
-                    .uri("/datacube/getarticleread?access_token=" + token)
+                    .uri(UriComponentsBuilder.fromPath("/datacube/getarticleread")
+                            .queryParam("access_token", token)
+                            .build().toUri())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
@@ -366,7 +377,9 @@ public class WechatPlatformService {
             body.put("end_date", end);
 
             UserSummaryResponse response = restClient.post()
-                    .uri("/datacube/getusersummary?access_token=" + token)
+                    .uri(UriComponentsBuilder.fromPath("/datacube/getusersummary")
+                            .queryParam("access_token", token)
+                            .build().toUri())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
@@ -403,7 +416,9 @@ public class WechatPlatformService {
             body.put("end_date", end);
 
             ArticleTotalDetailResponse response = restClient.post()
-                    .uri("/datacube/getarticletotaldetail?access_token=" + token)
+                    .uri(UriComponentsBuilder.fromPath("/datacube/getarticletotaldetail")
+                            .queryParam("access_token", token)
+                            .build().toUri())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 注册自定义消息转换器：自动脱敏 access_token / api_key 等 -->
+    <conversionRule conversionWord="msgSanitized"
+                    converterClass="com.contentops.common.util.SanitizingLogConverter"/>
+
+    <!-- 控制台输出 — 含 MDC traceId，开发环境使用 -->
+    <springProfile name="dev,default">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan([%X{traceId:-}]) %logger{36} - %msgSanitized%n</pattern>
+            </encoder>
+        </appender>
+    </springProfile>
+
+    <!-- 生产环境：JSON 结构化日志 + MDC + Token 脱敏 -->
+    <springProfile name="prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","traceId":"%X{traceId:-}","method":"%X{method:-}","uri":"%X{uri:-}","logger":"%logger{36}","thread":"%thread","message":"%msgSanitized"}%n</pattern>
+            </encoder>
+        </appender>
+    </springProfile>
+
+    <!-- 日志级别 -->
+    <springProfile name="dev,default">
+        <logger name="com.contentops" level="DEBUG"/>
+    </springProfile>
+    <springProfile name="prod">
+        <logger name="com.contentops" level="INFO"/>
+        <!-- 框架日志降噪 -->
+        <logger name="org.springframework.web" level="INFO"/>
+        <logger name="org.hibernate" level="WARN"/>
+    </springProfile>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

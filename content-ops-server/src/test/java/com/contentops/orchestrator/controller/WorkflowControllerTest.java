@@ -89,25 +89,39 @@ class WorkflowControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/workflow/{id}/status 不存在时应返回 success=false")
-    void getWorkflowStatus_notFound_shouldReturnFailure() throws Exception {
+    @DisplayName("GET /api/v1/workflow/{id}/status 不存在时应返回 404")
+    void getWorkflowStatus_notFound_shouldReturn404() throws Exception {
         when(workflowService.getWorkflowStatus("nonexistent")).thenReturn(null);
 
         mockMvc.perform(get("/api/v1/workflow/nonexistent/status"))
-                .andExpect(status().isOk())
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").exists());
     }
 
     @Test
-    @DisplayName("GET /api/v1/workflow 列表应返回数组")
-    void listWorkflows_shouldReturnArray() throws Exception {
+    @DisplayName("GET /api/v1/workflow 列表应返回分页结构")
+    void listWorkflows_shouldReturnPaginatedResult() throws Exception {
         when(workflowService.listAllWorkflows()).thenReturn(List.of());
 
         mockMvc.perform(get("/api/v1/workflow"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").isArray());
+                .andExpect(jsonPath("$.data.content").isArray())
+                .andExpect(jsonPath("$.data.total").isNumber())
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(20));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/workflow?page=1&size=5 应返回指定分页参数")
+    void listWorkflows_withPagination_shouldRespectParams() throws Exception {
+        when(workflowService.listAllWorkflows()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/workflow").param("page", "1").param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.size").value(5));
     }
 
     // ════════════════ 参数校验测试（P1-10） ════════════════
