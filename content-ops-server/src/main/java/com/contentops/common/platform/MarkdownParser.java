@@ -53,6 +53,9 @@ public class MarkdownParser {
      * inline code) within each block.
      */
     public String convertToGenericHtml(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return "";
+        }
         String[] lines = markdown.split("\n");
         StringBuilder html = new StringBuilder();
         List<String> paragraphBuffer = new ArrayList<>();
@@ -198,12 +201,13 @@ public class MarkdownParser {
             return "";
         }
         String url = rawUrl.trim();
-        // Reject dangerous protocols
-        if (DANGEROUS_PROTOCOL.matcher(url).matches()) {
+        // Reject dangerous protocols — lookingAt() matches from the beginning
+        // without requiring the entire string to match (unlike matches())
+        if (DANGEROUS_PROTOCOL.matcher(url).lookingAt()) {
             return "";
         }
         // If URL has a protocol, ensure it's safe
-        if (url.contains("://") && !SAFE_URL_PROTOCOL.matcher(url).matches()) {
+        if (url.contains("://") && !SAFE_URL_PROTOCOL.matcher(url).lookingAt()) {
             return "";
         }
         // HTML-escape to prevent attribute breakout (quotes, angle brackets)
@@ -262,7 +266,7 @@ public class MarkdownParser {
 
     private void flushParagraph(StringBuilder html, List<String> buffer) {
         if (buffer.isEmpty()) return;
-        String content = String.join(" ", buffer);
+        String content = applyInlineFormatting(String.join(" ", buffer));
         html.append("<p>").append(content).append("</p>\n");
         buffer.clear();
     }
@@ -282,6 +286,8 @@ public class MarkdownParser {
         if (text == null) return "";
         return text.replace("&", "&amp;")
                 .replace("<", "&lt;")
-                .replace(">", "&gt;");
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 }

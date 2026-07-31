@@ -77,7 +77,10 @@ public class KuaishouPlatformService {
                     .body(StartUploadResponse.class);
 
             if (response != null && response.getResult() == 1) {
-                log.info("Kuaishou upload started: upload_token={}", response.getUploadToken());
+                // P0 安全修复：不再记录 upload_token 明文，仅记录前 8 位用于排查
+                String tokenPreview = response.getUploadToken() != null && response.getUploadToken().length() > 8
+                        ? response.getUploadToken().substring(0, 8) + "***" : "***";
+                log.info("Kuaishou upload started: upload_token={}", tokenPreview);
                 return response;
             }
             log.error("Failed to start Kuaishou upload: {}", response);

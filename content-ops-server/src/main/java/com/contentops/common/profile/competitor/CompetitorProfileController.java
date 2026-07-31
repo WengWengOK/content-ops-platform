@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 
 import java.util.List;
 import java.util.Map;
@@ -64,7 +66,7 @@ public class CompetitorProfileController {
      */
     @Operation(summary = "添加竞品监控", description = "为指定竞品建立画像与定时监控任务")
     @PostMapping
-    public AgentResponse<MonitorTask> addCompetitor(@RequestBody AddCompetitorRequest request) {
+    public AgentResponse<MonitorTask> addCompetitor(@Valid @RequestBody AddCompetitorRequest request) {
         log.info("Add competitor request: accountId={}, platform={}, niche={}",
                 request.competitorAccountId(), request.platform(), request.niche());
         try {
@@ -223,8 +225,8 @@ public class CompetitorProfileController {
      * @param monitorFrequencyHours 监控频率（小时），<=0 使用默认值
      */
     public record AddCompetitorRequest(
-            String competitorAccountId,
-            String platform,
+            @NotBlank(message = "competitorAccountId 不能为空") String competitorAccountId,
+            @NotBlank(message = "platform 不能为空") String platform,
             String niche,
             int monitorFrequencyHours
     ) {

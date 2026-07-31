@@ -3,18 +3,15 @@
 # 启动方式: SPRING_PROFILES_ACTIVE=prod
 # ════════════════════════════════════════════════════════════════
 
-# 生产环境仅记录 INFO 及以上级别日志
+# 生产环境使用 INFO 级别日志
 logging:
   level:
     com.contentops: INFO
     org.springframework.ai: WARN
     org.springframework.web: WARN
-  # 生产环境结构化日志（JSON 格式，便于 ELK 采集）
-  # 如需启用 JSON 日志，取消注释以下配置并引入 logstash-logback-encoder 依赖
-  # pattern:
-  #   console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    org.hibernate.SQL: WARN
 
-# 生产环境不暴露健康检查详情（安全要求）
+# 生产环境健康检查不暴露详情
 management:
   endpoint:
     health:
@@ -22,16 +19,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,prometheus  # 生产环境仅暴露 health 和 prometheus
+        include: health,prometheus
+        exclude: info,metrics
 
-# 生产环境关闭 Swagger UI（避免接口暴露）
-springdoc:
-  swagger-ui:
-    enabled: false
-  api-docs:
-    enabled: false
-
-# 生产环境 Redis 必须配置密码
+# 生产环境数据库连接池配置
 spring:
   datasource:
     hikari:
@@ -41,6 +32,7 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
       pool-name: contentops-hikari-prod
+      leak-detection-threshold: 60000
   data:
     redis:
       password: ${REDIS_PASSWORD:?REDIS_PASSWORD is required in production}
@@ -49,5 +41,12 @@ spring:
           max-active: 32
           max-idle: 16
           min-idle: 4
-          max-wait: 30000ms
+          max-wait: 5000ms
         shutdown-timeout: 200ms
+
+# 生产环境关闭 Swagger UI
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false

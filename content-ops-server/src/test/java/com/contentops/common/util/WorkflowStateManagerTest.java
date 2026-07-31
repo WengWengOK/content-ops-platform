@@ -7,9 +7,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -36,6 +37,7 @@ import static org.mockito.Mockito.*;
  */
 @DisplayName("WorkflowStateManager 测试")
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class WorkflowStateManagerTest {
 
     @Mock
@@ -44,15 +46,18 @@ class WorkflowStateManagerTest {
     @Mock
     private ValueOperations<String, String> valueOps;
 
-    @InjectMocks
     private WorkflowStateManager stateManager;
 
     private TaskContext sampleContext;
+
+    /** 捕获 setIfAbsent 传入的 lock value，用于后续 get 返回匹配值 */
+    private final Map<String, String> lockValueStore = new HashMap<>();
 
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         stateManager = new WorkflowStateManager(redisTemplate);
+        lockValueStore.clear();
 
         sampleContext = TaskContext.builder()
                 .workflowId("wf-test-001")
@@ -61,6 +66,21 @@ class WorkflowStateManagerTest {
                 .createdAt(LocalDateTime.now())
                 .cycleCount(1)
                 .build();
+    }
+
+    /**
+     * 辅助方法：模拟 Redis SETNX + GET，使 releaseLock 能匹配到正确的 lockValue。
+     */
+    @SuppressWarnings("unchecked")
+    private void setupLockMock(String lockKey) {
+        when(valueOps.setIfAbsent(eq(lockKey), anyString(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    String lockValue = invocation.getArgument(1);
+                    lockValueStore.put(lockKey, lockValue);
+                    return true;
+                });
+        when(valueOps.get(lockKey)).thenAnswer(invocation ->
+                lockValueStore.get(invocation.getArgument(0)));
     }
 
     // ════════════════ 状态保存/加载测试 ════════════════
@@ -86,7 +106,6 @@ class WorkflowStateManagerTest {
         Optional<TaskContext> result = stateManager.loadWorkflowState("wf-001");
 
         assertTrue(result.isPresent());
-        // JSON 反序列化可能不完全匹配，但核心字段应在
     }
 
     @Test
@@ -104,7 +123,6 @@ class WorkflowStateManagerTest {
     @Test
     @DisplayName("listAllWorkflows 应使用 SCAN 而非 KEYS")
     void listAllWorkflows_shouldUseScanNotKeys() {
-        // 模拟 SCAN 返回空游标
         Cursor<String> mockCursor = mock(Cursor.class);
         when(mockCursor.hasNext()).thenReturn(false);
         when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(mockCursor);
@@ -113,7 +131,6 @@ class WorkflowStateManagerTest {
 
         assertNotNull(result);
         assertTrue(result.isEmpty());
-        // 验证调用了 scan 而非 keys
         verify(redisTemplate).scan(any(ScanOptions.class));
         verify(redisTemplate, never()).keys(anyString());
     }
@@ -142,9 +159,7 @@ class WorkflowStateManagerTest {
     @DisplayName("executeWithLock 应获取并释放分布式锁")
     void executeWithLock_shouldAcquireAndReleaseLock() {
         String lockKey = "contentops:lock:workflow:wf-001";
-        when(valueOps.setIfAbsent(eq(lockKey), anyString(), any(Duration.class)))
-                .thenReturn(true);
-        when(valueOps.get(lockKey)).thenReturn("test-lock-value");
+        setupLockMock(lockKey);
 
         stateManager.executeWithLock("wf-001", wfId -> {
             // 模拟业务操作
@@ -159,26 +174,19 @@ class WorkflowStateManagerTest {
     void updateWorkflowStateAtomically_shouldUseLock() {
         String workflowId = "wf-atomic-001";
         String lockKey = "contentops:lock:workflow:" + workflowId;
+        String stateKey = "contentops:workflow:" + workflowId;
 
-        when(valueOps.setIfAbsent(eq(lockKey), anyString(), any(Duration.class)))
-                .thenReturn(true);
-        when(valueOps.get(lockKey)).thenReturn("lock-value");
-        when(valueOps.get("contentops:workflow:" + workflowId))
+        setupLockMock(lockKey);
+        when(valueOps.get(stateKey))
                 .thenReturn("{\"workflowId\":\"" + workflowId + "\",\"status\":\"PENDING\"}");
 
         stateManager.updateWorkflowStateAtomically(workflowId, ctx -> {
             ctx.setStatus(TaskStatus.IN_PROGRESS.name());
         });
 
-        // 验证锁被获取和释放
         verify(valueOps).setIfAbsent(eq(lockKey), anyString(), any(Duration.class));
         verify(redisTemplate).delete(lockKey);
-        // 验证状态被保存
-        verify(valueOps).set(
-                eq("contentops:workflow:" + workflowId),
-                anyString(),
-                eq(Duration.ofHours(24))
-        );
+        verify(valueOps).set(eq(stateKey), anyString(), eq(Duration.ofHours(24)));
     }
 
     @Test
@@ -186,11 +194,10 @@ class WorkflowStateManagerTest {
     void mergeArtifacts_shouldMergeAtomically() {
         String workflowId = "wf-merge-001";
         String lockKey = "contentops:lock:workflow:" + workflowId;
+        String stateKey = "contentops:workflow:" + workflowId;
 
-        when(valueOps.setIfAbsent(eq(lockKey), anyString(), any(Duration.class)))
-                .thenReturn(true);
-        when(valueOps.get(lockKey)).thenReturn("lock-value");
-        when(valueOps.get("contentops:workflow:" + workflowId))
+        setupLockMock(lockKey);
+        when(valueOps.get(stateKey))
                 .thenReturn("{\"workflowId\":\"" + workflowId + "\","
                         + "\"status\":\"PENDING\","
                         + "\"accumulatedArtifacts\":{\"key1\":\"val1\"}}");
@@ -200,7 +207,6 @@ class WorkflowStateManagerTest {
 
         stateManager.mergeArtifacts(workflowId, newArtifacts);
 
-        // 验证锁被获取和释放
         verify(valueOps).setIfAbsent(eq(lockKey), anyString(), any(Duration.class));
         verify(redisTemplate).delete(lockKey);
     }

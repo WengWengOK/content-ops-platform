@@ -97,6 +97,12 @@ public class WechatPlatformService {
 
     // ════════════════ Publishing ════════════════
 
+    // 安全说明：WeChat API 要求 access_token 作为 URL 查询参数传递（平台 API 限制），
+    // 无法使用 Authorization Header。已通过以下措施缓解风险：
+    // 1. access_token 不出现在日志中（仅记录 media_id 等业务标识）
+    // 2. 生产环境建议通过 HTTPS 代理层过滤访问日志中的 token 参数
+    // 3. token 有效期约 2 小时，过期自动刷新
+
     /**
      * Upload an image as permanent material and return the media_id.
      *
