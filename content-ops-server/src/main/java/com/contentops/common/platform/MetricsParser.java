@@ -110,8 +110,8 @@ public class MetricsParser {
      */
     private long extractLong(String text, String... labels) {
         for (String label : labels) {
-            // Pattern: label followed by optional colon/space, then digits (with optional commas)
-            Pattern p = Pattern.compile(Pattern.quote(label) + "[：:\\s]*([\\d,]+)");
+            // Pattern: label followed by optional colon/space, then digits (with optional commas, optional negative sign)
+            Pattern p = Pattern.compile(Pattern.quote(label) + "[：:\\s]*(-?[\\d,]+)");
             Matcher m = p.matcher(text);
             if (m.find()) {
                 try {
@@ -130,8 +130,8 @@ public class MetricsParser {
      */
     private double extractDouble(String text, String... labels) {
         for (String label : labels) {
-            // Pattern: label followed by optional colon/space, then a decimal number
-            Pattern p = Pattern.compile(Pattern.quote(label) + "[：:\\s]*([\\d.]+)");
+            // Pattern: label followed by optional colon/space, then a decimal number (optional negative sign)
+            Pattern p = Pattern.compile(Pattern.quote(label) + "[：:\\s]*(-?[\\d.]+)");
             Matcher m = p.matcher(text);
             if (m.find()) {
                 try {
@@ -145,7 +145,7 @@ public class MetricsParser {
                         return value / 100.0;
                     }
                     // For "环比" values that are typically percentages without % sign
-                    if (label.equals("环比") && value > 1.0) {
+                    if (label.equals("环比") && Math.abs(value) > 1.0) {
                         return value / 100.0;
                     }
                     return value;

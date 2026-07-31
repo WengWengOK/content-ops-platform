@@ -1,6 +1,9 @@
 package com.contentops.common.methodology;
 
 import com.contentops.common.enums.AgentStage;
+import com.contentops.common.platform.MetricsParser;
+import com.contentops.common.platform.MetricsParser.ParsedMetrics;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -10,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 人工行动清单生成器（v2.2.0 方法论：「辅助而非替代」）。
+ * 人工行动清单生成器（v2.2.0 方法论：「辅助而非替代」，P2 优化: 基于真实数据生成动态检查项）。
  *
  * <p>方法论约束：每个 Agent 阶段的输出仅为「辅助」而非「替代」——AI 负责提效与建议，
  * 但选题决策、内容润色、合规审核、发布时机、异常解读、策略评估等关键环节必须由人确认。
@@ -21,20 +24,23 @@ import java.util.Map;
  *   <li>{@link #defaultChecklist(AgentStage)} — 取阶段内置默认清单（供运维参考与配置回退）</li>
  * </ul>
  *
+ * <h3>P2 优化改进</h3>
+ * <ul>
+ *   <li><b>修复 TOPIC_PLANNING 空值检查 bug</b>：原逻辑 `outputs.get(key) == null` 误判，改为 `!containsKey`</li>
+ *   <li><b>MetricsParser 集成</b>：DATA_ANALYSIS 阶段使用真实指标检测异常，生成针对性检查项</li>
+ *   <li><b>更多动态规则</b>：新增 OPTIMIZATION、IMAGE_DESIGN 阶段的动态检查项</li>
+ * </ul>
+ *
  * <p>清单内容可被 {@link ChecklistProperties#getStageItems()} 覆盖：若运维在配置中为某阶段
  * 自定义了检查项，则以配置为准；否则使用代码内置的默认清单。
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class HumanActionChecklistGenerator {
 
     private final ChecklistProperties properties;
-
-    public HumanActionChecklistGenerator(ChecklistProperties properties) {
-        this.properties = properties;
-        log.info("HumanActionChecklistGenerator initialized: enabled={}, minItems={}",
-                properties.isEnabled(), properties.getMinItems());
-    }
+    private final MetricsParser metricsParser;
 
     /**
      * 为指定 Agent 阶段的输出生成「需要人工行动」的清单。
@@ -44,7 +50,7 @@ public class HumanActionChecklistGenerator {
      *   <li>功能关闭时返回空列表</li>
      *   <li>优先采用 {@link ChecklistProperties#getStageItems()} 中该阶段的自定义配置</li>
      *   <li>未配置时回退到 {@link #defaultChecklist(AgentStage)} 的内置清单</li>
-     *   <li>追加基于 {@code outputs} 的动态检查项（如检测到风险指标则提示人工介入）</li>
+     *   <li>追加基于 {@code outputs} 的动态检查项（P2 优化: 基于真实指标）</li>
      * </ol>
      *
      * @param stage   Agent 阶段
@@ -66,7 +72,7 @@ public class HumanActionChecklistGenerator {
             checklist.addAll(defaultChecklist(stage));
         }
 
-        // 基于输出的动态检查项
+        // 基于输出的动态检查项（P2 优化: 基于真实指标）
         List<String> dynamic = generateDynamicItems(stage, outputs);
         checklist.addAll(dynamic);
 
@@ -75,7 +81,8 @@ public class HumanActionChecklistGenerator {
                     stage.getCode(), checklist.size(), properties.getMinItems());
         }
 
-        log.info("Generated checklist for {}: {} items", stage.getCode(), checklist.size());
+        log.info("Generated checklist for {}: {} items ({} dynamic)", stage.getCode(),
+                checklist.size(), dynamic.size());
         return checklist;
     }
 
@@ -149,8 +156,16 @@ public class HumanActionChecklistGenerator {
     }
 
     /**
-     * 基于阶段输出动态追加检查项。
-     * <p>例如：数据分析阶段若检测到负向指标，提示人工优先介入。
+     * 基于阶段输出动态追加检查项（P2 优化: 基于真实指标）。
+     * <p>针对不同阶段检查不同的输出字段和指标：
+     * <ul>
+     *   <li>DATA_ANALYSIS：使用 {@link MetricsParser} 检测互动率、增长率等异常</li>
+     *   <li>PUBLISHING：检查失败平台列表</li>
+     *   <li>CONTENT_CREATION：检查篇幅、关键词覆盖</li>
+     *   <li>TOPIC_PLANNING：检查热点关键词是否存在（修复空值判断 bug）</li>
+     *   <li>OPTIMIZATION：检查是否包含可操作建议</li>
+     *   <li>IMAGE_DESIGN：检查图片数量与平台适配</li>
+     * </ul>
      */
     private List<String> generateDynamicItems(AgentStage stage, Map<String, Object> outputs) {
         List<String> dynamic = new ArrayList<>();
@@ -159,32 +174,200 @@ public class HumanActionChecklistGenerator {
         }
 
         switch (stage) {
-            case DATA_ANALYSIS -> {
-                if (containsNegativeSignal(outputs)) {
-                    dynamic.add("【动态】检测到负向/异常指标，请人工优先排查原因并制定止损方案");
-                }
-            }
-            case PUBLISHING -> {
-                if (outputs.containsKey("failedPlatforms") || outputs.containsKey("errors")) {
-                    dynamic.add("【动态】存在发布失败的平台，请人工核查账号状态并重试");
-                }
-            }
-            case CONTENT_CREATION -> {
-                Object wordCount = outputs.get("wordCount");
-                if (wordCount instanceof Number n && n.intValue() > 3000) {
-                    dynamic.add("【动态】初稿篇幅较长，建议人工评估是否拆分为系列内容");
-                }
-            }
-            case TOPIC_PLANNING -> {
-                if (outputs.containsKey("trendingKeywords") && outputs.get("trendingKeywords") == null) {
-                    dynamic.add("【动态】未检索到热点关键词，请人工补充领域热点输入");
-                }
-            }
-            default -> {
-                // 其它阶段暂无动态规则
-            }
+            case DATA_ANALYSIS -> generateAnalysisDynamicItems(outputs, dynamic);
+            case PUBLISHING -> generatePublishingDynamicItems(outputs, dynamic);
+            case CONTENT_CREATION -> generateContentDynamicItems(outputs, dynamic);
+            case TOPIC_PLANNING -> generateTopicDynamicItems(outputs, dynamic);
+            case OPTIMIZATION -> generateOptimizationDynamicItems(outputs, dynamic);
+            case IMAGE_DESIGN -> generateImageDynamicItems(outputs, dynamic);
         }
         return dynamic;
+    }
+
+    /**
+     * 数据分析阶段动态检查项（P2 优化: 基于 MetricsParser 真实指标）。
+     */
+    private void generateAnalysisDynamicItems(Map<String, Object> outputs, List<String> dynamic) {
+        // 检查负向信号（原有逻辑）
+        if (containsNegativeSignal(outputs)) {
+            dynamic.add("【动态】检测到负向/异常指标，请人工优先排查原因并制定止损方案");
+        }
+
+        // P2 优化: 使用 MetricsParser 检测真实指标异常
+        String analysisText = extractTextFromOutputs(outputs);
+        if (!analysisText.isBlank()) {
+            ParsedMetrics metrics = metricsParser.parse(analysisText);
+            if (metrics.hasData()) {
+                // 互动率低于阈值
+                double engagementRate = metricsParser.computeEngagementRate(metrics);
+                if (engagementRate > 0 && engagementRate < 0.03) {
+                    dynamic.add(String.format(
+                            "【动态】互动率仅 %.1f%%（低于3%%），建议人工排查内容质量与受众匹配度",
+                            engagementRate * 100));
+                }
+
+                // 粉丝净增长为负
+                if (metrics.netGrowth() < 0) {
+                    dynamic.add(String.format(
+                            "【动态】粉丝净增长为负（%d），请人工排查取关原因并制定挽留策略",
+                            metrics.netGrowth()));
+                }
+
+                // 阅读完成率过低
+                double finishRate = metricsParser.getReadFinishRate(metrics);
+                if (finishRate > 0 && finishRate < 0.3) {
+                    dynamic.add(String.format(
+                            "【动态】阅读完成率仅 %.1f%%（低于30%%），建议优化内容开头吸引力",
+                            finishRate * 100));
+                }
+
+                // 环比下降
+                if (metrics.growthRate() < 0) {
+                    dynamic.add(String.format(
+                            "【动态】环比下降 %.1f%%，请人工分析下降原因并制定应对策略",
+                            Math.abs(metrics.growthRate()) * 100));
+                }
+            } else if (analysisText.length() > 100) {
+                // 内容较长但未解析到任何指标
+                dynamic.add("【动态】分析内容未包含可识别的数值指标，请人工核对数据来源是否已接入平台后台");
+            }
+        }
+    }
+
+    /**
+     * 发布阶段动态检查项。
+     */
+    private void generatePublishingDynamicItems(Map<String, Object> outputs, List<String> dynamic) {
+        // 检查失败平台列表
+        Object failedPlatforms = outputs.get("failedPlatforms");
+        if (failedPlatforms != null) {
+            dynamic.add("【动态】存在发布失败的平台：" + failedPlatforms + "，请人工核查账号状态并重试");
+        }
+        Object errors = outputs.get("errors");
+        if (errors != null) {
+            dynamic.add("【动态】发布过程出现错误：" + errors + "，请人工核查并处理");
+        }
+
+        // 检查发布状态
+        Object status = outputs.get("publishStatus");
+        if (status instanceof String s && (s.contains("fail") || s.contains("error"))) {
+            dynamic.add("【动态】发布状态异常，请人工核查各平台发布结果");
+        }
+    }
+
+    /**
+     * 内容创作阶段动态检查项。
+     */
+    private void generateContentDynamicItems(Map<String, Object> outputs, List<String> dynamic) {
+        Object wordCount = outputs.get("wordCount");
+        if (wordCount instanceof Number n) {
+            int wc = n.intValue();
+            if (wc > 3000) {
+                dynamic.add("【动态】初稿篇幅较长（" + wc + "字），建议人工评估是否拆分为系列内容");
+            } else if (wc < 300 && wc > 0) {
+                dynamic.add("【动态】初稿篇幅较短（" + wc + "字），建议人工补充细节与案例");
+            }
+        }
+
+        // 检查是否包含个人化内容
+        Object content = outputs.get("content");
+        if (content instanceof String s) {
+            boolean hasPersonalElement = s.contains("个人经历") || s.contains("案例")
+                    || s.contains("故事") || s.contains("亲身");
+            if (!hasPersonalElement) {
+                dynamic.add("【动态】未检测到个人化内容标记，建议人工补充独家经历或案例");
+            }
+        }
+    }
+
+    /**
+     * 选题阶段动态检查项（P2 修复: 空值判断 bug）。
+     */
+    private void generateTopicDynamicItems(Map<String, Object> outputs, List<String> dynamic) {
+        // P2 修复: 原逻辑 outputs.get("trendingKeywords") == null 会在 key 存在但 value 为 null 时误判
+        // 改为检查 key 是否存在，以及 value 是否为空
+        if (!outputs.containsKey("trendingKeywords")
+                || outputs.get("trendingKeywords") == null
+                || (outputs.get("trendingKeywords") instanceof String s && s.isBlank())) {
+            dynamic.add("【动态】未检索到热点关键词，请人工补充领域热点输入");
+        }
+
+        // 检查竞品分析是否完整
+        if (!outputs.containsKey("competitorAnalysis") || outputs.get("competitorAnalysis") == null) {
+            dynamic.add("【动态】缺少竞品分析数据，建议人工补充目标竞品信息");
+        }
+    }
+
+    /**
+     * 优化阶段动态检查项（P2 新增）。
+     */
+    private void generateOptimizationDynamicItems(Map<String, Object> outputs, List<String> dynamic) {
+        // 检查是否包含可操作建议
+        Object recommendations = outputs.get("recommendations");
+        if (recommendations == null) {
+            dynamic.add("【动态】优化建议为空，请人工补充具体的策略调整方向");
+        } else if (recommendations instanceof List<?> list && list.isEmpty()) {
+            dynamic.add("【动态】优化建议列表为空，请人工补充具体的策略调整方向");
+        }
+
+        // 检查是否包含回滚方案
+        Object content = outputs.get("content");
+        if (content instanceof String s && !s.contains("回滚") && !s.contains("rollback")) {
+            dynamic.add("【动态】未检测到回滚方案，建议人工补充策略切换的回滚预案");
+        }
+    }
+
+    /**
+     * 配图设计阶段动态检查项（P2 新增）。
+     */
+    private void generateImageDynamicItems(Map<String, Object> outputs, List<String> dynamic) {
+        // 检查图片数量
+        Object imageCount = outputs.get("imageCount");
+        if (imageCount instanceof Number n && n.intValue() < 3) {
+            dynamic.add("【动态】配图数量较少（" + n.intValue() + "张），建议人工确认是否满足多平台需求");
+        }
+
+        // 检查平台适配
+        if (!outputs.containsKey("platformAdapted") || outputs.get("platformAdapted") == null) {
+            dynamic.add("【动态】缺少平台适配信息，请人工确认各平台封面尺寸是否已适配");
+        }
+    }
+
+    /**
+     * 从输出 Map 中提取文本内容（用于 MetricsParser 解析）。
+     */
+    private String extractTextFromOutputs(Map<String, Object> outputs) {
+        StringBuilder sb = new StringBuilder();
+        for (Object value : outputs.values()) {
+            if (value instanceof String s) {
+                sb.append(s).append("\n");
+            } else if (value instanceof Map<?, ?> m) {
+                extractTextFromMap(m, sb);
+            } else if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof String s) {
+                        sb.append(s).append("\n");
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    private void extractTextFromMap(Map<?, ?> map, StringBuilder sb) {
+        for (Object value : map.values()) {
+            if (value instanceof String s) {
+                sb.append(s).append("\n");
+            } else if (value instanceof Map<?, ?> m) {
+                extractTextFromMap(m, sb);
+            } else if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof String s) {
+                        sb.append(s).append("\n");
+                    }
+                }
+            }
+        }
     }
 
     /**

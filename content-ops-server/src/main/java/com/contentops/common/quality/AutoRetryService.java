@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 低分自动重试服务（P2 v2.1.0: 多模型路由与质量评估）。
+ * 低分自动重试服务（P2 v2.1.0: 多模型路由与质量评估，P2 优化: 指数退避 + StageExecutor 集成）。
  *
  * <p>当 Agent 输出的质量评分低于 {@link QualityThresholdProperties#getMinScore()}
  * 阈值时，自动重试（最多 {@link QualityThresholdProperties#getMaxRetries()} 次）。
@@ -28,9 +28,15 @@ import java.util.List;
  *   <li>首次调用 LLM，获取结果</li>
  *   <li>使用 {@link QualityAssessmentService} 评估质量</li>
  *   <li>若总分 ≥ 阈值 → 返回结果（重试成功或无需重试）</li>
- *   <li>若总分 < 阈值且仍有重试次数 → 追加改进建议到 prompt，重新调用 LLM</li>
- *   <li>达到最大重试次数仍不达标 → 返回最后一次结果（最优）</li>
+ *   <li>若总分 < 阈值且仍有重试次数 → 指数退避等待，追加改进建议到 prompt，重新调用 LLM</li>
+ *   <li>达到最大重试次数仍不达标 → 返回最优结果</li>
  * </ol>
+ *
+ * <h3>指数退避</h3>
+ * <p>重试间隔通过 {@link QualityThresholdProperties#getRetryBackoffMs()} 和
+ * {@link QualityThresholdProperties#getRetryBackoffMultiplier()} 配置。
+ * 第 N 次重试的等待时间 = retryBackoffMs × multiplier^(N-1)。
+ * 例如 backoffMs=1000, multiplier=2.0 → 第1次等待1s, 第2次等待2s, 第3次等待4s。
  *
  * <h3>指标记录</h3>
  * <p>每次重试调用的 token 消耗和调用状态会记录到 {@link TokenMetricsService}，
@@ -171,11 +177,13 @@ public class AutoRetryService {
                 break;
             }
 
-            // 未达标且仍有重试机会，追加改进建议到 prompt
+            // 未达标且仍有重试机会，追加改进建议到 prompt 并指数退避等待
             if (attempt < totalAttempts - 1) {
                 currentPrompt = appendSuggestions(prompt, score.getSuggestions());
-                log.debug("[AutoRetry] stage={} 追加改进建议准备重试, suggestions={}",
-                        stage.getCode(), score.getSuggestions().size());
+                long backoffMs = calculateBackoff(attempt);
+                log.debug("[AutoRetry] stage={} 追加改进建议准备重试, suggestions={}, backoff={}ms",
+                        stage.getCode(), score.getSuggestions().size(), backoffMs);
+                sleep(backoffMs);
             }
         }
 
@@ -248,6 +256,36 @@ public class AutoRetryService {
             tokenMetricsService.recordAgentDuration(stageTag, duration);
         } catch (Exception e) {
             log.warn("[AutoRetry] 记录延迟指标失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 计算第 attempt 次重试的指数退避等待时间（毫秒）。
+     * <p>backoffMs = retryBackoffMs × multiplier^attempt
+     *
+     * @param attempt 重试序号（0 = 第一次重试）
+     * @return 等待毫秒数
+     */
+    private long calculateBackoff(int attempt) {
+        double base = qualityProperties.getRetryBackoffMs();
+        double multiplier = qualityProperties.getRetryBackoffMultiplier();
+        return (long) (base * Math.pow(multiplier, attempt));
+    }
+
+    /**
+     * 线程睡眠指定毫秒数，被中断时恢复中断标志并记录警告。
+     *
+     * @param millis 睡眠毫秒数
+     */
+    private void sleep(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[AutoRetry] 指数退避等待被中断，继续重试");
         }
     }
 

@@ -8,6 +8,9 @@ import com.contentops.common.enums.SubStage;
 import com.contentops.common.enums.TaskStatus;
 import com.contentops.common.event.AgentTaskRequest;
 import com.contentops.common.event.StageTransitionEvent;
+import com.contentops.common.quality.QualityAssessmentService;
+import com.contentops.common.quality.QualityScore;
+import com.contentops.common.quality.QualityThresholdProperties;
 import com.contentops.common.util.WorkflowStateManager;
 import com.contentops.orchestrator.gateway.AgentGateway;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +18,8 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,6 +28,11 @@ import java.util.Map;
  * <p>从 {@link PipelineOrchestrator} 拆分而来（P2-13），保持原有逻辑不变。
  * 职责：构建请求、路由到 Agent、处理成功/失败、发布阶段事件，并在阶段完成时
  * 委托 {@link QualityEnricher} 做质量评估、委托 {@link CycleHandler} 做循环边界检查。
+ *
+ * <h3>P2 优化：质量驱动重试</h3>
+ * <p>当质量评估启用且自动重试开启时，{@link #routeToAgentWithQualityRetry}
+ * 会在 Agent 调用后评估输出质量，低于阈值时追加重试反馈并指数退避重试，
+ * 确保关键阶段的输出质量达标。
  *
  * <p>本类持有 {@code publishEvent} 与 {@code kafkaTemplate}（单体模式下可选），
  * 供 {@link SubStageExecutor} 与 {@link CycleHandler} 共享事件发布能力。
@@ -36,6 +46,8 @@ public class StageExecutor {
     private final QualityEnricher qualityEnricher;
     private final SubStageExecutor subStageExecutor;
     private final CycleHandler cycleHandler;
+    private final QualityAssessmentService qualityAssessmentService;
+    private final QualityThresholdProperties qualityProperties;
 
     // 单体模式下 Kafka 可能不存在，设为可选（用 Object 避免依赖 spring-kafka）
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -45,19 +57,23 @@ public class StageExecutor {
                          AgentGateway agentGateway,
                          QualityEnricher qualityEnricher,
                          @Lazy SubStageExecutor subStageExecutor,
-                         @Lazy CycleHandler cycleHandler) {
+                         @Lazy CycleHandler cycleHandler,
+                         QualityAssessmentService qualityAssessmentService,
+                         QualityThresholdProperties qualityProperties) {
         this.stateManager = stateManager;
         this.agentGateway = agentGateway;
         this.qualityEnricher = qualityEnricher;
         this.subStageExecutor = subStageExecutor;
         this.cycleHandler = cycleHandler;
+        this.qualityAssessmentService = qualityAssessmentService;
+        this.qualityProperties = qualityProperties;
     }
 
     /**
      * Execute the current stage for a workflow.
      *
      * <p>If the stage has sub-stages, starts with the first sub-stage.
-     * Otherwise, executes the stage in a single call.
+     * Otherwise, executes the stage with quality-driven retry (P2 优化).
      */
     public void executeStage(TaskContext context) {
         AgentStage stage = AgentStage.fromCode(context.getCurrentStage());
@@ -80,9 +96,9 @@ public class StageExecutor {
                 context.setCurrentSubStage(firstSub.getCode());
                 subStageExecutor.executeSubStage(context, firstSub);
             } else {
-                // No sub-stages: execute in one shot
+                // No sub-stages: execute with quality-driven retry
                 AgentTaskRequest request = buildRequest(context);
-                AgentResponse<Map<String, Object>> response = routeToAgent(stage, request);
+                AgentResponse<Map<String, Object>> response = routeToAgentWithQualityRetry(context, stage, request);
 
                 if (response.isSuccess()) {
                     handleStageSuccess(context, stage, response);
@@ -94,6 +110,197 @@ public class StageExecutor {
             log.error("[Workflow:{}] Stage {} failed with exception",
                     context.getWorkflowId(), stage.getCode(), e);
             handleStageFailure(context, stage, e.getMessage());
+        }
+    }
+
+    /**
+     * Route the task to the appropriate agent with quality-driven retry (P2 优化).
+     *
+     * <p>当质量评估启用且自动重试开启时，在 Agent 调用后评估输出质量：
+     * <ol>
+     *   <li>调用 Agent 获取响应</li>
+     *   <li>提取文本内容并评估质量评分</li>
+     *   <li>若评分 ≥ 阈值 → 返回当前结果</li>
+     *   <li>若评分 < 阈值且仍有重试次数 → 追加质量反馈到请求，指数退避后重试</li>
+     *   <li>达到最大重试次数 → 返回评分最高的结果</li>
+     * </ol>
+     *
+     * <p>质量评估或自动重试未启用时，直接调用一次返回。
+     *
+     * @param context 工作流上下文
+     * @param stage   Agent 阶段
+     * @param request 原始请求
+     * @return Agent 响应（可能经过重试）
+     */
+    private AgentResponse<Map<String, Object>> routeToAgentWithQualityRetry(
+            TaskContext context, AgentStage stage, AgentTaskRequest request) {
+
+        if (!qualityProperties.isEnabled() || !qualityProperties.isAutoRetry()) {
+            return routeToAgent(stage, request);
+        }
+
+        int maxRetries = qualityProperties.getMaxRetries();
+        int minScore = qualityProperties.getMinScore();
+        int totalAttempts = maxRetries + 1;
+
+        AgentResponse<Map<String, Object>> bestResponse = null;
+        int bestScore = -1;
+        int bestRetryIndex = 0;
+
+        AgentTaskRequest currentRequest = request;
+
+        for (int attempt = 0; attempt < totalAttempts; attempt++) {
+            boolean isRetry = attempt > 0;
+            log.info("[QualityRetry] workflow={}, stage={}, attempt={}/{}, isRetry={}",
+                    context.getWorkflowId(), stage.getCode(), attempt + 1, totalAttempts, isRetry);
+
+            // 调用 Agent
+            AgentResponse<Map<String, Object>> response = routeToAgent(stage, currentRequest);
+
+            if (!response.isSuccess() || response.getData() == null) {
+                log.warn("[QualityRetry] workflow={}, stage={}, attempt={} agent call failed: {}",
+                        context.getWorkflowId(), stage.getCode(), attempt + 1, response.getError());
+                if (bestResponse != null) {
+                    break;
+                }
+                // 没有之前的结果，继续重试
+                if (attempt < totalAttempts - 1) {
+                    long backoff = calculateBackoff(attempt);
+                    sleep(backoff);
+                    continue;
+                }
+                return response;
+            }
+
+            // 提取文本并评估质量
+            String content = extractTextFromResponse(response.getData());
+            QualityScore score = qualityAssessmentService.assessQuality(stage, content);
+
+            log.info("[QualityRetry] workflow={}, stage={}, attempt={}/{}, score={}, threshold={}, passed={}",
+                    context.getWorkflowId(), stage.getCode(), attempt + 1, totalAttempts,
+                    score.getTotalScore(), minScore, score.isAboveThreshold(minScore));
+
+            // 更新最优结果
+            if (score.getTotalScore() > bestScore) {
+                bestScore = score.getTotalScore();
+                bestResponse = response;
+                bestRetryIndex = attempt;
+            }
+
+            // 质量达标，提前退出
+            if (score.isAboveThreshold(minScore)) {
+                log.info("[QualityRetry] workflow={}, stage={} quality passed (score={}), retries={}",
+                        context.getWorkflowId(), stage.getCode(), score.getTotalScore(), attempt);
+                break;
+            }
+
+            // 未达标且仍有重试机会，追加质量反馈并指数退避
+            if (attempt < totalAttempts - 1) {
+                currentRequest = addQualityFeedback(request, score);
+                long backoff = calculateBackoff(attempt);
+                log.debug("[QualityRetry] workflow={}, stage={} retrying after {}ms with {} suggestions",
+                        context.getWorkflowId(), stage.getCode(), backoff, score.getSuggestions().size());
+                sleep(backoff);
+            }
+        }
+
+        if (bestRetryIndex > 0) {
+            log.info("[QualityRetry] workflow={}, stage={} completed with {} retries, best score={}",
+                    context.getWorkflowId(), stage.getCode(), bestRetryIndex, bestScore);
+        }
+
+        return bestResponse != null ? bestResponse : routeToAgent(stage, request);
+    }
+
+    /**
+     * 将质量评估反馈追加到请求中，供 Agent 在重试时参考。
+     *
+     * @param original 原始请求
+     * @param score    质量评分结果
+     * @return 包含质量反馈的新请求
+     */
+    private AgentTaskRequest addQualityFeedback(AgentTaskRequest original, QualityScore score) {
+        Map<String, Object> inputs = new HashMap<>(
+                original.getInputs() != null ? original.getInputs() : new HashMap<>());
+        inputs.put("qualityFeedback", score.getSuggestions());
+        inputs.put("qualityScore", score.getTotalScore());
+        inputs.put("qualityWeakestDimension", score.getWeakestDimension());
+
+        return AgentTaskRequest.of(
+                original.getWorkflowId(),
+                original.getStageCode(),
+                original.getAccountProfile(),
+                inputs,
+                original.getAccumulatedArtifacts()
+        );
+    }
+
+    /**
+     * 从 Agent 响应数据中提取文本内容用于质量评估。
+     */
+    private String extractTextFromResponse(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Object value : data.values()) {
+            if (value instanceof String s && !s.isBlank()) {
+                sb.append(s).append("\n");
+            } else if (value instanceof Map<?, ?> m) {
+                extractTextFromMap(m, sb);
+            } else if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof String s) {
+                        sb.append(s).append("\n");
+                    } else if (item instanceof Map<?, ?> m) {
+                        extractTextFromMap(m, sb);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void extractTextFromMap(Map<?, ?> map, StringBuilder sb) {
+        for (Object value : map.values()) {
+            if (value instanceof String s && !s.isBlank()) {
+                sb.append(s).append("\n");
+            } else if (value instanceof Map<?, ?> m) {
+                extractTextFromMap(m, sb);
+            } else if (value instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof String s) {
+                        sb.append(s).append("\n");
+                    } else if (item instanceof Map<?, ?> m2) {
+                        extractTextFromMap(m2, sb);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 计算第 attempt 次重试的指数退避等待时间（毫秒）。
+     */
+    private long calculateBackoff(int attempt) {
+        double base = qualityProperties.getRetryBackoffMs();
+        double multiplier = qualityProperties.getRetryBackoffMultiplier();
+        return (long) (base * Math.pow(multiplier, attempt));
+    }
+
+    /**
+     * 线程睡眠指定毫秒数。
+     */
+    private void sleep(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[QualityRetry] 退避等待被中断，继续重试");
         }
     }
 
