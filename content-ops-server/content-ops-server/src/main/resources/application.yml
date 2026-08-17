@@ -1,0 +1,435 @@
+server:
+  port: 8080
+
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}  # 默认开发环境，生产环境通过 SPRING_PROFILES_ACTIVE=prod 覆盖
+  application:
+    name: content-ops-server
+  mvc:
+    throw-exception-if-no-handler-found: true  # 404 时抛出 NoHandlerFoundException，由全局异常处理器统一处理
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/contentops}
+    username: ${DATABASE_USER:contentops}
+    password: ${DATABASE_PASS:}  # 必须通过环境变量注入，禁止硬编码
+  cache:
+    type: caffeine            # 本地缓存：Caffeine 为唯一 CacheManager，避免 Redis 未启动时 @Cacheable 报错
+  mail:
+    # 突发热点邮件通知（P1）：SMTP 未配置时自动降级跳过，不影响轮询与 WebSocket 推送
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:465}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+  sql:
+    init:
+      mode: always              # 启动时执行 classpath:schema.sql（H2/PG 幂等）
+      continue-on-error: true
+
+# ════════════════════════════════════════════════════════════════
+# Metrics & Observability (simplified for monolithic mode)
+# ════════════════════════════════════════════════════════════════
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized  # 生产环境不暴露健康检查详情，开发环境在 application-dev.yml 中覆盖
+  tracing:
+    enabled: ${CONTENTOPS_TRACING_ENABLED:true}
+    sampling:
+      probability: ${CONTENTOPS_TRACING_SAMPLE:1.0}
+  otlp:
+    tracing:
+      # 指向 OTLP collector（Jaeger/Tempo/Grafana Cloud），未启动时静默重试不影响业务
+      endpoint: ${CONTENTOPS_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+logging:
+  level:
+    com.contentops: INFO
+    org.springframework.ai: INFO
+
+# ════════════════════════════════════════════════════════════════
+# Content Ops Platform Configuration
+# ════════════════════════════════════════════════════════════════
+contentops:
+  # 支持 CONTENTOPS_MODE=mock 启动（无需 LLM API Key 的前端联调模式，见 LocalAgentGateway / MockAgentGateway）
+  mode: ${CONTENTOPS_MODE:monolithic}
+  orchestrator:
+    engine: ${CONTENTOPS_ENGINE:legacy}
+  # 模型路由（P2：创意类 gpt-4o/0.8，格式化类 gpt-4o-mini/0.3）——
+  # 接入 AiModelConfig：按阶段创建 creativeChatModel / formattingChatModel，
+  # 并统一包裹 GuardedChatModel（SafetyGuard 输入/输出双层防护）。
+  model-routing:
+    enabled: ${CONTENTOPS_MODEL_ROUTING:true}
+    # api-key 默认给非空占位符：保证模型 Bean 能创建、应用可启动；
+    # 未配置真实 Key 时实际 LLM 调用会失败（401），但各环节均有降级。
+    # 优先使用 DEEPSEEK_API_KEY；注意：本机可能设置了旧的 OPENAI_API_KEY 环境变量，
+    # 若直接回退到 OPENAI_API_KEY 会被旧 key 覆盖导致 401，因此层级顺序刻意先取 DEEPSEEK_API_KEY。
+    api-key: ${DEEPSEEK_API_KEY:${OPENAI_API_KEY:sk-your-openai-compatible-key}}
+    base-url: ${OPENAI_BASE_URL:https://api.deepseek.com/v1}
+    default-model: ${LLM_MODEL:deepseek-chat}
+    default-temperature: 0.8
+    default-max-tokens: 4096
+    # 按阶段分层（成本控制）：
+    #  - 创意类（选题/内容/配图）保留大输出，控制 4096~6144
+    #  - 格式化类（发布/分析/优化）压到 2048，输出 JSON/短报告足够
+    #  - 若接入更便宜的模型，只需改对应 stage 的 model 字段即可分层计费
+    stage-overrides:
+      topic-planning:
+        model: deepseek-chat
+        temperature: 0.8
+        max-tokens: 4096
+      content-creation:
+        model: deepseek-chat
+        temperature: 0.9
+        max-tokens: 6144
+      image-design:
+        model: deepseek-chat
+        temperature: 0.8
+        max-tokens: 4096
+      publishing:
+        model: deepseek-chat
+        temperature: 0.3
+        # 发布阶段需要完整输出格式化后的长文（含标题/正文/标签），2048 会被截断导致 JSON 解析失败；
+        # 8192 足够容纳单平台完整作品，仍是「一次性格式化」成本，不做循环调用。
+        max-tokens: 8192
+      data-analysis:
+        model: deepseek-chat
+        temperature: 0.2
+        max-tokens: 2048
+      optimization:
+        model: deepseek-chat
+        temperature: 0.3
+        max-tokens: 2048
+  # 质量评估与自动重试（成本控制）：默认关闭自动重试，避免低分反复调用放大 token；
+  # 需要质量兜底时把 auto-retry 打开并调低 max-retries（如 1）。
+  quality:
+    enabled: ${CONTENTOPS_QUALITY_ENABLED:true}
+    min-score: 60
+    auto-retry: ${CONTENTOPS_QUALITY_AUTO_RETRY:false}
+    max-retries: ${CONTENTOPS_QUALITY_MAX_RETRIES:0}
+    retry-backoff-ms: 1000
+    retry-backoff-multiplier: 2.0
+  # 用户鉴权（P0，默认关闭保持前后端联调不受影响；生产开启后业务 API 需登录）
+  security:
+    enabled: ${CONTENTOPS_SECURITY_ENABLED:false}
+    jwt-secret: ${CONTENTOPS_JWT_SECRET:dev-only-secret-please-change-0123456789abcdef}
+    jwt-expire-minutes: 120
+  # 竞品画像系统（P0 定向竞品监控，com.contentops.common.profile.competitor）
+  competitor-profile:
+    default-monitor-frequency-hours: 24    # 监控频率默认值（小时）
+    cache-ttl-minutes: 30                  # 画像缓存 TTL（分钟）
+    cache-max-size: 500                    # 画像缓存最大条目数
+    top-works-count: 10                    # 采集 TOP 作品数量
+    hit-rate-threshold: 0.10               # 爆款阈值（TOP10%）
+    follower-growth-spike-threshold: 0.20  # 粉丝增长率突变灵敏度
+    posting-frequency-change-threshold: 0.30 # 发文频率变化灵敏度
+    topic-direction-change-threshold: 0.40 # 内容方向转变灵敏度
+    min-similarity-score: 0.50             # 相似度检索最低分
+    style-vector-dim: 128                  # 风格向量维度
+    competition-intensity-scale: 100       # 竞争烈度满分基准
+  # 风格画像系统（P0 改造：从静态 tone 字段升级为基于作品分析的风格特征提取，com.contentops.common.profile.style）
+  style-profile:
+    analysis-mode: ${CONTENTOPS_STYLE_MODE:heuristic}  # heuristic / llm / hybrid（默认启发式，保证核心功能不依赖外部 API）
+    cache-ttl-minutes: 60                  # 画像缓存 TTL（分钟），默认 1 小时
+    cache-maximum-size: 500                # 画像缓存最大条目数
+    similarity-threshold: 0.60             # 相似风格账号检索的最低相似度阈值
+    similar-default-limit: 5               # 相似检索默认返回上限
+    max-contents: 50                       # 单次聚合分析的最大内容篇数
+    llm-enabled: ${CONTENTOPS_STYLE_LLM_ENABLED:false}  # 是否允许 LLM 增强分析（默认关闭，纯启发式；设 true 时无 Key 会自动降级）
+    domain-terms:                          # 领域术语词典（专业术语密度检测，空时回退生僻字估算）
+      - 矩阵
+      - 转化
+      - 留存
+      - 闭环
+      - 赋能
+      - 颗粒度
+  # 受众画像系统（P1 用户画像扩展，com.contentops.common.profile.audience）
+  audience-profile:
+    cache-ttl-minutes: 60                # 画像缓存 TTL（分钟），默认 1 小时
+    cache-max-size: 500                  # 缓存最大条目数
+    region-stat-count: 5                 # 地域分布统计数量（TOP N）
+    time-slot-granularity: 2             # 活跃时段粒度（小时，如 2 表示 2 小时一个时段）
+    max-topic-keywords: 10               # 选题关键词最大数量（TOP N）
+    max-tag-preferences: 10              # 内容偏好标签最大数量
+    default-platform: wechat             # 默认拉取平台
+    rapid-growth-threshold: 0.10         # 快速增长判定阈值（30日增长率超过 10% 视为快速增长）
+    decline-threshold: -0.05             # 粉丝流失判定阈值（30日增长率低于 -5% 视为流失）
+    enable-content-profile: true         # 是否启用内容画像（关闭后仅构建受众画像）
+  cache:
+    # 平台配置缓存（低频变更）
+    platform-config:
+      maximum-size: 100
+      expire-after-write: 30m
+    # Agent阶段枚举缓存（几乎不变）
+    agent-stages:
+      maximum-size: 10
+      expire-after-write: 1h
+    # Prompt模板缓存
+    prompt-templates:
+      maximum-size: 200
+      expire-after-write: 10m
+  # 多 Agent 协作框架（com.contentops.common.agent）
+  # 图片生成（OpenAI 兼容协议，支持火山引擎 ARK / DALL-E 等）
+  platform:
+    image-generation:
+      # 火山引擎 ARK Key（开发默认内置；生产请改用环境变量 VOLCENGINE_IMAGE_API_KEY 注入，勿入库）
+      api-key: ${VOLCENGINE_IMAGE_API_KEY:ark-your-volcengine-key}
+      base-url: ${VOLCENGINE_IMAGE_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+      path: ${VOLCENGINE_IMAGE_PATH:/images/generations}
+      model: ${VOLCENGINE_IMAGE_MODEL:doubao-seedream-3-0-t2i-250415}
+      size: 1024x1024
+      quality: standard
+      style: vivid
+
+  # HTML→PNG 渲染服务（P0）：独立小服务（Playwright + Chromium 容器），
+  # 开启后 /download 会把卡片/封面渲染成 PNG 打包；服务不可用时自动降级为纯 HTML ZIP。
+  render-service:
+    enabled: ${CONTENTOPS_RENDER_ENABLED:false}
+    url: ${CONTENTOPS_RENDER_SERVICE_URL:http://localhost:3000}
+    timeout-ms: ${CONTENTOPS_RENDER_TIMEOUT_MS:20000}
+
+  # 热点监控（独立模块，参考 TrendRadar）：多平台热榜聚合 + 快照存储 + 轮询，
+  # 选题模块通过工具/接口直接取热点生成作品。
+  trend:
+    enabled: ${CONTENTOPS_TREND_ENABLED:true}
+    # 默认多路降级链：sixty（60s 聚合，微博/知乎/抖音/B站/百度/头条）→ newsnow（含小红书）
+    # 单源模式：mock（内置演示） | newsnow | sixty
+    provider: ${CONTENTOPS_TREND_PROVIDER:chain}
+    poll-ms: ${CONTENTOPS_TREND_POLL_MS:1800000}  # 轮询间隔，默认 30 分钟
+    default-limit: 20
+    newsnow:
+      # 小红书数据源入口：官方聚合站当前可能被 Cloudflare 风控，可替换为可达镜像
+      api-url: ${CONTENTOPS_TREND_NEWSNOW_API_URL:https://newsnow.busiyi.world/api/s/{platform}}
+      expected-domain: ${CONTENTOPS_TREND_NEWSNOW_DOMAIN:}
+    sixty:
+      api-base: ${CONTENTOPS_TREND_SIXTY_API_BASE:https://60s.viki.moe}
+      timeout-ms: ${CONTENTOPS_TREND_SIXTY_TIMEOUT_MS:10000}
+    # AI 分析层（鱼皮式内容审核）：相关性/真假识别/摘要
+    # 成本控制：按关键词+标题缓存 24h，单批 10 条；关闭即完全不做模型调用
+    analysis:
+      enabled: ${CONTENTOPS_TREND_ANALYSIS_ENABLED:true}
+      batch-size: ${CONTENTOPS_TREND_ANALYSIS_BATCH_SIZE:10}
+      cache-ttl-minutes: ${CONTENTOPS_TREND_ANALYSIS_CACHE_TTL_MINUTES:1440}
+    # 突发热点检测：与上一快照对比（热度环比涨幅 / 排名上升 / 首次上榜）
+    burst:
+      heat-ratio-threshold: ${CONTENTOPS_TREND_BURST_HEAT_RATIO:0.5}
+      heat-rise-threshold: ${CONTENTOPS_TREND_BURST_HEAT_RISE:0.2}
+      rank-rise-threshold: ${CONTENTOPS_TREND_BURST_RANK_RISE:5}
+    # 实时通知：WebSocket 推送到 /ws/trends；邮件需配置 SMTP + 收件人
+    notifications:
+      enabled: ${CONTENTOPS_NOTIFICATIONS_ENABLED:true}
+      email:
+        enabled: ${CONTENTOPS_NOTIFY_EMAIL_ENABLED:true}
+        recipients: ${CONTENTOPS_NOTIFY_EMAIL_RECIPIENTS:}
+        from: ${CONTENTOPS_NOTIFY_EMAIL_FROM:contentops@localhost}
+
+  # LLM 可观测性（P0）：每次真实模型调用的 trace + token/成本/延迟统计
+  observability:
+    llm:
+      enabled: ${CONTENTOPS_LLM_TRACE_ENABLED:true}
+      retention-days: ${CONTENTOPS_LLM_TRACE_RETENTION_DAYS:7}
+      cleanup-cron: ${CONTENTOPS_LLM_TRACE_CLEANUP_CRON:0 30 3 * * *}
+      # 成本估算单价（美元/百万 token），仅用于大盘展示
+      pricing:
+        deepseek-chat:
+          input-per-million: ${DEEPSEEK_PRICE_INPUT:0.27}
+          output-per-million: ${DEEPSEEK_PRICE_OUTPUT:1.10}
+    # 告警转发：飞书/企业微信自定义机器人 Webhook（为空则跳过对应渠道）
+    alerts:
+      feishu-webhook: ${FEISHU_WEBHOOK:}
+      wecom-webhook: ${WECOM_WEBHOOK:}
+  # Agent 平台（大厂多 Agent 架构基础件）：事件 Outbox + 崩溃恢复
+  agents:
+    outbox-drain-ms: ${CONTENTOPS_AGENTS_OUTBOX_DRAIN_MS:15000}
+    recovery-ms: ${CONTENTOPS_AGENTS_RECOVERY_MS:60000}
+    recovery-initial-ms: ${CONTENTOPS_AGENTS_RECOVERY_INITIAL_MS:30000}
+    recovery-stale-seconds: ${CONTENTOPS_AGENTS_RECOVERY_STALE_SECONDS:90}
+  # MCP Server（Phase 1）：标准 JSON-RPC 端点 /mcp 常开；
+  # 自定义 REST 版 /mcp/tools 由 contentops.mcp.enabled 控制（默认关闭）
+  mcp:
+    enabled: ${CONTENTOPS_MCP_ENABLED:false}
+  # LLM-as-Judge 评测（Phase 2）：阶段产物自动判分落库；gate-enabled 开启后低分阻断
+  evals:
+    enabled: ${CONTENTOPS_EVALS_ENABLED:true}
+    threshold: ${CONTENTOPS_EVALS_THRESHOLD:70}
+    gate-enabled: ${CONTENTOPS_EVALS_GATE:false}
+    judge-model-tier: formatting
+
+  # RAG 真实接入（P0）：本地 BGE 嵌入（无需 Key）+ 混合检索 + 重排；
+  # PGVector 不可用时回退进程内内存向量库，开发环境即可真正跑向量检索。
+  knowledge-base:
+    in-memory-fallback: ${CONTENTOPS_KB_IN_MEMORY:true}
+    min-score: 0.4
+  advanced-rag:
+    enabled: ${CONTENTOPS_ADVANCED_RAG:true}
+    search:
+      top-k: 10
+      min-score: 0.2
+    rerank:
+      enabled: true
+      strategy: RULE
+      top-k: 5
+    query-rewrite:
+      enabled: false   # 需 LLM 支持，默认关闭以省 token；需要时可开 HYDE / MULTI_QUERY
+
+  # 成本预算与熔断（P0）：工作流 token/成本预算用尽即终止；连续失败/余额不足触发熔断
+  cost-budget:
+    enabled: ${CONTENTOPS_COST_BUDGET_ENABLED:true}
+    workflow-token-budget: ${CONTENTOPS_WORKFLOW_TOKEN_BUDGET:500000}
+    workflow-cost-budget-usd: ${CONTENTOPS_WORKFLOW_COST_BUDGET_USD:3.0}
+    warn-ratio: ${CONTENTOPS_COST_WARN_RATIO:0.8}   # 预算用到 80% 时告警提醒（不阻断）
+    circuit-open-failures: 3
+    circuit-open-seconds: 60
+    fatal-circuit-open-seconds: 600
+    pricing:
+      deepseek-chat:
+        input: 0.27
+        output: 1.10
+      gpt-4o:
+        input: 2.50
+        output: 10.00
+      gpt-4o-mini:
+        input: 0.15
+        output: 0.60
+
+  multi-agent:
+    enabled: true
+    task-timeout-seconds: 120      # 单个任务执行超时（秒），超时后降级
+    max-retries: 2                 # 单任务失败重试次数（不含首次）
+    retry-backoff-ms: 500          # 重试退避间隔（毫秒）
+    react:
+      max-iterations: 10           # ReAct 循环最大迭代次数
+      intermediate-cache-size: 100 # 中间结果缓存容量
+      llm-timeout-seconds: 60      # ReAct 异步执行整体超时（秒）
+    plan-and-execute:
+      max-replan-count: 2          # 最大重新规划次数
+      parallel-subtasks: true      # 是否允许子任务并行执行
+      subtask-timeout-seconds: 90  # 子任务默认超时（秒）
+    communication:
+      queue-capacity: 1000         # Agent 邮箱（BlockingQueue）容量
+      default-poll-timeout-ms: 1000
+    thread-pool:
+      core-pool-size: 4            # 协作线程池核心线程数
+      max-pool-size: 16            # 协作线程池最大线程数
+      queue-capacity: 100          # 工作队列容量
+      keep-alive-seconds: 60       # 空闲线程存活时间
+      thread-name-prefix: multi-agent-
+  # AI 安全与合规框架（com.contentops.common.safety）
+  safety:
+    enabled: true                   # 是否启用整个安全框架（关闭时所有检测放行）
+    fail-open: false                # 检测异常时是否放行（true=放行/可用性优先，false=阻断/安全优先）
+    log-violations: true            # 是否记录违规日志
+    injection:                      # Prompt 注入检测
+      enabled: true
+      confidence-threshold: 0.6     # 置信度阈值，高于此值判定为恶意注入
+      detect-encoded: true          # 是否检测编码绕过（Base64/Unicode/URL）
+      sanitize: true                # 是否净化检测到的注入内容
+    content-filter:                 # 内容安全过滤
+      enabled: true
+      level: MODERATE               # STRICT / MODERATE / LENIENT
+      redact-pii: true              # 是否对 PII 进行脱敏
+      check-sensitive-words: true   # 是否检测敏感词
+      check-harmful-content: true   # 是否检测有害内容
+      sensitive-word-threshold: 1   # 敏感词命中数达此值判定为违规
+      custom-sensitive-words: {}    # 自定义敏感词库（按分类：政治/色情/暴力/广告）
+      custom-harmful-words: {}      # 自定义有害内容词库（按分类：自我伤害/仇恨言论/非法活动）
+    output-guard:                   # 输出护栏
+      enabled: true
+      check-sensitive-leak: true    # 敏感信息泄露检查
+      check-harmful-advice: true    # 有害建议检查
+      check-copyright: true         # 版权风险检查
+      copyright-similarity-threshold: 0.8  # 版权相似度阈值
+      check-hallucination: true     # 幻觉检测
+      hallucination-claim-threshold: 3     # 无来源事实声明数量阈值
+      check-format: true            # 格式验证
+      expected-format: none         # 预期格式：json / markdown / plain / none
+      copyrighted-texts: []         # 已知受版权保护文本片段
+    pii:                            # PII 检测与脱敏
+      enabled: true
+      detect-phone: true            # 中国手机号
+      detect-id-card: true          # 身份证号（含校验位验证）
+      detect-email: true            # 邮箱地址
+      detect-bank-card: true        # 银行卡号（含 Luhn 校验）
+      detect-ip: true               # IP 地址
+      detect-wechat: true           # 微信号
+      mask-char: "*"                # 脱敏掩码字符
+
+# ════════════════════════════════════════════════════════════════
+# SpringDoc OpenAPI Configuration
+# ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════
+# 阿里云 DashScope 配置
+# 说明：LangChain4j 通过 OpenAI 兼容协议接入 DashScope。
+# 如需整体切换到 DashScope，可将 contentops.model-routing 的 base-url 与 api-key
+# 指向本配置，或在 AiModelConfig 中根据 dashscope.enabled 选择构建器。
+# 常用模型：qwen-max(最强)/qwen-plus(推荐创意类)/qwen-turbo(推荐格式化类)
+#         /qwen3-8b / qwen3-72b / qwen-vl-plus(视觉) / text-embedding-v3(向量)
+# ════════════════════════════════════════════════════════════════
+dashscope:
+  # 是否启用 DashScope（暂时关闭，后期修改为 true 即可接入）
+  enabled: false
+  # DashScope API Key（阿里云控制台「百炼」→ API-KEY 管理获取）
+  api-key: ${DASHSCOPE_API_KEY:sk-your-dashscope-key}
+  # DashScope 兼容模式 Base URL（LangChain4j 调用时必须带 /compatible-mode/v1）
+  base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+  # 按用途分类的默认模型名（后期可按需调整或按阶段覆盖）
+  models:
+    # 创意类（选题/内容/配图，默认 qwen-plus，均衡效果与成本）
+    creative: qwen-plus
+    # 格式化类（发布/分析/优化，默认 qwen-turbo，低温度、速度快）
+    formatting: qwen-turbo
+    # 视觉分析（多模态输入，qwen-vl-plus 支持图片理解）
+    vision: qwen-vl-plus
+    # 文本向量（知识库检索 / 风格画像相似度计算）
+    embedding: text-embedding-v3
+  # 默认采样参数（AiModelConfig 后期可按此覆盖 model-routing 同名字段）
+  default-temperature: 0.8
+  default-max-tokens: 4096
+
+# 全网搜索（P2）：配置 TAVILY_API_KEY 后，热点搜索自动聚合全网 + 新闻结果
+tavily:
+  api-key: ${TAVILY_API_KEY:}
+  base-url: ${TAVILY_BASE_URL:https://api.tavily.com}
+  max-results: ${TAVILY_MAX_RESULTS:5}
+  search-depth: ${TAVILY_SEARCH_DEPTH:basic}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+    groups:
+      enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    doc-expansion: none
+    persist-authorization: true
+  packages-to-scan:
+    - com.contentops.server
+    - com.contentops.orchestrator
+    - com.contentops.topic
+    - com.contentops.content
+    - com.contentops.image
+    - com.contentops.publish
+    - com.contentops.analysis
+    - com.contentops.optimize
+    - com.contentops.trend
+    - com.contentops.common.profile.style
+    - com.contentops.common.profile.competitor
+    - com.contentops.common.profile.audience
+  default-flat-param-object: true

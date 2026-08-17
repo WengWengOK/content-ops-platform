@@ -4,85 +4,21 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.4.5</version>
-        <relativePath/>
-    </parent>
-
+    <!--
+      根聚合 POM：仅用于把 content-ops-configs（父 POM）纳入 reactor，
+      让 IDE（IntelliJ 等）直接打开仓库根目录即可识别 Maven 工程，
+      并支持从根目录执行：
+        mvn -pl :content-ops-server spring-boot:run
+      真正的父 POM（依赖管理与模块声明）在 content-ops-configs/pom.xml。
+    -->
     <groupId>com.contentops</groupId>
-    <artifactId>content-ops-agent-platform-monolithic</artifactId>
+    <artifactId>content-ops-workspace</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
-    <name>Content Ops Agent Platform (Monolithic)</name>
-    <description>Monolithic Content Operations Platform — merged all backend services into a single deployable unit</description>
+    <name>Content Ops Agent Platform (Workspace)</name>
+    <description>根聚合 POM — 便于 IDE 导入与命令行从根目录构建</description>
 
     <modules>
-        <module>content-ops-server</module>
+        <module>content-ops-configs</module>
     </modules>
-
-    <properties>
-        <java.version>21</java.version>
-        <langchain4j.version>1.0.1</langchain4j.version>
-        <springdoc.version>2.6.0</springdoc.version>
-        <swagger-annotations.version>2.2.25</swagger-annotations.version>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-bom</artifactId>
-                <version>${langchain4j.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <!-- Override BOM-managed version: we have 1.0.0-beta3 locally, BOM wants 1.0.1-beta6 -->
-            <dependency>
-                <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-embeddings-bge-small-zh-v15-q</artifactId>
-                <version>1.0.0-beta3</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
-    <dependencies>
-        <!-- SpringDoc OpenAPI -->
-        <dependency>
-            <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>${springdoc.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-maven-plugin</artifactId>
-                    <configuration>
-                        <excludes>
-                            <exclude>
-                                <groupId>org.projectlombok</groupId>
-                                <artifactId>lombok</artifactId>
-                            </exclude>
-                        </excludes>
-                    </configuration>
-                </plugin>
-            </plugins>
-        </pluginManagement>
-    </build>
-
 </project>

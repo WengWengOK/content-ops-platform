@@ -1,47 +1,35 @@
-# Compiled class files
-*.class
+# ── 密钥与本地配置（禁止入库）──
+content-ops-configs/.env
+content-ops-configs/local/alerts.env
+*.pem
+*.key
 
-# Log files
-*.log
-logs/
+# ── 本地数据与数据库 ──
+.pgdata/
+content-ops-configs/local/data/
+content-ops-configs/local/grafana/data/
+content-ops-configs/local/grafana/logs/
+content-ops-configs/local/bin/
 
-# Package files
-*.jar
-*.war
-*.ear
-*.zip
-*.tar.gz
+# ── 构建产物 ──
+**/target/
+**/node_modules/
+**/dist/
+content-ops-frontend/content-ops-frontend/.vite/
 
-# Maven
-target/
-.mvn/wrapper/maven-wrapper.jar
-
-# IDE
+# ── IDE / 工具 ──
 .idea/
 *.iml
-*.ipr
-*.iws
 .vscode/
-.settings/
-.project
-.classpath
-*.swp
+.mvn-repo/
+.djl-cache/
 
-# OS
-.DS_Store
+# ── 日志与临时文件 ──
+*.log
+*.zip
+backend-*.log
+frontend.dev.log
+
+# ── 操作系统 ──
 Thumbs.db
-
-# Environment
-.env
-.env.local
-*.env
-
-# Node
-node_modules/
-dist/
-.vite/
-*.tsbuildinfo
-
-# Temp
-*.tmp
-*.bak
+.DS_Store

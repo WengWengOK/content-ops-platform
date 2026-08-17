@@ -1,0 +1,55 @@
+# ════════════════════════════════════════════════════════════════
+# 开发环境配置 (Dev Profile)
+# 启动方式: SPRING_PROFILES_ACTIVE=dev （默认）
+# ════════════════════════════════════════════════════════════════
+
+# 开发环境开启 DEBUG 日志，便于调试
+logging:
+  level:
+    com.contentops: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.web: DEBUG
+
+# 开发环境暴露健康检查详情
+management:
+  endpoint:
+    health:
+      show-details: always
+
+# 开发环境开启 Swagger UI
+springdoc:
+  swagger-ui:
+    enabled: true
+
+# 开发环境 DashScope 配置（继承 application.yml 中默认值，此处可按需覆盖）
+# 若要在本地直接走 DashScope 调用：1) dashscope.enabled=true
+# 2) 同步调整 contentops.model-routing.base-url/api-key/default-model 指向 DashScope
+dashscope:
+  enabled: false
+
+# 开发环境 Redis 无需密码
+spring:
+  datasource:
+    # P0-4：持久化切 PostgreSQL（专属本地实例端口 5433，数据目录 E:/JavaProjects/Contentops/.pgdata）。
+    # 凭据与 content-ops-configs/.env 保持一致，生产环境用环境变量覆盖即可。
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/contentops}
+    driver-class-name: org.postgresql.Driver
+    username: ${DATABASE_USER:contentops}
+    password: ${DATABASE_PASS:change-me}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: contentops-hikari-dev
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:}
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 30000ms
+        shutdown-timeout: 200ms

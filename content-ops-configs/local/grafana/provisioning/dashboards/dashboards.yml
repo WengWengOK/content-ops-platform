@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: content-ops-local
+    orgId: 1
+    folder: Content Ops
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: E:/JavaProjects/Contentops/content-ops-configs/local/grafana/dashboards
+      foldersFromFilesStructure: false

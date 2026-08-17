@@ -1,0 +1,14 @@
+[
+  {
+    "stage": "topic-planning",
+    "title": "AI 工具测评选题质量",
+    "input": "为职场人做 AI 工具测评内容，需要 3-5 个差异化选题",
+    "output": "{\"topics\":[{\"title\":\"打工人的一天：我用5次AI工具把8小时工作压缩到3小时\",\"angle\":\"个人实测体验\",\"rationale\":\"真实工作场景串联多次AI工具测评，代入感强\",\"estimatedEngagement\":8.5,\"keywords\":[\"AI提效\",\"职场效率\",\"AI工具\"]},{\"title\":\"别再花冤枉钱了！这5款免费AI工具吊打付费版\",\"angle\":\"反向思考\",\"rationale\":\"打破付费即好用的认知，免费平替话题引发共鸣\",\"estimatedEngagement\":7.5,\"keywords\":[\"免费AI工具\",\"省钱神器\"]},{\"title\":\"如果AI是你的新同事，你该学的是怎么管理它\",\"angle\":\"跨界类比\",\"rationale\":\"用管理思维类比人机协作，视角新颖\",\"estimatedEngagement\":6.0,\"keywords\":[\"AI协作\",\"人机协同\"]},{\"title\":\"实测7天：AI写周报 vs 手写周报，老板居然没发现区别\",\"angle\":\"数据反直觉\",\"rationale\":\"实验数据说话，职场痛点场景\",\"estimatedEngagement\":7.0,\"keywords\":[\"AI写周报\",\"职场痛点\"]},{\"title\":\"2025年最后一波：这3个AI神器打工人必须装进手机\",\"angle\":\"小众切面\",\"rationale\":\"聚焦移动端碎片场景，差异化明显\",\"estimatedEngagement\":6.5,\"keywords\":[\"手机AI工具\",\"通勤利器\"]}],\"recommendedDirection\":\"职场人视角的AI效率实测，结合反向思考与跨界视角制造差异化\"}"
+  },
+  {
+    "stage": "content-creation",
+    "title": "AI 工具测评正文质量",
+    "input": "写一篇小红书风格的 AI 工具测评正文，突出真实体验",
+    "output": "{\"title\":\"职场人必收！5款AI神器让你每天准点下班\",\"draftContent\":\"# 职场人必收！5款AI神器让你每天准点下班\\n晚上9点，办公室只剩你一个人……（正文含真实场景、前后对比、避坑提醒）\",\"wordCount\":2350,\"tags\":[\"AI工具\",\"效率提升\",\"职场\"]}"
+  }
+]

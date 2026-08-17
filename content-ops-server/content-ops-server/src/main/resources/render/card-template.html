@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width={{WIDTH}}"/>
+<title>{{TITLE}}</title>
+<style>
+  :root {
+    {{CSS_VARS}}
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: {{WIDTH}}px; height: {{HEIGHT}}px; }
+  body {
+    font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .card {
+    width: {{WIDTH}}px;
+    height: {{HEIGHT}}px;
+    padding: {{PADDING}}px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .card-header { height: 60px; display: flex; justify-content: flex-end; align-items: center; }
+  .page-no { font-size: 24px; font-weight: 600; color: var(--muted); }
+  .card-body { flex: 1; overflow: hidden; padding: 8px 0 12px; }
+  .card-footer {
+    height: 70px; display: flex; align-items: center; justify-content: space-between;
+    border-top: 2px solid var(--line); padding-top: 14px;
+  }
+  .brand { font-size: 20px; font-weight: 600; color: var(--muted); }
+  .dots i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--line); margin-left: 8px; }
+  .dots i.on { background: var(--accent); }
+
+  .hero { margin-bottom: 28px; }
+  .hero h1 {
+    font-size: 46px; line-height: 1.4; font-weight: 800; color: var(--text);
+    padding-bottom: 20px; border-bottom: 6px solid var(--accent);
+  }
+  .hero-media { margin-bottom: 24px; }
+  .hero-media img {
+    width: 100%; max-height: 560px; object-fit: cover; display: block;
+    border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,0.10);
+  }
+
+  /* 版式：classic（默认）/ hero（首卡封面大图） */
+  .card[data-layout="hero"] .card-body { display: flex; flex-direction: column; }
+
+  h2 {
+    font-size: 38px; line-height: 1.4; font-weight: 700; color: var(--text);
+    margin: 0 0 18px; padding-left: 18px; border-left: 8px solid var(--accent);
+  }
+  h3 { font-size: 34px; line-height: 1.4; font-weight: 700; margin: 0 0 14px; }
+  h4, h5, h6 { font-size: 30px; line-height: 1.4; font-weight: 600; margin: 0 0 12px; color: var(--text); }
+  p { font-size: 32px; line-height: 1.72; color: var(--text); margin: 0 0 24px; letter-spacing: 0.5px; }
+  strong { color: var(--accent); font-weight: 700; }
+  ul, ol { font-size: 31px; line-height: 1.68; color: var(--text); padding-left: 44px; margin: 0 0 24px; }
+  li { margin: 0 0 8px; }
+  blockquote {
+    font-size: 30px; line-height: 1.7; color: var(--text); background: var(--block-bg);
+    border-left: 8px solid var(--accent); padding: 22px 24px; margin: 0 0 24px;
+    border-radius: 0 12px 12px 0;
+  }
+  pre {
+    font-size: 24px; line-height: 1.6; color: #e6e6e6; background: #23272e; padding: 24px;
+    margin: 0 0 24px; border-radius: 12px; white-space: pre-wrap; word-break: break-all;
+  }
+  code {
+    font-family: Consolas, Menlo, monospace; background: var(--block-bg); padding: 2px 8px;
+    border-radius: 6px; font-size: 0.9em; color: var(--text);
+  }
+  pre code { background: transparent; padding: 0; color: #e6e6e6; font-size: 24px; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent); }
+  hr { border: 0; border-top: 2px dashed var(--line); margin: 32px 0; }
+  .img-wrap { margin: 0 0 24px; }
+  .img-wrap img {
+    width: 100%; border-radius: 14px; display: block;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.10);
+  }
+</style>
+</head>
+<body>
+<div class="card" data-theme="{{THEME}}" data-layout="{{LAYOUT}}">
+  <div class="card-header">
+    <span class="page-no">{{PAGE_NO}}</span>
+  </div>
+  <div class="card-body">
+    {{HERO_MEDIA}}
+    {{HERO_TITLE}}
+    {{BLOCKS}}
+  </div>
+  <div class="card-footer">
+    <span class="brand">ContentOps</span>
+    <span class="dots">{{DOTS}}</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,83 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: LLM 监控
+    folder: Content Ops
+    interval: 1m
+    rules:
+      - uid: contentops-llm-error-rate
+        title: LLM 错误率过高
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: prometheus
+              expr: sum(rate(contentops_llm_errors_total[5m])) / clamp_min(sum(rate(contentops_llm_calls_total[5m])), 1e-6)
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.1]
+                  operator: and
+        for: 2m
+        labels:
+          severity: warning
+          category: llm
+        annotations:
+          summary: LLM 错误率超过 10%
+          description: 最近 5 分钟 LLM 错误率 {{ $values.A }}，请检查模型调用与 Key 状态
+        noDataState: OK
+        execErrState: Error
+
+      - uid: contentops-llm-cost-spike
+        title: LLM 成本超阈值
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: prometheus
+              expr: sum(increase(contentops_llm_cost_usd_total[1h]))
+              instant: true
+              range: false
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
+                  operator: and
+        for: 1m
+        labels:
+          severity: critical
+          category: llm
+        annotations:
+          summary: LLM 成本超阈值（$0.05/小时）
+          description: 近 1 小时估算成本 {{ $values.A }} 美元，超过预算阈值
+        noDataState: OK
+        execErrState: Error

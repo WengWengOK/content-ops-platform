@@ -1,0 +1,142 @@
+version: '3.8'
+
+# ════════════════════════════════════════════════════════════════
+# Content Ops Agent Platform — 单体模式 Docker Compose
+#
+# 本项目已从微服务架构合并为单体模式 (content-ops-server)，
+# 所有 6 个 Agent + 编排器运行在同一个 JVM 进程中。
+#
+# 启动方式：
+#   1. 创建 .env 文件配置密码：
+#      POSTGRES_PASSWORD=your_secure_password
+#      REDIS_PASSWORD=your_secure_password
+#      GRAFANA_ADMIN_PASSWORD=your_secure_password
+#      OPENAI_API_KEY=your_api_key
+#   2. docker-compose up -d
+# ════════════════════════════════════════════════════════════════
+
+services:
+  # === 基础设施 ===
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    restart: unless-stopped
+
+  postgres:
+    # pgvector 扩展镜像（LangChain4j 向量检索依赖）
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contentops}
+      POSTGRES_USER: ${POSTGRES_USER:-contentops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docs/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    restart: unless-stopped
+
+  # === 可观测性基础设施（可选，按需启动）===
+
+  # Jaeger 分布式链路追踪
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+
+  # Prometheus 指标采集
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    environment:
+      # 供 docs/prometheus.yml 中的 ${ACTUATOR_API_KEY} 替换使用
+      - ACTUATOR_API_KEY=${ACTUATOR_API_KEY:-dev-actuator-key}
+    volumes:
+      - ./docs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  # Grafana 指标可视化
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./docs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # === 应用服务（单体模式）===
+
+  content-ops-server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: content-ops-server
+    depends_on:
+      - redis
+      - postgres
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_PASSWORD=${REDIS_PASSWORD}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-contentops}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-contentops}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - ACTUATOR_API_KEY=${ACTUATOR_API_KEY:-dev-actuator-key}
+      # RAG 向量库（KnowledgeBaseService 直连 PostgreSQL/pgvector）
+      - CONTENTOPS_KNOWLEDGE_BASE_PG_HOST=postgres
+      - CONTENTOPS_KNOWLEDGE_BASE_PG_PORT=5432
+      - CONTENTOPS_KNOWLEDGE_BASE_PG_DATABASE=${POSTGRES_DB:-contentops}
+      - CONTENTOPS_KNOWLEDGE_BASE_PG_USER=${POSTGRES_USER:-contentops}
+      - CONTENTOPS_KNOWLEDGE_BASE_PG_PASSWORD=${POSTGRES_PASSWORD}
+      - CONTENTOPS_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+      - CONTENTOPS_ENGINE=${CONTENTOPS_ENGINE:-legacy}
+    restart: unless-stopped
+
+  # 前端（Nginx 托管静态资源 + 反向代理 /api /ws /mcp 到后端）
+  content-ops-frontend:
+    build:
+      context: ..
+      dockerfile: content-ops-frontend/Dockerfile
+    container_name: content-ops-frontend
+    depends_on:
+      - content-ops-server
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  postgres-data:

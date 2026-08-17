@@ -1,0 +1,16 @@
+# Prometheus 抓取配置（docker-compose 挂载到 /etc/prometheus/prometheus.yml）
+# 抓取内容运营平台 Actuator 指标（prod profile 下管理端口 9090）。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'content-ops-server'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['content-ops-server:9090']
+    # prod profile 下 Actuator 需要 API Key 鉴权（X-Actuator-Key 或 Authorization: Bearer）；
+    # ${ACTUATOR_API_KEY} 由 docker-compose 注入到 Prometheus 容器环境变量。
+    authorization:
+      type: Bearer
+      credentials: '${ACTUATOR_API_KEY}'

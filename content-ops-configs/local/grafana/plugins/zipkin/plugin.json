@@ -1,0 +1,54 @@
+{
+    "type": "datasource",
+    "name": "Zipkin",
+    "id": "zipkin",
+    "category": "tracing",
+    "executable": "gpx_grafana-zipkin-datasource",
+    "backend": true,
+    "metrics": true,
+    "alerting": false,
+    "annotations": false,
+    "logs": false,
+    "streaming": false,
+    "tracing": true,
+    "info": {
+        "description": "Query and visualize traces from Zipkin, an open-source distributed tracing system.",
+        "author": {
+            "name": "Grafana Labs",
+            "url": "https://grafana.com"
+        },
+        "keywords": [
+            "zipkin",
+            "datasource",
+            "tracing",
+            "distributed tracing",
+            "spans",
+            "traces"
+        ],
+        "logos": {
+            "small": "img/zipkin-logo.svg",
+            "large": "img/zipkin-logo.svg"
+        },
+        "links": [
+            {
+                "name": "Learn more",
+                "url": "https://zipkin.io"
+            },
+            {
+                "name": "Raise issue",
+                "url": "https://github.com/grafana/grafana-zipkin-datasource/issues/new"
+            },
+            {
+                "name": "Documentation",
+                "url": "https://grafana.com/docs/grafana/latest/datasources/zipkin/"
+            }
+        ],
+        "version": "12.4.6",
+        "updated": "2026-08-13"
+    },
+    "dependencies": {
+        "grafanaDependency": ">=12.3.0-0",
+        "plugins": []
+    },
+    "buildMode": "production"
+}

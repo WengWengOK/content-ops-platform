@@ -1,0 +1,35 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+{
+  "manifestVersion": "2.0.0",
+  "signatureType": "grafana",
+  "signedByOrg": "grafana",
+  "signedByOrgName": "Grafana Labs",
+  "plugin": "zipkin",
+  "version": "12.4.6",
+  "time": 1786648816831,
+  "keyId": "7e4d0c6a708866e7",
+  "files": {
+    "LICENSE": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef",
+    "CHANGELOG.md": "7e3419ea0f07e35465205a3c04ec3c5f01a87077b08000f1f18a6444746dae9b",
+    "plugin.json": "350cd59ed5703b4e7f6ae3f0c32ae785ad7ad8230e9a0ccdf29ea07d989ed01e",
+    "img/zipkin-logo.svg": "c3b9961675ddcf9e3359298a0192da8e4030ddb7654da6fb203ffec361b1d717",
+    "mocks/mockJsonResponse.json": "3e137e1f0ce16b4d70619c9859ab6b289f76df8813c82f3fa5ab6b6e0dcb2329",
+    "go_plugin_build_manifest": "76a950e593c572795b2064436320037dcff70d4c3eb6cb356a5920f8b9a30178",
+    "README.md": "56bc2bf2841ff1ade347627ffa676e759d2c2c479b1018aa888b2848d4f70423",
+    "module.js.map": "5c03ee40231951c9a780e2b1a6454cf67fcd13186d72139f53d2446c0d67ca0f",
+    "module.js": "32700f5398421285287aaf8215d74adb2f90e3a25017a14f03c0ec3a59d2e622",
+    "gpx_grafana-zipkin-datasource_windows_amd64.exe": "acbe45e433edb499f56a0e4601b854256a1414ca3473e72c01d968e2b24c0ab7"
+  }
+}
+-----BEGIN PGP SIGNATURE-----
+
+wsA+BAETCgBtBYJqfhjwCRB+TQxqcIhm50UUAAAAAAAcACBzYWx0QG5vdGF0
+aW9ucy5vcGVucGdwanMub3Jnt0P2b7Gntnsb4V1OCK269cb7vhGnyIO5H2Sh
+QUpnnvQWIQTzOyW2kQdOhGNlcPN+TQxqcIhm5wAAwcMCCQGn/cNJl5fIO7Zv
+484vs6nxWDr57oQSNMYyQcnY7uuydLovyatvPaBr6D5EHg8511lhbcfyOodO
+xeOU4dpS+Ea8dgIHYjKAh+zSPtTTD1uYSnpDtfJ/jqK3DNdhMtrDG2qKbmMf
+3sFxelcxcHKSR4eHrvr7cBrxu3ZAn9UP98OApHKsCnY=
+=cFtA
+-----END PGP SIGNATURE-----

@@ -1,0 +1,115 @@
+{
+  "uid": "contentops-llm",
+  "title": "ContentOps LLM 观测",
+  "tags": ["llm", "contentops"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "调用次数",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 2, "x": 0, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "sum(contentops_llm_calls_total)", "legendFormat": "调用" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "输入 Token",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 2, "x": 2, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "sum(contentops_llm_tokens_in_total)", "legendFormat": "输入" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "输出 Token",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 2, "x": 4, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "sum(contentops_llm_tokens_out_total)", "legendFormat": "输出" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "估算成本",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 2, "x": 6, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "sum(contentops_llm_cost_usd_total)", "legendFormat": "USD" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "错误数",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 2, "x": 8, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "sum(contentops_llm_errors_total)", "legendFormat": "错误" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "平均延迟",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 2, "x": 10, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "avg(contentops_llm_latency_seconds_sum / contentops_llm_latency_seconds_count) * 1000", "legendFormat": "ms" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0 }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Token 流入 / 流出",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(contentops_llm_tokens_in_total[$__range]))", "legendFormat": "输入" },
+        { "refId": "B", "expr": "sum(increase(contentops_llm_tokens_out_total[$__range]))", "legendFormat": "输出" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "按阶段调用",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 4 },
+      "targets": [{ "refId": "A", "expr": "sum by (stage) (contentops_llm_calls_total)", "legendFormat": "{{stage}}" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "延迟 P95",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 12 },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(contentops_llm_latency_seconds_bucket[$__rate_interval]))) * 1000", "legendFormat": "P95 ms" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "各阶段 / Agent 调用趋势",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 12 },
+      "targets": [{ "refId": "A", "expr": "sum by (stage, agent) (increase(contentops_llm_calls_total[$__range]))", "legendFormat": "{{stage}}/{{agent}}" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list" }, "tooltip": { "mode": "multi" } }
+    }
+  ]
+}

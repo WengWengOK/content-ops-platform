@@ -1,0 +1,17 @@
+{
+  "name": "contentops-render-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HTML → PNG 渲染服务：用 Playwright + Chromium 把作品卡片/封面批量截图，供 ContentOps 下载 ZIP 直接打包 PNG。",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
