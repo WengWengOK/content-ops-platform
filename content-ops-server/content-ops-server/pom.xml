@@ -5,14 +5,14 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.contentops</groupId>
-        <artifactId>content-ops-agent-platform-monolithic</artifactId>
+        <artifactId>content-ops-agent-platform-parent</artifactId>
         <version>1.0.0</version>
         <relativePath>../../content-ops-configs/pom.xml</relativePath>
     </parent>
 
     <artifactId>content-ops-server</artifactId>
-    <name>Content Ops Server</name>
-    <description>Monolithic server module — merged orchestrator, agents, and common code</description>
+    <name>Content Ops Server (Legacy Monolithic)</name>
+    <description>Legacy 单体模块（保留向后兼容）：编排器 + 6 Agent + Tool 层 全部加载，等价于 Phase3 三服务合并运行。从该模块迁移代码到 orchestrator/worker/tools 即可完成服务化，迁移期间该模块始终可启动。</description>
 
     <dependencies>
         <!-- Web -->

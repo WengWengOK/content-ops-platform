@@ -151,6 +151,10 @@ public class RagRetrievalEnhancer {
      * 判断是否应为指定阶段注入 RAG 上下文。
      * <p>供编排层在调用 Agent 前快速判断是否需要触发检索。
      *
+     * <p>长期记忆与上下文工程 P1：在 topic-planning / optimization 之外，
+     * 新增 content-creation / image-design / publishing / data-analysis 四个阶段，
+     * 实现全 Agent RAG 上下文注入。
+     *
      * @param stageCode Agent 阶段代码（对应 AgentStage.getCode()）
      * @return 该阶段是否启用上下文注入
      */
@@ -161,6 +165,10 @@ public class RagRetrievalEnhancer {
         return switch (stageCode) {
             case "topic-planning" -> properties.getContextInjection().isTopicPlanning();
             case "optimization" -> properties.getContextInjection().isOptimization();
+            case "content-creation" -> properties.getContextInjection().isContentCreation();
+            case "image-design" -> properties.getContextInjection().isImageDesign();
+            case "publishing" -> properties.getContextInjection().isPublishing();
+            case "data-analysis" -> properties.getContextInjection().isDataAnalysis();
             default -> false;
         };
     }

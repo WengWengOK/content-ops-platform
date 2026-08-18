@@ -1,0 +1,15 @@
+# ==========================================================================
+# Content Ops Tools Service（Phase3 Tool Services，默认端口 8082）
+# ==========================================================================
+# 第一阶段：直接复用 legacy-server 内 KnowledgeBaseService / TrendService 等 Bean，
+#          对外暴露对内 API /internal/api/tools/* 供 Worker/Orchestrator 调用。
+# ==========================================================================
+server:
+  port: ${TOOLS_PORT:8082}
+  shutdown: graceful
+
+spring:
+  application:
+    name: content-ops-tools
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.contentops</groupId>
+        <artifactId>content-ops-agent-platform-parent</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../content-ops-configs/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>content-ops-worker</artifactId>
+    <name>Content Ops Worker Service</name>
+    <description>Phase3 Agent Worker 服务（端口 8081）：6 个 Agent 运行时，
+        监听 Orchestrator 的 HTTP POST /internal/api/agent/execute 或 Kafka STAGE_STARTED 事件。
+        第一阶段（渐进拆分）：直接依赖 legacy content-ops-server 复用 topic/content/image/publish/analysis/optimization
+        六个 AgentController + AgentConfig，零代码迁徙即可独立启动为 Worker 实例。</description>
+
+    <dependencies>
+        <!-- 公共契约：AgentExecuteRequest / Response -->
+        <dependency>
+            <groupId>com.contentops</groupId>
+            <artifactId>content-ops-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- 渐进拆分：复用 legacy-server 所有 6 个 Agent Bean -->
+        <dependency>
+            <groupId>com.contentops</groupId>
+            <artifactId>content-ops-server</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.artifactId}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

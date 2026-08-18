@@ -1,0 +1,169 @@
+version: '3.8'
+
+# ════════════════════════════════════════════════════════════════
+# Content Ops Agent Platform — Phase3 服务化拆分 Docker Compose
+#
+# 三服务分离（与 legacy 单体 docker-compose.yml 并行可选）：
+#   - orchestrator :8080  编排器 + 控制面 + 前端 API 网关（对外）
+#   - worker       :8081  Agent Worker（6 个 Agent 运行时，对内）
+#   - tools        :8082  Tools Service（RAG/知识库/趋势/热点/生图，对内）
+#
+# 与 docker-compose.yml（单体）的差别：
+#   1. docker-compose.yml          → 单个 content-ops-server（稳定，生产默认）
+#   2. docker-compose-phase3.yml   → 本文件（Phase3 实验性，验证三服务独立扩容能力）
+#
+# 渐进拆分策略（Phase3 第 1 个月）：
+#   三服务实际运行时全部加载 legacy-server 全量代码（功能等价），只是进程级隔离 +
+#   端口独立。后续把 worker 中的编排代码、tools 中的 agent 代码逐包移除即可完成真正拆分。
+#
+# 启动方式：
+#   docker compose -f content-ops-configs/docker-compose-phase3.yml up -d --build
+# ════════════════════════════════════════════════════════════════
+
+x-common-env: &common-env
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_REDIS_PORT: 6379
+  SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-contentops}
+  SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-contentops}
+  SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-${OPENAI_API_KEY}}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+  LLM_MODEL: ${LLM_MODEL:-gpt-4o}
+  ACTUATOR_API_KEY: ${ACTUATOR_API_KEY:-dev-actuator-key}
+  CONTENTOPS_KNOWLEDGE_BASE_PG_HOST: postgres
+  CONTENTOPS_KNOWLEDGE_BASE_PG_PORT: 5432
+  CONTENTOPS_KNOWLEDGE_BASE_PG_DATABASE: ${POSTGRES_DB:-contentops}
+  CONTENTOPS_KNOWLEDGE_BASE_PG_USER: ${POSTGRES_USER:-contentops}
+  CONTENTOPS_KNOWLEDGE_BASE_PG_PASSWORD: ${POSTGRES_PASSWORD}
+  CONTENTOPS_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+  CONTENTOPS_ENGINE: ${CONTENTOPS_ENGINE:-legacy}
+
+services:
+  # ── 基础设施（与 docker-compose.yml 一致，便于两套 compose 复用） ──
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contentops}
+      POSTGRES_USER: ${POSTGRES_USER:-contentops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docs/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+
+  # ── Phase3 三服务分离 ─────────────────────────────────────────
+
+  # 编排器服务（8080）：前端 /api 入口，状态机 + 控制面
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        MAVEN_MODULE: content-ops-orchestrator
+        FINAL_NAME: content-ops-orchestrator
+    image: contentops/orchestrator:latest
+    container_name: orchestrator
+    depends_on:
+      - redis
+      - postgres
+      - worker
+      - tools
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *common-env
+      ORCHESTRATOR_PORT: 8080
+      WORKER_BASE_URL: http://worker:8081
+      TOOLS_BASE_URL: http://tools:8082
+    restart: unless-stopped
+
+  # Agent Worker（8081）：6 个 Agent 运行时，支持水平扩容到多实例
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        MAVEN_MODULE: content-ops-worker
+        FINAL_NAME: content-ops-worker
+    image: contentops/worker:latest
+    container_name: worker
+    depends_on:
+      - redis
+      - postgres
+      - tools
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *common-env
+      WORKER_PORT: 8081
+      TOOLS_BASE_URL: http://tools:8082
+    restart: unless-stopped
+
+  # Tools Service（8082）：RAG/知识库/趋势/热点/生图
+  tools:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        MAVEN_MODULE: content-ops-tools
+        FINAL_NAME: content-ops-tools
+    image: contentops/tools:latest
+    container_name: tools
+    depends_on:
+      - redis
+      - postgres
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *common-env
+      TOOLS_PORT: 8082
+    restart: unless-stopped
+
+  # ── 前端（Nginx） ────────────────────────────────────────────
+  # 反向代理 /api /ws /mcp → orchestrator:8080
+  content-ops-frontend:
+    build:
+      context: ..
+      dockerfile: content-ops-frontend/Dockerfile
+    container_name: content-ops-frontend
+    depends_on:
+      - orchestrator
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  postgres-data:

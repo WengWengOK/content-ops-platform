@@ -18,6 +18,9 @@ import com.contentops.common.cost.CostGuardBlockedException;
 import com.contentops.common.quality.QualityAssessmentService;
 import com.contentops.common.quality.QualityScore;
 import com.contentops.common.quality.QualityThresholdProperties;
+import com.contentops.common.knowledge.AgentOutputIngester;
+import com.contentops.common.knowledge.RagRetrievalEnhancer;
+import com.contentops.common.memory.ProjectMemoryService;
 import com.contentops.common.util.WorkflowStateManager;
 import com.contentops.orchestrator.gateway.AgentGateway;
 import com.contentops.orchestrator.service.PlatformWorkflowOrchestrator;
@@ -61,6 +64,9 @@ public class StageExecutor {
     private final ObjectMapper objectMapper;
     private final Tracer tracer;
     private final LlmJudgeService llmJudgeService;
+    private final AgentOutputIngester agentOutputIngester;
+    private final RagRetrievalEnhancer ragRetrievalEnhancer;
+    private final ProjectMemoryService projectMemoryService;
 
     // 单体模式下 Kafka 可能不存在，设为可选（用 Object 避免依赖 spring-kafka）。
     // 必须用 @Qualifier 限定 bean 名称：Object 类型会匹配容器内所有 Bean，
@@ -80,7 +86,11 @@ public class StageExecutor {
                          AgentEventRepository agentEventRepository,
                          ObjectMapper objectMapper,
                          Tracer tracer,
-                         LlmJudgeService llmJudgeService) {
+                         LlmJudgeService llmJudgeService,
+                         AgentOutputIngester agentOutputIngester,
+                         RagRetrievalEnhancer ragRetrievalEnhancer,
+                         @org.springframework.beans.factory.annotation.Autowired(required = false)
+                         ProjectMemoryService projectMemoryService) {
         this.stateManager = stateManager;
         this.agentGateway = agentGateway;
         this.qualityEnricher = qualityEnricher;
@@ -93,6 +103,9 @@ public class StageExecutor {
         this.objectMapper = objectMapper;
         this.tracer = tracer;
         this.llmJudgeService = llmJudgeService;
+        this.agentOutputIngester = agentOutputIngester;
+        this.ragRetrievalEnhancer = ragRetrievalEnhancer;
+        this.projectMemoryService = projectMemoryService;
     }
 
     /**
@@ -390,6 +403,14 @@ public class StageExecutor {
                 context.setAccumulatedArtifacts(new java.util.HashMap<>());
             }
             context.getAccumulatedArtifacts().put(stage.getCode(), response.getData());
+
+            // 长期记忆 P0：Agent 输出回流知识库 + 落盘审计（失败不阻断主流程）
+            try {
+                agentOutputIngester.ingest(stage, response.getData(), context);
+            } catch (Exception e) {
+                log.warn("[Workflow:{}] 输出回流知识库失败 stage={}: {}",
+                        context.getWorkflowId(), stage.getCode(), e.getMessage());
+            }
         }
 
         // P2 集成：质量评估 + 人工行动清单
@@ -432,6 +453,17 @@ public class StageExecutor {
             context.setStatus(TaskStatus.COMPLETED.name());
             context.setUpdatedAt(LocalDateTime.now());
             stateManager.saveWorkflowState(context.getWorkflowId(), context);
+
+            // 长期记忆 P2：工作流完成时沉淀项目记忆摘要（跨工作流复用，失败不阻断）
+            if (projectMemoryService != null) {
+                try {
+                    projectMemoryService.summarizeWorkflow(context);
+                } catch (Exception e) {
+                    log.warn("[Workflow:{}] 项目记忆沉淀失败: {}",
+                            context.getWorkflowId(), e.getMessage());
+                }
+            }
+
             log.info("[Workflow:{}] Stage {} completed. Workflow COMPLETED (4-stage pipeline).",
                     context.getWorkflowId(), stage.getCode());
             publishEvent(StageTransitionEvent.completed(
@@ -495,17 +527,69 @@ public class StageExecutor {
 
     /**
      * Build an AgentTaskRequest from the workflow context.
+     *
+     * <p>长期记忆 P1：构建请求前，按 stage 判断是否注入 RAG 历史上下文到 inputs。
+     * 统一在编排层处理，无需改动各 Agent 的 Config 与接口签名。
      */
     AgentTaskRequest buildRequest(TaskContext context) {
+        // RAG 上下文注入（按 contentops.rag.context-injection.* 开关控制）
+        Map<String, Object> inputs = context.getInputs();
+        if (inputs == null) {
+            inputs = new java.util.HashMap<>();
+        }
+        injectRagContextIfNeeded(context, inputs);
+
         AgentTaskRequest request = AgentTaskRequest.of(
                 context.getWorkflowId(),
                 context.getCurrentStage(),
                 context.getAccountProfile(),
-                context.getInputs(),
+                inputs,
                 context.getAccumulatedArtifacts()
         );
         request.setRequireHumanReview(context.isRequireHumanReview());
         return request;
+    }
+
+    /**
+     * 若该 stage 启用了 RAG 上下文注入，检索历史相似内容并塞入 inputs["ragContext"]。
+     * 失败时只记日志，不影响请求构建。
+     */
+    private void injectRagContextIfNeeded(TaskContext context, Map<String, Object> inputs) {
+        String stageCode = context.getCurrentStage();
+        if (!ragRetrievalEnhancer.shouldInjectContext(stageCode)) {
+            return;
+        }
+        try {
+            String query = buildRagQuery(context, stageCode);
+            String niche = context.getAccountProfile() != null
+                    ? context.getAccountProfile().getNiche() : null;
+            String ragContext = ragRetrievalEnhancer.retrieveHistoricalContext(query, niche, 0);
+            if (ragContext != null && !ragContext.isBlank()) {
+                inputs.put("ragContext", ragContext);
+                log.debug("[Workflow:{}] RAG 上下文已注入 stage={}, chars={}",
+                        context.getWorkflowId(), stageCode, ragContext.length());
+            }
+        } catch (Exception e) {
+            log.warn("[Workflow:{}] RAG 上下文注入失败 stage={}: {}",
+                    context.getWorkflowId(), stageCode, e.getMessage());
+        }
+    }
+
+    /**
+     * 根据 stage 与上下文构建 RAG 检索查询。
+     */
+    private String buildRagQuery(TaskContext context, String stageCode) {
+        Object topic = null;
+        if (context.getOutputs() != null) {
+            topic = context.getOutputs().get("topic");
+        }
+        if (topic == null && context.getInputs() != null) {
+            topic = context.getInputs().get("topic");
+            if (topic == null) {
+                topic = context.getInputs().get("topicHint");
+            }
+        }
+        return topic != null ? String.valueOf(topic) : stageCode;
     }
 
     /**

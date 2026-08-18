@@ -113,6 +113,28 @@ contentops:
         model: deepseek-chat
         temperature: 0.3
         max-tokens: 2048
+    # P2 #10 大厂特色：动态模型路由网关（多模型路由自动化，按难度/成本动态选择）。
+    # 默认关闭，渐进开启；所有开关默认值均与 DynamicGatewayProperties 对齐：
+    dynamic-gateway:
+      enabled: ${CONTENTOPS_DYNAMIC_GATEWAY:false}   # 关闭时回退到原 stage-overrides 静态路由
+      tiered-chatmodels:
+        cheap: "deepseek-chat"       # 轻量/格式化/分析：低成本小模型档位
+        strong: "deepseek-chat"      # 创作/推理/优化：高质量大模型档位
+        vision: "qwen-vl-plus"       # 多模态视觉：图片理解等（vision-stage-codes 指定的阶段走此档）
+      stage-tier:                    # 按阶段 → 默认档位
+        topic-planning: "strong"
+        content-creation: "strong"
+        image-design: "strong"
+        publishing: "cheap"
+        data-analysis: "cheap"
+        optimization: "cheap"
+      difficulty-estimation:
+        enabled: true
+        prompt-chars-upgrade: 8000   # prompt 字符超过 8K 时自动从 cheap→strong 升档
+        vision-stage-codes: ["image-design"]
+      cost-optimization:
+        cheap-stage-max-tokens: 4096 # cheap 档 maxTokens 硬上限
+        upgrade-on-budget-low: true  # 工作流预算偏低时强制 cheap
   # 质量评估与自动重试（成本控制）：默认关闭自动重试，避免低分反复调用放大 token；
   # 需要质量兜底时把 auto-retry 打开并调低 max-retries（如 1）。
   quality:
@@ -168,6 +190,29 @@ contentops:
     rapid-growth-threshold: 0.10         # 快速增长判定阈值（30日增长率超过 10% 视为快速增长）
     decline-threshold: -0.05             # 粉丝流失判定阈值（30日增长率低于 -5% 视为流失）
     enable-content-profile: true         # 是否启用内容画像（关闭后仅构建受众画像）
+  # RAG 检索增强（com.contentops.common.knowledge.RagProperties，绑定 contentops.rag）
+  # 长期记忆与上下文工程 P1：context-injection 扩展为六个 Agent 阶段开关，
+  # topic-planning/optimization 默认开启，其余四个默认关闭可按需开启。
+  rag:
+    enabled: ${CONTENTOPS_RAG_ENABLED:true}
+    max-results: 5
+    min-score: 0.6
+    context-injection:
+      topic-planning: true       # 选题规划：注入历史选题上下文
+      optimization: true         # 优化迭代：注入历史表现模式
+      content-creation: false    # 内容创作：注入历史文章上下文（按需开启）
+      image-design: false        # 配图设计：注入历史配图风格（按需开启）
+      publishing: false          # 发布排版：注入历史发布上下文（按需开启）
+      data-analysis: false       # 数据分析：注入历史分析报告（按需开启）
+  # 跨工作流项目记忆（com.contentops.common.memory.ProjectMemoryProperties，绑定 contentops.project-memory）
+  # 长期记忆与上下文工程 P2：按 accountId 维度沉淀同账号跨工作流的历史信息。
+  # 默认关闭，开启后工作流启动时注入项目记忆、完成时沉淀摘要。
+  project-memory:
+    enabled: ${CONTENTOPS_PROJECT_MEMORY_ENABLED:false}
+    ttl-days: 30                       # Redis TTL（天），项目记忆保留时长
+    max-recent-summaries: 10           # 保留的近期工作流摘要最大条数
+    top-performing-topics-count: 5     # 从知识库聚合的历史高表现选题数量
+    key-prefix: "contentops:project-memory:"
   cache:
     # 平台配置缓存（低频变更）
     platform-config:
@@ -267,6 +312,13 @@ contentops:
     threshold: ${CONTENTOPS_EVALS_THRESHOLD:70}
     gate-enabled: ${CONTENTOPS_EVALS_GATE:false}
     judge-model-tier: formatting
+    # P2 #9 大厂特色：Agent 自我改进闭环（评测失败 → 自动拉起 Optimization 独立阶段）
+    # 默认关闭，渐进开启；gate-enabled=true + auto-optimization-on-fail=true + passed=FALSE 且 score ≤ triggerMaxScore 才触发
+    self-improve:
+      auto-optimization-on-fail: ${CONTENTOPS_EVALS_AUTO_OPTIMIZE:false}
+      trigger-max-score: ${CONTENTOPS_EVALS_TRIGGER_SCORE:70}  # ≤ 70 才触发（可更低，如 50 仅严重不及格）
+      max-auto-optimizations: 1                                 # 同一 workflow 最多自动优化 1 次，防止失败→优化→失败循环
+      dedup-ttl-seconds: 3600                                   # 同一 workflow 1 小时内不重复触发
 
   # RAG 真实接入（P0）：本地 BGE 嵌入（无需 Key）+ 混合检索 + 重排；
   # PGVector 不可用时回退进程内内存向量库，开发环境即可真正跑向量检索。

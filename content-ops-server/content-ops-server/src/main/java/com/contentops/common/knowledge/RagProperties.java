@@ -45,6 +45,10 @@ public class RagProperties {
     /**
      * 上下文注入开关。
      * <p>按 Agent 阶段粒度控制是否注入 RAG 检索结果，便于灰度与对照实验。
+     *
+     * <p>长期记忆与上下文工程 P1：在 topic-planning / optimization 之外，
+     * 新增 content-creation / image-design / publishing / data-analysis 四个开关，
+     * 让全部六个 Agent 都能按需注入历史上下文。新开关默认关闭，可按需开启。
      */
     @Data
     public static class ContextInjection {
@@ -53,5 +57,17 @@ public class RagProperties {
 
         /** OptimizeAgent（优化迭代）调用前是否注入历史表现模式 */
         private boolean optimization = true;
+
+        /** ContentAgent（内容创作）调用前是否注入历史文章上下文 */
+        private boolean contentCreation = false;
+
+        /** ImageAgent（配图设计）调用前是否注入历史配图风格上下文 */
+        private boolean imageDesign = false;
+
+        /** PublishAgent（发布排版）调用前是否注入历史发布上下文 */
+        private boolean publishing = false;
+
+        /** DataAnalysisAgent（数据分析）调用前是否注入历史分析报告上下文 */
+        private boolean dataAnalysis = false;
     }
 }

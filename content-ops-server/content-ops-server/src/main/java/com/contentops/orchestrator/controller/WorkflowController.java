@@ -20,6 +20,7 @@ import com.contentops.common.exception.BusinessException;
 import com.contentops.common.exception.ErrorCode;
 import com.contentops.common.event.WorkflowEventBroadcaster;
 import com.contentops.common.audit.AuditService;
+import com.contentops.common.memory.ProjectMemoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -55,6 +56,7 @@ public class WorkflowController {
     private final WorkflowEventBroadcaster workflowEventBroadcaster;
     private final AuditService auditService;
     private final FileStorageService fileStorageService;
+    private final ProjectMemoryService projectMemoryService;
 
     /**
      * Start a new content operations workflow.
@@ -129,6 +131,9 @@ public class WorkflowController {
                 .maxCycles(maxCycles)
                 .cycleCount(1)  // A计划：初始化循环计数
                 .build();
+
+        // 长期记忆 P2：工作流启动时注入跨工作流项目记忆（失败不阻断）
+        projectMemoryService.enrichContextWithMemory(context);
 
         workflowService.startWorkflow(context);
         auditService.record("WORKFLOW_START", "workflow", workflowId,
@@ -759,6 +764,9 @@ public class WorkflowController {
 
             // 作品与讨论会话建立归属关系：accountProfile 直接取自会话
             context.setAccountProfile(session.getAccountProfile());
+
+            // 长期记忆 P2：讨论直达作品场景同样注入项目记忆（失败不阻断）
+            projectMemoryService.enrichContextWithMemory(context);
 
             workflowService.startWorkflow(context);
 

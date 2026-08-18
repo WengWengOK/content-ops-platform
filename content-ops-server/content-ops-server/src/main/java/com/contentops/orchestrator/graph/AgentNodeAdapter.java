@@ -2,7 +2,10 @@ package com.contentops.orchestrator.graph;
 
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.dto.TaskContext;
+import com.contentops.common.enums.AgentStage;
 import com.contentops.common.event.AgentTaskRequest;
+import com.contentops.common.knowledge.AgentOutputIngester;
+import com.contentops.common.knowledge.RagRetrievalEnhancer;
 import com.contentops.orchestrator.gateway.AgentGateway;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +23,9 @@ import java.util.Map;
  *   <li>通过 {@link AgentGateway} 调用 Agent（支持 mock / microservice 模式切换）</li>
  *   <li>将响应产物合并到状态中</li>
  * </ol>
+ *
+ * <p><b>长期记忆与上下文工程：</b>节点执行成功后，输出回流知识库
+ * （{@link AgentOutputIngester}）；构建请求前按 stage 注入 RAG 历史上下文。
  */
 @Slf4j
 @Component
@@ -28,6 +34,8 @@ public class AgentNodeAdapter {
 
     private final AgentGateway agentGateway;
     private final StateMapper stateMapper;
+    private final AgentOutputIngester agentOutputIngester;
+    private final RagRetrievalEnhancer ragRetrievalEnhancer;
 
     /**
      * 创建同步图节点 action。
@@ -53,6 +61,19 @@ public class AgentNodeAdapter {
                 artifacts.put(stageCode, response.getData());
 
                 log.info("[Graph:{}] Node {} completed successfully", workflowId, stageCode);
+
+                // 长期记忆 P0：输出回流知识库 + 落盘审计（失败不阻断图执行）
+                try {
+                    AgentStage stage = AgentStage.fromCode(stageCode);
+                    TaskContext.AccountProfile profile = state.value(ContentOpsState.ACCOUNT_PROFILE)
+                            .map(v -> (TaskContext.AccountProfile) v).orElse(null);
+                    String accountId = profile != null ? profile.getAccountId() : null;
+                    String niche = profile != null ? profile.getNiche() : null;
+                    agentOutputIngester.ingest(stage, response.getData(), accountId, niche, workflowId);
+                } catch (Exception e) {
+                    log.warn("[Graph:{}] 输出回流知识库失败 stage={}: {}",
+                            workflowId, stageCode, e.getMessage());
+                }
 
                 return Map.of(
                     ContentOpsState.OUTPUTS, response.getData() != null ? response.getData() : Map.of(),
@@ -82,6 +103,8 @@ public class AgentNodeAdapter {
 
     /**
      * 从 ContentOpsState 构建 AgentTaskRequest。
+     *
+     * <p>长期记忆 P1：构建请求前，按 stage 判断是否注入 RAG 历史上下文到 inputs。
      */
     @SuppressWarnings("unchecked")
     private AgentTaskRequest buildRequest(ContentOpsState state, String stageCode) {
@@ -92,6 +115,53 @@ public class AgentNodeAdapter {
         Map<String, Object> artifacts = new HashMap<>(state.accumulatedArtifacts());
         String workflowId = state.workflowId();
 
+        // RAG 上下文注入（按 contentops.rag.context-injection.* 开关控制）
+        injectRagContextIfNeeded(state, stageCode, inputs, profile, workflowId);
+
         return AgentTaskRequest.of(workflowId, stageCode, profile, inputs, artifacts);
+    }
+
+    /**
+     * 若该 stage 启用了 RAG 上下文注入，检索历史相似内容并塞入 inputs["ragContext"]。
+     * 失败时只记日志，不影响请求构建。
+     */
+    private void injectRagContextIfNeeded(ContentOpsState state, String stageCode,
+                                          Map<String, Object> inputs,
+                                          TaskContext.AccountProfile profile,
+                                          String workflowId) {
+        if (!ragRetrievalEnhancer.shouldInjectContext(stageCode)) {
+            return;
+        }
+        try {
+            String query = buildRagQuery(inputs, state, stageCode);
+            String niche = profile != null ? profile.getNiche() : null;
+            String ragContext = ragRetrievalEnhancer.retrieveHistoricalContext(query, niche, 0);
+            if (ragContext != null && !ragContext.isBlank()) {
+                inputs.put("ragContext", ragContext);
+                log.debug("[Graph:{}] RAG 上下文已注入 stage={}, chars={}",
+                        workflowId, stageCode, ragContext.length());
+            }
+        } catch (Exception e) {
+            log.warn("[Graph:{}] RAG 上下文注入失败 stage={}: {}",
+                    workflowId, stageCode, e.getMessage());
+        }
+    }
+
+    /**
+     * 根据 stage 与上下文构建 RAG 检索查询。
+     */
+    private String buildRagQuery(Map<String, Object> inputs, ContentOpsState state, String stageCode) {
+        Object topic = inputs.get("topic");
+        if (topic == null) {
+            topic = inputs.get("topicHint");
+        }
+        if (topic == null) {
+            Map<String, Object> outputs = (Map<String, Object>) state.value(ContentOpsState.OUTPUTS)
+                    .orElse(null);
+            if (outputs != null) {
+                topic = outputs.get("topic");
+            }
+        }
+        return topic != null ? String.valueOf(topic) : stageCode;
     }
 }

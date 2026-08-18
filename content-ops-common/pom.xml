@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.contentops</groupId>
+        <artifactId>content-ops-agent-platform-parent</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../content-ops-configs/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>content-ops-common</artifactId>
+    <packaging>jar</packaging>
+    <name>Content Ops Common (Contract)</name>
+    <description>Phase3 服务化公共契约模块：跨服务共享的枚举/DTO/事件模型/接口。
+        纯 jar，不启动 Spring Boot。所有其他模块（orchestrator/worker/tools/legacy-server）
+        均依赖本模块，避免重复定义。</description>
+
+    <dependencies>
+        <!-- 注解/Jackson：枚举和 DTO 的序列化注解即可，不引 web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+            <version>${swagger-annotations.version}</version>
+        </dependency>
+    </dependencies>
+
+    <!-- 纯 jar，禁止 spring-boot-maven-plugin 打包成 fat jar -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

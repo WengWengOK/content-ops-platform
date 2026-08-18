@@ -12,14 +12,23 @@
     </parent>
 
     <groupId>com.contentops</groupId>
-    <artifactId>content-ops-agent-platform-monolithic</artifactId>
+    <artifactId>content-ops-agent-platform-parent</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
-    <name>Content Ops Agent Platform (Monolithic)</name>
-    <description>Monolithic Content Operations Platform — merged all backend services into a single deployable unit</description>
+    <name>Content Ops Agent Platform (Parent POM)</name>
+    <description>Parent POM — dependency management + plugin management 公共父 POM，所有子模块（common/orchestrator/worker/tools/legacy-server）继承本 POM</description>
 
     <modules>
+        <!-- 公共契约（纯 jar，不启动）：enums / dto / event / A2A 接口 -->
+        <module>../content-ops-common</module>
+        <!-- Legacy 单体（保留原路径，保证不破坏历史）：编排器 + 6 Agent + Tool 层 全部加载（等价于 3 服务合并模式） -->
         <module>../content-ops-server/content-ops-server</module>
+        <!-- 服务化 Phase3：编排器服务（状态机 + 控制面 + API 网关） -->
+        <module>../content-ops-orchestrator</module>
+        <!-- 服务化 Phase3：Agent Worker 服务（6 个 Agent 运行时，消费 STAGE_STARTED 事件/REST） -->
+        <module>../content-ops-worker</module>
+        <!-- 服务化 Phase3：工具服务（RAG/知识库/趋势/热点/生图，供 worker 通过 HTTP/MCP 调用） -->
+        <module>../content-ops-tools</module>
     </modules>
 
     <properties>

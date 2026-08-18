@@ -31,6 +31,16 @@ public class LlmEvalRepository {
                     + "passed, threshold, created_at FROM contentops_llm_eval_run "
                     + "WHERE (? IS NULL OR ? = '' OR stage = ?) "
                     + "ORDER BY created_at DESC LIMIT ?";
+    private static final String SQL_LATEST_RUN_BY_WORKFLOW =
+            "SELECT run_id, case_id, workflow_id, stage, model, judge_score, judge_feedback, "
+                    + "passed, threshold, created_at FROM contentops_llm_eval_run "
+                    + "WHERE workflow_id = ? "
+                    + "ORDER BY created_at DESC LIMIT 1";
+    private static final String SQL_LATEST_FAILING_RUN =
+            "SELECT run_id, case_id, workflow_id, stage, model, judge_score, judge_feedback, "
+                    + "passed, threshold, created_at FROM contentops_llm_eval_run "
+                    + "WHERE workflow_id = ? AND passed = FALSE "
+                    + "ORDER BY created_at DESC LIMIT 1";
     private static final String SQL_CASES =
             "SELECT case_id, stage, title, input_ref, expected, created_at FROM contentops_llm_eval_case "
                     + "WHERE (? IS NULL OR ? = '' OR stage = ?) "
@@ -72,6 +82,39 @@ public class LlmEvalRepository {
         } catch (Exception e) {
             log.error("[Eval] 查询评测用例失败", e);
             return List.of();
+        }
+    }
+
+    /**
+     * 查询指定工作流的最新一次评测记录（无论是否通过）。
+     * 自我改进闭环在"工作流 COMPLETED 事件"触发后调用此接口，
+     * 用于判断"该工作流所有阶段最新一次评测的总览"。
+     *
+     * @return 若存在记录返回 Map 字段（run_id/workflow_id/stage/judge_score/judge_feedback/passed/threshold/created_at）；否则空 Optional
+     */
+    public java.util.Optional<Map<String, Object>> findLatestRunByWorkflow(String workflowId) {
+        try {
+            java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList(SQL_LATEST_RUN_BY_WORKFLOW, workflowId);
+            return rows.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(rows.get(0));
+        } catch (Exception e) {
+            log.error("[Eval] 查询工作流最新评测失败 workflowId={}", workflowId, e);
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
+     * 查询指定工作流最近一次评测失败（passed=FALSE）的记录。
+     * 自我改进闭环判定"是否该触发优化"的核心接口。
+     *
+     * @return 若存在最近一次失败记录返回 Map；否则空 Optional
+     */
+    public java.util.Optional<Map<String, Object>> findLatestFailingRun(String workflowId) {
+        try {
+            java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList(SQL_LATEST_FAILING_RUN, workflowId);
+            return rows.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(rows.get(0));
+        } catch (Exception e) {
+            log.error("[Eval] 查询工作流失败评测失败 workflowId={}", workflowId, e);
+            return java.util.Optional.empty();
         }
     }
 }

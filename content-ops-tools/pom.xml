@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.contentops</groupId>
+        <artifactId>content-ops-agent-platform-parent</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../content-ops-configs/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>content-ops-tools</artifactId>
+    <name>Content Ops Tools Service</name>
+    <description>Phase3 Tool Services（端口 8082）：RAG 检索 + 知识库写入 + 趋势/热点 + 生图。
+        第一阶段（渐进拆分）：直接依赖 legacy content-ops-server 复用 common.knowledge / common.rag /
+        trend / common.mcp / common.platform（ImageGeneration）Bean，零代码迁徙即可独立启动 Tools 实例；
+        后续 Worker 完成 HTTP 接入后，把工具 Bean 从 Worker 扫描中移除即可。</description>
+
+    <dependencies>
+        <!-- 公共契约：Rag* / Trends* DTO -->
+        <dependency>
+            <groupId>com.contentops</groupId>
+            <artifactId>content-ops-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- 渐进拆分：复用 legacy-server 知识库/RAG/趋势/MCP Bean -->
+        <dependency>
+            <groupId>com.contentops</groupId>
+            <artifactId>content-ops-server</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.artifactId}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

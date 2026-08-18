@@ -1,0 +1,24 @@
+# ==========================================================================
+# Content Ops Worker Service（Phase3 Agent Worker，默认端口 8081）
+# ==========================================================================
+# 第一阶段：直接复用 legacy-server 六个 Agent 包 + 配置，扫描后对外暴露
+#          POST /internal/api/agent/execute 供编排器调用。
+# ==========================================================================
+server:
+  port: ${WORKER_PORT:8081}
+  shutdown: graceful
+
+spring:
+  application:
+    name: content-ops-worker
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+# Worker 自己不做 API 网关级鉴权（编排器前置校验即可），但可单独配置与编排器不同的模型参数
+contentops:
+  services:
+    # Worker → Tools 服务调用地址（后续把 RAG 迁出 Worker 后实际使用）
+    tools:
+      base-url: ${TOOLS_BASE_URL:http://127.0.0.1:8082}
+      connect-timeout-ms: 3000
+      read-timeout-ms: 30000

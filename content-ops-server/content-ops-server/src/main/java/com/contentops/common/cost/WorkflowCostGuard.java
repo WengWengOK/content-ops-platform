@@ -300,4 +300,41 @@ public class WorkflowCostGuard {
     public boolean isCircuitOpen() {
         return System.currentTimeMillis() < circuitOpenUntilMillis;
     }
+
+    /**
+     * 预算是否偏低（动态模型路由网关用：当预算达到 warn-ratio 时，优先切到 cheap 档节省预算）。
+     *
+     * <p>判定任一条件：
+     * <ul>
+     *   <li>token 用量 ≥ workflowTokenBudget × warnRatio</li>
+     *   <li>或成本用量 ≥ workflowCostBudgetUsd × warnRatio（预算非零）</li>
+     * </ul>
+     *
+     * @param workflowId 工作流 ID（子工作流会归并到父工作流 key）
+     * @return true 表示预算偏低，路由网关可切 cheap 档
+     */
+    public boolean isBudgetLow(String workflowId) {
+        if (!properties.isEnabled()) {
+            return false;
+        }
+        String key = budgetKey(workflowId);
+        if (key == null) {
+            return false;
+        }
+        double ratio = properties.getWarnRatio();
+        if (ratio <= 0 || ratio >= 1) {
+            ratio = 0.8;
+        }
+        AtomicLong tokens = workflowTokens.get(key);
+        if (tokens != null && properties.getWorkflowTokenBudget() > 0
+                && tokens.get() >= properties.getWorkflowTokenBudget() * ratio) {
+            return true;
+        }
+        AtomicLong costMicro = workflowCostMicroUsd.get(key);
+        if (costMicro != null && properties.getWorkflowCostBudgetUsd() > 0
+                && costMicro.get() >= properties.getWorkflowCostBudgetUsd() * 1_000_000 * ratio) {
+            return true;
+        }
+        return false;
+    }
 }
