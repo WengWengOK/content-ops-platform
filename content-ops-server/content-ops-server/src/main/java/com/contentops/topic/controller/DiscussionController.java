@@ -184,6 +184,18 @@ public class DiscussionController {
                             // 客户端断开，忽略
                         }
                     })
+                    .onToolExecuted(toolExecution -> {
+                        try {
+                            String toolName = toolExecution.request() == null
+                                    ? "unknown" : toolExecution.request().name();
+                            String args = toolExecution.request() == null
+                                    ? "" : String.valueOf(toolExecution.request().arguments());
+                            emitter.send(SseEmitter.event().name("tool").data(
+                                    toolName + (args == null || args.isBlank() ? "" : "(" + args + ")")));
+                        } catch (Exception ignored) {
+                            // 客户端断开
+                        }
+                    })
                     .onCompleteResponse(response -> {
                         try {
                             String full = response != null && response.aiMessage() != null

@@ -44,7 +44,8 @@ import static org.mockito.Mockito.when;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "CONTENTOPS_MODE=mock",
-                "spring.datasource.url=jdbc:h2:mem:itwf;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"
+                "spring.datasource.url=jdbc:h2:mem:itwf;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+                "spring.datasource.driver-class-name=org.h2.Driver"
         }
 )
 class WorkflowApiIntegrationTest {

@@ -5,6 +5,7 @@ import com.contentops.common.safety.SafetyGuardService.SafetyResult;
 import com.contentops.common.cost.WorkflowCostGuard;
 import com.contentops.common.observability.LlmTraceService;
 import com.contentops.common.observability.LlmTraceContext;
+import com.contentops.common.event.WorkflowEventBroadcaster;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import dev.langchain4j.data.message.AiMessage;
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.List;
 
 /**
  * 安全护栏 ChatModel 装饰器 — 把 {@link SafetyGuardService} 接入真实 LLM 调用链。
@@ -49,16 +51,19 @@ public class GuardedChatModel implements ChatModel {
     private final LlmTraceService llmTraceService;
     private final String modelName;
     private final Tracer tracer;
+    private final WorkflowEventBroadcaster workflowEventBroadcaster;
 
     public GuardedChatModel(ChatModel delegate, SafetyGuardService safetyGuard,
                             WorkflowCostGuard costGuard, LlmTraceService llmTraceService,
-                            String modelName, Tracer tracer) {
+                            String modelName, Tracer tracer,
+                            WorkflowEventBroadcaster workflowEventBroadcaster) {
         this.delegate = delegate;
         this.safetyGuard = safetyGuard;
         this.costGuard = costGuard;
         this.llmTraceService = llmTraceService;
         this.modelName = modelName;
         this.tracer = tracer;
+        this.workflowEventBroadcaster = workflowEventBroadcaster;
         log.info("[SafetyGuard] GuardedChatModel 已装配: delegate={}", delegate.getClass().getSimpleName());
     }
 
@@ -87,6 +92,7 @@ public class GuardedChatModel implements ChatModel {
         long startNanos = System.nanoTime();
         try (Tracer.SpanInScope scope = tracer.withSpan(span)) {
             response = delegate.doChat(guardedRequest);
+            broadcastToolCalls(workflowId, response);
             long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
             if (response != null && response.metadata() != null && response.metadata().tokenUsage() != null) {
                 var usage = response.metadata().tokenUsage();
@@ -112,6 +118,29 @@ public class GuardedChatModel implements ChatModel {
 
         // 3. 输出防护
         return guardOutput(response);
+    }
+
+    /**
+     * 模型请求调用工具时（Agent 工具阶段），通过 SSE 实时广播工具调用事件。
+     */
+    private void broadcastToolCalls(String workflowId, ChatResponse response) {
+        if (response == null || response.aiMessage() == null
+                || response.aiMessage().toolExecutionRequests() == null) {
+            return;
+        }
+        List<dev.langchain4j.agent.tool.ToolExecutionRequest> requests =
+                response.aiMessage().toolExecutionRequests();
+        for (dev.langchain4j.agent.tool.ToolExecutionRequest request : requests) {
+            try {
+                String args = request.arguments() == null ? "" : request.arguments();
+                workflowEventBroadcaster.publishToolCall(
+                        workflowId,
+                        request.name() == null ? "unknown" : request.name(),
+                        args.length() > 300 ? args.substring(0, 300) + "…" : args);
+            } catch (Exception ignored) {
+                // 工具事件广播失败不影响主流程
+            }
+        }
     }
 
     /**

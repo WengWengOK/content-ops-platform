@@ -1,7 +1,7 @@
 # 启动后端：自动加载 content-ops-configs/local/alerts.env（飞书/企微 Webhook + 模型 Key）
 # 用法：powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1
 
-$jar = 'E:\JavaProjects\Contentops\content-ops-server\content-ops-server\target\content-ops-server-1.0.0.jar'
+$jar = 'E:\JavaProjects\Contentops\content-ops-server\content-ops-server\target\content-ops-server-1.0.0-exec.jar'
 $envFile = 'E:\JavaProjects\Contentops\content-ops-configs\local\alerts.env'
 
 if (Test-Path $envFile) {

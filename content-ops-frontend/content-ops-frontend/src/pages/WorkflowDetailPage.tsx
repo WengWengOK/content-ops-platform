@@ -23,6 +23,7 @@ import {
 } from '@/api/collections'
 import { useWorkflowStatus, useApproveStage, useConfirmSubStage } from '@/hooks/useWorkflow'
 import { LoadingView, ErrorView } from '@/components/common/StateViews'
+import { MarkdownView } from '@/components/common/MarkdownView'
 import type {
   StageCode,
   TaskContext,
@@ -509,6 +510,7 @@ export function WorkflowDetailPage() {
   const draftArtifact = workArtifacts['content-creation:draft'] as Record<string, unknown> | undefined
   const contentArtifact = workArtifacts['content-creation'] as Record<string, unknown> | undefined
   const publishingArtifact = workArtifacts['publishing'] as Record<string, unknown> | undefined
+  const outlineArtifact = workArtifacts['content-creation:outline'] as Record<string, unknown> | undefined
   const draftTitleVariations = Array.isArray(draftArtifact?.titleVariations)
     ? (draftArtifact.titleVariations as string[])
     : []
@@ -516,6 +518,7 @@ export function WorkflowDetailPage() {
     publishingArtifact?.articleTitle ??
       draftTitleVariations[0] ??
       draftArtifact?.title ??
+      String(outlineArtifact?.title ?? '') ??
       topicArtifacts.topic ??
       topicArtifacts.recommendedDirection ??
       ''
@@ -528,6 +531,38 @@ export function WorkflowDetailPage() {
       ''
   )
   const coverUrl = String(publishingArtifact?.coverImageUrl ?? '')
+  // 阶段决策数据：大纲 / 风格 / 发布校验与质量
+  const styleArtifact = workArtifacts['image-design:styles'] as Record<string, unknown> | undefined
+  const styleDirections: Array<{ name?: string; description?: string; keywords?: unknown }> =
+    Array.isArray(styleArtifact?.styleDirections)
+      ? (styleArtifact.styleDirections as Array<{ name?: string; description?: string; keywords?: unknown }>)
+      : Array.isArray(styleArtifact?.directions)
+        ? (styleArtifact.directions as Array<{ name?: string; description?: string; keywords?: unknown }>)
+        : []
+  const outlineObj = (outlineArtifact?.outline ?? {}) as { sections?: Array<{ heading?: string; keyPoints?: string }> }
+  const outlineSections: Array<{ heading?: string; keyPoints?: string }> =
+    Array.isArray(outlineObj.sections) ? outlineObj.sections : []
+  const publishQuality = workArtifacts['publishing:quality'] as Record<string, unknown> | undefined
+  const publishChecklist = Array.isArray(workArtifacts['publishing:checklist'])
+    ? (workArtifacts['publishing:checklist'] as string[])
+    : []
+  const decisionKind =
+    detail?.status === 'COMPLETED' || detail?.currentStage === 'publishing'
+      ? 'publish'
+      : detail?.currentStage === 'topic-planning'
+        ? 'topic'
+        : detail?.currentStage === 'content-creation' && detail?.currentSubStage === 'outline'
+          ? 'outline'
+          : detail?.currentStage === 'image-design' && detail?.currentSubStage === 'styles'
+            ? 'styles'
+            : null
+  const [selectedStyle, setSelectedStyle] = useState<string | null>(null)
+  useEffect(() => {
+    if (styleDirections.length > 0 && selectedStyle == null) {
+      setSelectedStyle(styleDirections[0].name ?? null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styleDirections.length])
   useEffect(() => {
     if (selectedModule === 'title') setEditTitle(workTitle)
     if (selectedModule === 'content') setEditContent(workContent)
@@ -609,13 +644,26 @@ export function WorkflowDetailPage() {
     es.addEventListener('stage', (e: MessageEvent) => {
       try {
         const ev = JSON.parse(e.data)
+        const stageCode = ev.fromStage ?? ev.toStage ?? ''
         const label =
           ev.eventType === 'STAGE_COMPLETED'
-            ? `阶段「${ev.fromStage ?? ''}」已完成，进入「${ev.toStage ?? ''}」`
+            ? `阶段「${stageCode}」已完成，进入「${ev.toStage ?? ''}」`
             : ev.eventType === 'STAGE_STARTED'
               ? `阶段「${ev.toStage ?? ''}」开始执行`
               : `阶段「${ev.fromStage ?? ''}」执行失败${ev.errorMessage ? '：' + ev.errorMessage : ''}`
         appendMessage({ type: 'system', content: `${nowTime()} - ${label}` })
+        if (ev.eventType === 'STAGE_STARTED') {
+          setLiveStage(stageCode)
+          setLiveOutput('')
+          setLiveTools([])
+        } else if (ev.eventType === 'STAGE_COMPLETED' && ev.artifactSummary) {
+          setLiveStage(stageCode)
+          streamText(artifactToText(stageCode, ev.artifactSummary))
+        } else if (ev.eventType === 'TOOL_CALLED') {
+          setLiveStage(stageCode)
+          setLiveTools((prev) => [...prev.slice(-9), { tool: String(ev.tool ?? 'tool'), time: nowTime() }])
+          appendMessage({ type: 'system', content: `${nowTime()} - 🔧 调用工具：${ev.tool ?? ''}${ev.args ? ' ' + ev.args : ''}` })
+        }
         refresh()
       } catch {
         /* 忽略无法解析的事件 */
@@ -624,6 +672,85 @@ export function WorkflowDetailPage() {
     return () => es.close()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowId])
+
+  /* ── 实时产出：阶段产物打字机流式展示 ── */
+  const [liveStage, setLiveStage] = useState<string | null>(null)
+  const [liveOutput, setLiveOutput] = useState('')
+  const [liveTools, setLiveTools] = useState<{ tool: string; time: string }[]>([])
+  const liveTimerRef = useRef<number | null>(null)
+
+  const artifactToText = (stage: string, artifact: Record<string, unknown>): string => {
+    if (!artifact) return ''
+    const topics = Array.isArray(artifact.topics)
+      ? (artifact.topics as Array<{ title?: string; angle?: string }>)
+      : []
+    if (stage === 'topic-planning') {
+      const lines: string[] = []
+      if (topics.length > 0) {
+        lines.push(`✅ 选题方案（${topics.length} 个）`)
+        topics.forEach((t, i) => lines.push(`${i + 1}. ${t.title ?? ''}${t.angle ? ' —— ' + t.angle : ''}`))
+      }
+      if (artifact.recommendedDirection) lines.push(`\n📌 推荐方向：${artifact.recommendedDirection}`)
+      if (artifact.selectedTopic) lines.push(`\n🎯 选定选题：${artifact.selectedTopic}`)
+      return lines.join('\n')
+    }
+    if (stage === 'content-creation') {
+      const title = String(artifact.title ?? artifact.topic ?? '')
+      const intro =
+        artifact.outline && typeof artifact.outline === 'object'
+          ? String((artifact.outline as Record<string, unknown>).introduction ?? '')
+          : ''
+      const draft = String(artifact.draftContent ?? '')
+      if (draft) return `${title ? title + '\n\n' : ''}${draft.slice(0, 1600)}${draft.length > 1600 ? '\n…' : ''}`
+      if (intro) return `${title ? title + '\n\n' : ''}大纲引言：${intro.slice(0, 400)}`
+      return title || JSON.stringify(artifact).slice(0, 800)
+    }
+    if (stage === 'publishing') {
+      const title = String(artifact.articleTitle ?? '')
+      const content = String(artifact.articleContent ?? '')
+      const images = Array.isArray(artifact.images) ? artifact.images.length : 0
+      return `${title ? title + '\n\n' : ''}${content.slice(0, 1400)}${content.length > 1400 ? '\n…' : ''}${images ? `\n\n🖼 配图 ${images} 张` : ''}`
+    }
+    const raw = JSON.stringify(artifact)
+    return raw.length > 800 ? raw.slice(0, 800) + '…' : raw
+  }
+
+  const streamText = (text: string) => {
+    if (liveTimerRef.current) window.clearInterval(liveTimerRef.current)
+    setLiveOutput('')
+    if (!text) return
+    let i = 0
+    liveTimerRef.current = window.setInterval(() => {
+      i = Math.min(i + 24, text.length)
+      setLiveOutput(text.slice(0, i))
+      if (i >= text.length && liveTimerRef.current) {
+        window.clearInterval(liveTimerRef.current)
+        liveTimerRef.current = null
+      }
+    }, 16)
+  }
+
+  // 进入页面时若已有产物，直接把最近阶段产物展示出来（不重放打字机）
+  const seededLiveRef = useRef(false)
+  useEffect(() => {
+    if (seededLiveRef.current || !detail?.accumulatedArtifacts || liveOutput) return
+    const arts = detail.accumulatedArtifacts as Record<string, unknown>
+    const candidates: Array<[string, Record<string, unknown>]> = [
+      ['publishing', arts['publishing'] as Record<string, unknown>],
+      ['content-creation', arts['content-creation:draft'] as Record<string, unknown>],
+      ['content-creation', arts['content-creation:outline'] as Record<string, unknown>],
+      ['topic-planning', arts['topic-planning'] as Record<string, unknown>],
+    ]
+    for (const [stage, artifact] of candidates) {
+      if (artifact) {
+        setLiveStage(stage)
+        setLiveOutput(artifactToText(stage, artifact))
+        seededLiveRef.current = true
+        break
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.accumulatedArtifacts])
 
   const handleSend = async () => {
     const text = inputValue.trim()
@@ -651,6 +778,9 @@ export function WorkflowDetailPage() {
         setMessages((prev) =>
           prev.map((m) => (m.id === msgId ? { ...m, content: m.content + (e.data ?? '') } : m))
         )
+      })
+      es.addEventListener('tool', (e: MessageEvent) => {
+        appendMessage({ type: 'system', content: `🔧 调用工具：${e.data ?? ''}` })
       })
       es.addEventListener('done', async () => {
         es.close()
@@ -987,7 +1117,7 @@ export function WorkflowDetailPage() {
               className="px-4 py-3 text-sm leading-relaxed"
               style={{ background: '#F7F8FA', borderRadius: '12px 12px 12px 4px', color: '#1D2129' }}
             >
-              {m.content}
+              <MarkdownView content={m.content} />
             </div>
             {m.suggestions && m.suggestions.length > 0 && (
               <div
@@ -1902,6 +2032,55 @@ export function WorkflowDetailPage() {
           </div>
         </div>
 
+        {/* ── 3.5 实时产出（流水线过程流式展示） ── */}
+        {(liveStage || liveOutput) && (
+          <section className="card animate-fadeInUp p-5">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                  style={{ background: '#E8F7FF', color: '#0FC6C2' }}
+                >
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: '#0FC6C2' }} />
+                  实时产出
+                </span>
+                <span className="text-sm font-semibold" style={{ color: '#1D2129' }}>
+                  {PIPELINE_STAGES.find((s) => s.id === liveStage)?.name ?? liveStage ?? '流水线'}
+                </span>
+              </div>
+              {liveOutput && (
+                <span className="text-[11px]" style={{ color: '#C9CDD4' }}>
+                  {liveOutput.length} 字符
+                </span>
+              )}
+            </div>
+            {liveTools.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {liveTools.map((t, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium"
+                    style={{ background: '#FFF0F5', color: '#C40E3A' }}
+                  >
+                    🔧 {t.tool}
+                    <span className="text-[10px]" style={{ color: '#C9CDD4' }}>{t.time}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div
+              className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-relaxed"
+              style={{ background: '#F7F8FA', color: '#4E5969' }}
+            >
+              {liveOutput ? (
+                <MarkdownView content={liveOutput} />
+              ) : (
+                '阶段执行中，产出将在这里流式显示…'
+              )}
+            </div>
+          </section>
+        )}
+
         {/* ── 4. HUMAN REVIEW PANEL ── */}
         {showReviewPanel ? (
           <section
@@ -1959,7 +2138,150 @@ export function WorkflowDetailPage() {
               </button>
             </div>
 
+            {/* ── 阶段决策卡（大纲确认 / 风格选择 / 发布校验） ── */}
+            {decisionKind !== 'topic' && (
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#4E5969' }}>
+                    Agent 输出预览
+                  </h4>
+                  <div className="card p-5" style={{ background: '#FFFFFF' }}>
+                    {decisionKind === 'outline' && (
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium" style={{ color: '#1D2129' }}>
+                          {String(outlineArtifact?.title ?? '内容大纲')}
+                        </div>
+                        {outlineSections.length > 0 ? (
+                          <ol className="list-decimal space-y-2 pl-5">
+                            {outlineSections.map((s, i) => (
+                              <li key={i} className="text-sm" style={{ color: '#4E5969' }}>
+                                <span className="font-medium" style={{ color: '#1D2129' }}>{s.heading ?? '未命名段落'}</span>
+                                {s.keyPoints && <span className="mt-0.5 block text-xs" style={{ color: '#86909C' }}>{s.keyPoints}</span>}
+                              </li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs" style={{ color: '#4E5969' }}>
+                            {JSON.stringify(outlineArtifact ?? {}, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+                    {decisionKind === 'styles' && (
+                      <div className="space-y-2">
+                        <p className="text-xs" style={{ color: '#86909C' }}>
+                          请选择配图风格方向，确认后批量生成配图与封面：
+                        </p>
+                        {styleDirections.length > 0 ? (
+                          styleDirections.map((d, i) => {
+                            const active = selectedStyle === d.name
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => setSelectedStyle(d.name ?? null)}
+                                className="w-full rounded-lg border p-3 text-left transition-all"
+                                style={{
+                                  borderColor: active ? '#FF2D5E' : '#E5E6EB',
+                                  background: active ? 'rgba(255,45,94,0.04)' : '#fff',
+                                }}
+                              >
+                                <span className="text-sm font-medium" style={{ color: active ? '#FF2D5E' : '#1D2129' }}>
+                                  风格 {i + 1}：{d.name ?? '未命名'}
+                                </span>
+                                {d.description && (
+                                  <span className="mt-0.5 block text-xs" style={{ color: '#86909C' }}>{d.description}</span>
+                                )}
+                              </button>
+                            )
+                          })
+                        ) : (
+                          <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs" style={{ color: '#4E5969' }}>
+                            {JSON.stringify(styleArtifact ?? {}, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+                    {decisionKind === 'publish' && (
+                      <div className="space-y-3">
+                        <div className="text-base font-bold" style={{ color: '#1D2129' }}>{workTitle || '作品标题'}</div>
+                        {coverUrl && <img src={coverUrl} alt="封面" className="w-full rounded-lg" style={{ maxHeight: 240, objectFit: 'cover' }} />}
+                        <div className="max-h-72 overflow-auto rounded-lg px-4 py-3 text-sm leading-relaxed" style={{ background: '#F7F8FA', color: '#4E5969' }}>
+                          {workContent ? (
+                            <MarkdownView content={workContent} />
+                          ) : (
+                            '正文内容已生成，可在下方下载 ZIP 查看完整排版'
+                          )}
+                        </div>
+                        {publishQuality && (
+                          <div className="flex flex-wrap items-center gap-3 text-xs">
+                            <span className="rounded px-2 py-0.5 font-medium" style={{ background: '#E8FFEA', color: '#00B42A' }}>
+                              质量评分：{String(publishQuality.score ?? publishQuality.overall ?? '—')}
+                            </span>
+                            {publishQuality.readability != null && <span style={{ color: '#86909C' }}>可读性 {String(publishQuality.readability)}</span>}
+                            {publishQuality.logic != null && <span style={{ color: '#86909C' }}>逻辑 {String(publishQuality.logic)}</span>}
+                            {publishQuality.originality != null && <span style={{ color: '#86909C' }}>原创性 {String(publishQuality.originality)}</span>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-5 lg:col-span-1">
+                  {decisionKind === 'publish' && publishChecklist.length > 0 && (
+                    <div>
+                      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#4E5969' }}>
+                        校验清单（Validator）
+                      </h4>
+                      <div className="card space-y-1 p-4" style={{ background: '#FFFFFF' }}>
+                        {publishChecklist.map((item, i) => (
+                          <label key={i} className="flex cursor-pointer items-center gap-2 py-1 text-sm" style={{ color: '#4E5969' }}>
+                            <input type="checkbox" defaultChecked className="h-4 w-4 cursor-pointer" style={{ accentColor: '#00B42A' }} />
+                            <span>{item}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#4E5969' }}>
+                      审核操作
+                    </h4>
+                    <div className="space-y-3">
+                      {decisionKind === 'outline' && (
+                        <button
+                          onClick={() => handleConfirmSubStage()}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg border-none text-sm font-medium text-white"
+                          style={{ background: '#165DFF', padding: '8px 24px', cursor: 'pointer' }}
+                        >
+                          确认大纲并继续
+                        </button>
+                      )}
+                      {decisionKind === 'styles' && (
+                        <button
+                          onClick={() => handleConfirmSubStage({ confirmedStyle: selectedStyle })}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg border-none text-sm font-medium text-white"
+                          style={{ background: '#FF2D5E', padding: '8px 24px', cursor: 'pointer' }}
+                        >
+                          确认风格并生成图片
+                        </button>
+                      )}
+                      {decisionKind === 'publish' && (
+                        <button
+                          onClick={handleDownload}
+                          className="flex w-full items-center justify-center gap-2 rounded-lg border-none text-sm font-medium text-white"
+                          style={{ background: '#00B42A', padding: '8px 24px', cursor: 'pointer' }}
+                        >
+                          下载作品 ZIP
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Two columns: Agent Output Preview + Review Checklist */}
+            {decisionKind === 'topic' && (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               {/* LEFT: Agent Output Preview */}
               <div className="lg:col-span-2">
@@ -2119,6 +2441,8 @@ export function WorkflowDetailPage() {
                 </div>
               </div>
             </div>
+
+            )}
 
             {/* Feedback Textarea (expandable) */}
             {showFeedbackArea && (

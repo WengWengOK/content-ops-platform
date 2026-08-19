@@ -22,6 +22,9 @@ import com.contentops.common.knowledge.AgentOutputIngester;
 import com.contentops.common.knowledge.RagRetrievalEnhancer;
 import com.contentops.common.memory.ProjectMemoryService;
 import com.contentops.common.util.WorkflowStateManager;
+import com.contentops.common.validation.ValidationOrchestrator;
+import com.contentops.common.validation.ValidationProperties;
+import com.contentops.common.validation.ValidationResult;
 import com.contentops.orchestrator.gateway.AgentGateway;
 import com.contentops.orchestrator.service.PlatformWorkflowOrchestrator;
 import lombok.extern.slf4j.Slf4j;
@@ -67,6 +70,8 @@ public class StageExecutor {
     private final AgentOutputIngester agentOutputIngester;
     private final RagRetrievalEnhancer ragRetrievalEnhancer;
     private final ProjectMemoryService projectMemoryService;
+    private final ValidationOrchestrator validationOrchestrator;
+    private final ValidationProperties validationProperties;
 
     // 单体模式下 Kafka 可能不存在，设为可选（用 Object 避免依赖 spring-kafka）。
     // 必须用 @Qualifier 限定 bean 名称：Object 类型会匹配容器内所有 Bean，
@@ -90,7 +95,9 @@ public class StageExecutor {
                          AgentOutputIngester agentOutputIngester,
                          RagRetrievalEnhancer ragRetrievalEnhancer,
                          @org.springframework.beans.factory.annotation.Autowired(required = false)
-                         ProjectMemoryService projectMemoryService) {
+                         ProjectMemoryService projectMemoryService,
+                         ValidationOrchestrator validationOrchestrator,
+                         ValidationProperties validationProperties) {
         this.stateManager = stateManager;
         this.agentGateway = agentGateway;
         this.qualityEnricher = qualityEnricher;
@@ -106,6 +113,8 @@ public class StageExecutor {
         this.agentOutputIngester = agentOutputIngester;
         this.ragRetrievalEnhancer = ragRetrievalEnhancer;
         this.projectMemoryService = projectMemoryService;
+        this.validationOrchestrator = validationOrchestrator;
+        this.validationProperties = validationProperties;
     }
 
     /**
@@ -186,6 +195,13 @@ public class StageExecutor {
     private AgentResponse<Map<String, Object>> routeToAgentWithQualityRetry(
             TaskContext context, AgentStage stage, AgentTaskRequest request) {
 
+        // 【校验器降级】校验器启用时，走独立的校验降级循环（2 次降级），
+        // 替代质量评估驱动重试（校验是 BLOCK 级，比质量评分更严格）。
+        // 质量评分仍异步执行（assessAndEnrich），但不驱动重试。
+        if (validationProperties.isEnabled()) {
+            return routeToAgentWithValidationDegradation(context, stage, request);
+        }
+
         if (!qualityProperties.isEnabled() || !qualityProperties.isAutoRetry()) {
             return routeToAgent(stage, request);
         }
@@ -265,6 +281,146 @@ public class StageExecutor {
         }
 
         return bestResponse != null ? bestResponse : routeToAgent(stage, request);
+    }
+
+    /**
+     * 校验降级循环 — 校验器启用时的主重试驱动（2 次降级）。
+     *
+     * <p>流程：
+     * <ol>
+     *   <li>调用 Agent 获取输出</li>
+     *   <li>校验（格式→事实→一致性）</li>
+     *   <li>校验通过 → 返回结果</li>
+     *   <li>校验 BLOCK → 追加 validationFeedback 到 inputs，重生成</li>
+     *   <li>达到 maxRegenerations（默认 2）次降级后仍失败 → 兜底放行或阻断</li>
+     * </ol>
+     *
+     * <p>降级策略：
+     * <ul>
+     *   <li>fallbackPassThrough=true（默认）：兜底放行，标记 validationDegraded=true 到上下文</li>
+     *   <li>fallbackPassThrough=false：返回失败响应，阻断阶段</li>
+     * </ul>
+     */
+    private AgentResponse<Map<String, Object>> routeToAgentWithValidationDegradation(
+            TaskContext context, AgentStage stage, AgentTaskRequest request) {
+
+        int maxRegen = validationProperties.getDegradation().getMaxRegenerations();
+        AgentTaskRequest currentRequest = request;
+        ValidationResult lastValidation = null;
+        AgentResponse<Map<String, Object>> lastSuccessResponse = null;
+
+        for (int attempt = 0; attempt <= maxRegen; attempt++) {
+            log.info("[Validation] workflow={}, stage={}, attempt={}/{}, isRetry={}",
+                    context.getWorkflowId(), stage.getCode(), attempt + 1, maxRegen + 1, attempt > 0);
+
+            // 调用 Agent
+            AgentResponse<Map<String, Object>> response = routeToAgent(stage, currentRequest);
+
+            if (!response.isSuccess() || response.getData() == null) {
+                log.warn("[Validation] workflow={}, stage={}, attempt={} Agent 调用失败：{}",
+                        context.getWorkflowId(), stage.getCode(), attempt + 1, response.getError());
+                if (attempt < maxRegen) {
+                    long backoff = calculateValidationBackoff(attempt);
+                    sleep(backoff);
+                    continue;
+                }
+                return response;
+            }
+
+            lastSuccessResponse = response;
+
+            // 校验
+            ValidationResult vr = validationOrchestrator.validate(stage, response.getData(), context);
+            if (vr == null || vr.isPassed()) {
+                if (vr != null && vr.getFailures() != null && !vr.getFailures().isEmpty()) {
+                    log.info("[Validation] workflow={}, stage={} 通过但有警告：{}",
+                            context.getWorkflowId(), stage.getCode(), vr.getFailures());
+                    // WARN 级失败记录到上下文，供后续阶段参考
+                    recordValidationWarnings(context, stage, vr);
+                } else {
+                    log.info("[Validation] workflow={}, stage={} 校验通过（attempt={}）",
+                            context.getWorkflowId(), stage.getCode(), attempt + 1);
+                }
+                return response;
+            }
+
+            // 校验失败（BLOCK）
+            lastValidation = vr;
+            log.warn("[Validation] workflow={}, stage={}, attempt={}/{} 校验失败：{}",
+                    context.getWorkflowId(), stage.getCode(), attempt + 1, maxRegen + 1, vr.getSummary());
+
+            if (attempt < maxRegen) {
+                // 追加校验反馈，重生成
+                currentRequest = addValidationFeedback(request, vr);
+                long backoff = calculateValidationBackoff(attempt);
+                log.debug("[Validation] workflow={}, stage={} 退避 {}ms 后重生成",
+                        context.getWorkflowId(), stage.getCode(), backoff);
+                sleep(backoff);
+            }
+        }
+
+        // 达到降级上限
+        ValidationProperties.Degradation deg = validationProperties.getDegradation();
+        if (deg.isFallbackPassThrough()) {
+            log.warn("[Validation] workflow={}, stage={} 达到 {} 次降级上限，兜底放行（标记 degraded）",
+                    context.getWorkflowId(), stage.getCode(), maxRegen);
+            markValidationDegraded(context, stage, lastValidation);
+            return lastSuccessResponse != null ? lastSuccessResponse : routeToAgent(stage, request);
+        } else {
+            String errMsg = String.format("校验失败（%d 次降级后仍不通过）：%s", maxRegen,
+                    lastValidation != null ? lastValidation.getSummary() : "未知");
+            log.error("[Validation] workflow={}, stage={} 阻断：{}",
+                    context.getWorkflowId(), stage.getCode(), errMsg);
+            return AgentResponse.<Map<String, Object>>builder()
+                    .success(false)
+                    .error(errMsg)
+                    .build();
+        }
+    }
+
+    /** 将校验失败反馈追加到请求 inputs，供 Agent 重生成时参考 */
+    private AgentTaskRequest addValidationFeedback(AgentTaskRequest original, ValidationResult vr) {
+        Map<String, Object> inputs = new HashMap<>(
+                original.getInputs() != null ? original.getInputs() : new HashMap<>());
+        inputs.put("validationFeedback", vr.getFailures());
+        inputs.put("validationSummary", vr.getSummary());
+        inputs.put("validationFailed", true);
+        return AgentTaskRequest.of(
+                original.getWorkflowId(),
+                original.getStageCode(),
+                original.getAccountProfile(),
+                inputs,
+                original.getAccumulatedArtifacts()
+        );
+    }
+
+    /** 计算校验降级退避时间 */
+    private long calculateValidationBackoff(int attempt) {
+        double base = validationProperties.getDegradation().getRetryBackoffMs();
+        double multiplier = validationProperties.getDegradation().getRetryBackoffMultiplier();
+        return (long) (base * Math.pow(multiplier, attempt));
+    }
+
+    /** 标记降级到上下文（供前端/后续阶段感知） */
+    private void markValidationDegraded(TaskContext context, AgentStage stage, ValidationResult vr) {
+        if (context.getAccumulatedArtifacts() == null) {
+            context.setAccumulatedArtifacts(new java.util.HashMap<>());
+        }
+        Map<String, Object> degradedMeta = new HashMap<>();
+        degradedMeta.put("degraded", true);
+        degradedMeta.put("stage", stage.getCode());
+        degradedMeta.put("failures", vr != null ? vr.getFailures() : List.of());
+        degradedMeta.put("summary", vr != null ? vr.getSummary() : "");
+        degradedMeta.put("timestamp", LocalDateTime.now().toString());
+        context.getAccumulatedArtifacts().put(stage.getCode() + ":validationDegraded", degradedMeta);
+    }
+
+    /** 记录 WARN 级校验警告到上下文（不阻断，供参考） */
+    private void recordValidationWarnings(TaskContext context, AgentStage stage, ValidationResult vr) {
+        if (context.getAccumulatedArtifacts() == null) {
+            context.setAccumulatedArtifacts(new java.util.HashMap<>());
+        }
+        context.getAccumulatedArtifacts().put(stage.getCode() + ":validationWarnings", vr.getFailures());
     }
 
     /**

@@ -10,6 +10,9 @@ import com.contentops.common.cost.CostBudgetProperties;
 import com.contentops.common.cost.WorkflowCostGuard;
 import com.contentops.common.observability.LlmTraceService;
 import io.micrometer.tracing.Tracer;
+import com.contentops.common.event.WorkflowEventBroadcaster;
+import io.micrometer.tracing.Span;
+import static org.mockito.ArgumentMatchers.anyString;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -54,8 +57,16 @@ class GuardedChatModelTest {
                 .aiMessage(AiMessage.from("ok"))
                 .build());
         WorkflowCostGuard costGuard = new WorkflowCostGuard(new CostBudgetProperties());
+        Tracer tracer = mock(Tracer.class);
+        Span span = mock(Span.class);
+        when(tracer.nextSpan()).thenReturn(span);
+        when(span.name(anyString())).thenReturn(span);
+        when(span.tag(anyString(), anyString())).thenReturn(span);
+        when(span.start()).thenReturn(span);
+        when(tracer.withSpan(any())).thenReturn(mock(Tracer.SpanInScope.class));
         guarded = new GuardedChatModel(delegate, safetyGuard, costGuard,
-                mock(LlmTraceService.class), "test-model", mock(Tracer.class));
+                mock(LlmTraceService.class), "test-model", tracer,
+                mock(WorkflowEventBroadcaster.class));
     }
 
     @Test

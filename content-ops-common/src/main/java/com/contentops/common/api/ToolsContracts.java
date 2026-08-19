@@ -70,4 +70,36 @@ public class ToolsContracts {
         private List<Map<String, Object>> trends;
         private String errorMessage;
     }
+
+    /** Agent 输出 → 知识库写入请求（供 RemoteToolsGateway 调用） */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class RagIngestRequest implements Serializable {
+        /** 文本内容（会被向量化后存入 PGVector） */
+        private String content;
+        /** 内容类型：article / topic_plan / analysis_report / competitor_data */
+        private String type;
+        /** 来源 Agent stage code */
+        private String agent;
+        /** 账号垂直领域 */
+        private String niche;
+        /** 工作流 ID */
+        private String workflowId;
+        /** 账号 ID */
+        private String accountId;
+    }
+
+    /** Agent 输出 → 知识库写入响应 */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class RagIngestResponse implements Serializable {
+        private boolean success;
+        private String errorMessage;
+    }
 }

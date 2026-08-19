@@ -36,7 +36,9 @@ RUN set -e; \
     CANDIDATES=" \
       /workspace/${MAVEN_MODULE}/target/${MAVEN_MODULE}.jar \
       /workspace/${MAVEN_MODULE}/target/${MAVEN_MODULE}-1.0.0.jar \
+      /workspace/${MAVEN_MODULE}/target/${MAVEN_MODULE}-1.0.0-exec.jar \
       /workspace/content-ops-server/${MAVEN_MODULE}/target/${MAVEN_MODULE}.jar \
+      /workspace/content-ops-server/${MAVEN_MODULE}/target/${MAVEN_MODULE}-1.0.0-exec.jar \
       /workspace/content-ops-server/${MAVEN_MODULE}/target/${MAVEN_MODULE}-1.0.0.jar \
     "; \
     FOUND=""; \

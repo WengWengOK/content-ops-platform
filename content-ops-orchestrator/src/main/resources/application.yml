@@ -25,3 +25,12 @@ contentops:
       base-url: ${TOOLS_BASE_URL:http://127.0.0.1:8082}
       connect-timeout-ms: 3000
       read-timeout-ms: 30000
+
+# Phase3 服务化拆分模式开关（环境变量 CONTENTOPS_MODE）：
+#   monolithic  (默认) = 编排器本地跑 Agent + Tools（Legacy 单体模式，零网络开销）
+#   microservice       = Agent 走 HTTP 调 Worker:8081，Tools 部分走 HTTP 调 Tools:8082（真拆分模式）
+#   mock               = 全部 Mock 返回（开发测试模式）
+# 说明：microservice 模式下，编排器侧 RemoteAgentGateway 激活（替代 LocalAgentGateway），
+#       Agent 调用真正从编排器进程迁出到 Worker 进程，实现 LLM I/O 故障域隔离。
+#env:
+#  CONTENTOPS_MODE: ${CONTENTOPS_MODE:monolithic}

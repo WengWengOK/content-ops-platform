@@ -73,12 +73,15 @@ class WorkflowControllerTest {
     @Mock
     private com.contentops.common.audit.AuditService auditService;
 
+    @Mock
+    private com.contentops.common.memory.ProjectMemoryService projectMemoryService;
+
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new WorkflowController(workflowService, agentGateway, platformSpecRegistry,
                                 discussionSessionService, discussionAgent, workflowEventBroadcaster,
-                                auditService, fileStorageService))
+                                auditService, fileStorageService, projectMemoryService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -113,7 +116,11 @@ class WorkflowControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(workflowService).selectPlatforms(eq("wf-001"), anyList(), anyMap());
+        // 控制器使用 5 参重载（platforms, accounts, topic, customTopic）
+        verify(workflowService).selectPlatforms(
+                eq("wf-001"), anyList(), anyMap(),
+                org.mockito.ArgumentMatchers.nullable(String.class),
+                org.mockito.ArgumentMatchers.nullable(String.class));
     }
 
     @Test

@@ -9,6 +9,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 工作流阶段事件 SSE 广播：前端通过 GET /api/v1/workflow/{workflowId}/events
@@ -50,6 +52,33 @@ public class WorkflowEventBroadcaster {
             });
         } catch (Exception e) {
             log.warn("[Workflow-SSE] 广播失败: workflowId={}, err={}", event.getWorkflowId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 工具调用事件广播（SSE，eventType=TOOL_CALLED）：Agent 调用工具时实时推送。
+     */
+    public void publishToolCall(String workflowId, String tool, String argsPreview) {
+        Set<SseEmitter> emitters = subscribers.get(workflowId);
+        if (emitters == null || emitters.isEmpty()) {
+            return;
+        }
+        try {
+            String json = objectMapper.writeValueAsString(Map.of(
+                    "eventType", "TOOL_CALLED",
+                    "workflowId", workflowId,
+                    "tool", tool == null ? "unknown" : tool,
+                    "args", argsPreview == null ? "" : argsPreview,
+                    "timestamp", LocalDateTime.now().toString()));
+            emitters.forEach(emitter -> {
+                try {
+                    emitter.send(SseEmitter.event().name("stage").data(json));
+                } catch (Exception e) {
+                    remove(workflowId, emitter);
+                }
+            });
+        } catch (Exception e) {
+            log.warn("[Workflow-SSE] 工具事件广播失败: {}", e.getMessage());
         }
     }
 

@@ -163,6 +163,11 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <!-- 可执行 fat jar 命名为 -exec.jar，主 artifact 保留瘦 jar，
+                    供 content-ops-orchestrator 等模块作为可依赖 jar 使用（Phase3 拆分） -->
+                <configuration>
+                    <classifier>exec</classifier>
+                </configuration>
             </plugin>
             <!-- JaCoCo 代码覆盖率插件 -->
             <plugin>

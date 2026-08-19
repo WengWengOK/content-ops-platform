@@ -471,29 +471,23 @@ public class DocumentIngestionPipeline {
             char c = s.charAt(i);
             if (c == '\\' && i + 1 < s.length()) {
                 char next = s.charAt(++i);
-                out.append(switch (next) {
-                    case 'n' -> '\n';
-                    case 'r' -> '\r';
-                    case 't' -> '\t';
-                    case 'b' -> '\b';
-                    case 'f' -> '\f';
-                    case '(', ')', '\\' -> next;
-                    case '0', '1', '2', '3', '4', '5', '6', '7' -> {
-                        // 八进制转义，最多三位
-                        StringBuilder oct = new StringBuilder().append(next);
-                        for (int k = 0; k < 2 && i + 1 < s.length(); k++) {
-                            char oc = s.charAt(i + 1);
-                            if (oc >= '0' && oc <= '7') {
-                                oct.append(oc);
-                                i++;
-                            } else {
-                                break;
-                            }
-                        }
-                        yield (char) Integer.parseInt(oct.toString(), 8);
-                    }
-                    default -> next;
-                });
+                // 把八进制转义提取到独立方法，避免 switch 表达式内嵌套 for 循环
+                // 导致 Java 21 字节码 VerifyError（Inconsistent stackmap frames）
+                if (next >= '0' && next <= '7') {
+                    int[] pos = {i};
+                    out.append(parseOctalEscape(s, next, pos));
+                    i = pos[0];
+                } else {
+                    out.append(switch (next) {
+                        case 'n' -> '\n';
+                        case 'r' -> '\r';
+                        case 't' -> '\t';
+                        case 'b' -> '\b';
+                        case 'f' -> '\f';
+                        case '(', ')', '\\' -> next;
+                        default -> next;
+                    });
+                }
             } else if (c == '(' || c == ')') {
                 out.append(c);
             } else if (c >= 0x20) {
@@ -501,6 +495,28 @@ public class DocumentIngestionPipeline {
             }
         }
         return out.toString();
+    }
+
+    /**
+     * 解析 PDF 八进制转义序列（最多三位），返回对应字符。
+     * 从 unescapePdfString 提取，避免 switch 表达式内嵌套循环导致字节码 VerifyError。
+     *
+     * @param s     原始字符串
+     * @param first 第一个八进制字符
+     * @param pos   pos[0] 入参为当前索引，出参为消费后的索引（可能前移 0~2 位）
+     */
+    private static char parseOctalEscape(String s, char first, int[] pos) {
+        StringBuilder oct = new StringBuilder().append(first);
+        for (int k = 0; k < 2 && pos[0] + 1 < s.length(); k++) {
+            char oc = s.charAt(pos[0] + 1);
+            if (oc >= '0' && oc <= '7') {
+                oct.append(oc);
+                pos[0]++;
+            } else {
+                break;
+            }
+        }
+        return (char) Integer.parseInt(oct.toString(), 8);
     }
 
     // ──────────────────── DOCX 文本提取（纯 JDK，StAX） ────────────────────

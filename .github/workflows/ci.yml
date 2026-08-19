@@ -72,7 +72,7 @@ jobs:
           CONTENTOPS_EVALS_ENABLED: "true"
           CONTENTOPS_LLM_TRACE_ENABLED: "false"
         run: |
-          java -jar content-ops-server/content-ops-server/target/content-ops-server-1.0.0.jar > backend.log 2>&1 &
+          java -jar content-ops-server/content-ops-server/target/content-ops-server-1.0.0-exec.jar > backend.log 2>&1 &
           for i in $(seq 1 60); do
             curl -sf http://localhost:8080/api/v1/health && break
             sleep 2

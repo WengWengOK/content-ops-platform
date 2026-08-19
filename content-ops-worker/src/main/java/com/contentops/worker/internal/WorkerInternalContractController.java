@@ -38,12 +38,19 @@ public class WorkerInternalContractController {
                 req.getWorkflowId(), req.getTaskId(), req.getStageCode());
         try {
             Map<String, Object> inputs = req.getInputs() == null ? Map.of() : req.getInputs();
-            AgentTaskRequest task = AgentTaskRequest.builder()
+            // 重建 AgentTaskRequest（v2 扩展字段全量传递，零信息丢失）
+            AgentTaskRequest.AgentTaskRequestBuilder b = AgentTaskRequest.builder()
                     .taskId(req.getTaskId())
                     .workflowId(req.getWorkflowId())
                     .stageCode(req.getStageCode())
                     .inputs(inputs)
-                    .build();
+                    .requireHumanReview(req.isRequireHumanReview());
+            if (req.getTimestamp() != null) b.timestamp(req.getTimestamp());
+            else b.timestamp(java.time.LocalDateTime.now());
+            // accountProfile / accumulatedArtifacts 直接透传 Map（Agent 内部按 key 取值，无需强类型）
+            // 如需强类型 AccountProfile，Worker 可自行 ObjectMapper.convertValue(req.getAccountProfile(), AccountProfile.class)
+            if (req.getAccumulatedArtifacts() != null) b.accumulatedArtifacts(req.getAccumulatedArtifacts());
+            AgentTaskRequest task = b.build();
             // 按 stageCode 路由到 AgentGateway 对应方法（6 个阶段 + 讨论/优化子阶段）
             AgentResponse<Map<String, Object>> resp = routeByStage(req.getStageCode(), task);
             if (resp == null) {

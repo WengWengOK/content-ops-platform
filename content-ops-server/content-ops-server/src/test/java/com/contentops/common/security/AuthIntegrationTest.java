@@ -50,7 +50,8 @@ import static org.mockito.Mockito.when;
                 "CONTENTOPS_MODE=mock",
                 "contentops.security.enabled=true",
                 "contentops.security.jwt-secret=test-secret-0123456789abcdef",
-                "spring.datasource.url=jdbc:h2:mem:itauth;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE"
+                "spring.datasource.url=jdbc:h2:mem:itauth;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+                "spring.datasource.driver-class-name=org.h2.Driver"
         }
 )
 class AuthIntegrationTest {

@@ -9,6 +9,7 @@ import com.contentops.common.routing.ModelRoutingProperties;
 import com.contentops.common.routing.ModelRoutingService;
 import com.contentops.common.safety.SafetyGuardService;
 import com.contentops.common.observability.LlmTraceService;
+import com.contentops.common.event.WorkflowEventBroadcaster;
 import io.micrometer.tracing.Tracer;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -66,9 +67,10 @@ public class AiModelConfig {
                                    String modelNameForTag,
                                    SafetyGuardService safetyGuard,
                                    LlmTraceService llmTraceService,
-                                   Tracer tracer) {
+                                   Tracer tracer,
+                                   WorkflowEventBroadcaster workflowEventBroadcaster) {
         return new GuardedChatModel(delegate, safetyGuard, workflowCostGuard, llmTraceService,
-                modelNameForTag, tracer);
+                modelNameForTag, tracer, workflowEventBroadcaster);
     }
 
     /**
@@ -141,13 +143,14 @@ public class AiModelConfig {
     public ChatModel creativeChatModel(ChatModelRouter router,
                                        ModelRoutingService routing,
                                        ModelRoutingProperties properties,
-                                       SafetyGuardService safetyGuard,
-                                       LlmTraceService llmTraceService,
-                                       Tracer tracer) {
+                          SafetyGuardService safetyGuard,
+                          LlmTraceService llmTraceService,
+                          Tracer tracer,
+                          WorkflowEventBroadcaster workflowEventBroadcaster) {
         // span 的 model 标签记录 creative 默认强模型名，便于观察（实际模型在 Router 内部实时选择）
         ModelConfig creativeCfg = routing.getModelConfig(AgentStage.TOPIC_PLANNING);
         return buildGuarded(router, creativeCfg.getModelName(), safetyGuard,
-                llmTraceService, tracer);
+                llmTraceService, tracer, workflowEventBroadcaster);
     }
 
     /**
@@ -158,12 +161,13 @@ public class AiModelConfig {
     public ChatModel formattingChatModel(ChatModelRouter router,
                                          ModelRoutingService routing,
                                          ModelRoutingProperties properties,
-                                         SafetyGuardService safetyGuard,
-                                         LlmTraceService llmTraceService,
-                                         Tracer tracer) {
+                            SafetyGuardService safetyGuard,
+                            LlmTraceService llmTraceService,
+                            Tracer tracer,
+                            WorkflowEventBroadcaster workflowEventBroadcaster) {
         ModelConfig formattingCfg = routing.getModelConfig(AgentStage.PUBLISHING);
         return buildGuarded(router, formattingCfg.getModelName(), safetyGuard,
-                llmTraceService, tracer);
+                llmTraceService, tracer, workflowEventBroadcaster);
     }
 
     /**

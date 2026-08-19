@@ -320,6 +320,20 @@ contentops:
       max-auto-optimizations: 1                                 # 同一 workflow 最多自动优化 1 次，防止失败→优化→失败循环
       dedup-ttl-seconds: 3600                                   # 同一 workflow 1 小时内不重复触发
 
+  # Agent 输出校验器（格式/事实/一致性）+ 2 次降级重生成
+  # 默认关闭，渐进开启；启用后替代质量评分驱动重试（校验是 BLOCK 级，更严格）
+  validation:
+    enabled: ${CONTENTOPS_VALIDATION_ENABLED:false}
+    validators:
+      format: true              # 格式校验：必填字段/类型/非空
+      fact: true                # 事实校验：占位符泄漏/LLM身份暴露/数字合理性
+      consistency: true         # 一致性校验：跨阶段关键词重叠度
+    degradation:
+      max-regenerations: ${CONTENTOPS_VALIDATION_MAX_REGEN:2}  # 2 次降级（即最多重生成 2 次）
+      retry-backoff-ms: 500                                     # 退避基础毫秒
+      retry-backoff-multiplier: 2.0                             # 指数退避倍率
+      fallback-pass-through: true                               # 达上限后兜底放行（false=阻断阶段失败）
+
   # RAG 真实接入（P0）：本地 BGE 嵌入（无需 Key）+ 混合检索 + 重排；
   # PGVector 不可用时回退进程内内存向量库，开发环境即可真正跑向量检索。
   knowledge-base:

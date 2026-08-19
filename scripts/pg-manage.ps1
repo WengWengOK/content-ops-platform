@@ -1,5 +1,5 @@
-# 内容平台专属 PostgreSQL 实例管理脚本（端口 5433，数据目录 E:\JavaProjects\Contentops\.pgdata）
-# 用法：
+# ContentOps dedicated PostgreSQL manager (port 5433, data: E:\JavaProjects\Contentops\.pgdata)
+# Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts/pg-manage.ps1 start
 #   powershell -ExecutionPolicy Bypass -File scripts/pg-manage.ps1 stop
 #   powershell -ExecutionPolicy Bypass -File scripts/pg-manage.ps1 status
@@ -20,7 +20,7 @@ function Test-Listening([int]$Port) {
 switch ($Action) {
     'start' {
         if (Test-Listening $pgPort) {
-            Write-Host "PostgreSQL 已在端口 $pgPort 运行"
+            Write-Host "PostgreSQL already running on port $pgPort"
         } else {
             Start-Process "$pgBin\postgres.exe" -ArgumentList "-D `"$pgData`" -p $pgPort" `
                 -WindowStyle Hidden `
@@ -28,9 +28,9 @@ switch ($Action) {
                 -RedirectStandardError "$pgData\pg.stderr.log"
             Start-Sleep -Seconds 5
             if (Test-Listening $pgPort) {
-                Write-Host "PostgreSQL 已启动（端口 $pgPort，数据目录 $pgData）"
+                Write-Host "PostgreSQL started (port $pgPort, data $pgData)"
             } else {
-                Write-Host "启动失败，请查看 $pgData\pg.stderr.log"
+                Write-Host "Start failed, check $pgData\pg.stderr.log"
             }
         }
     }
@@ -38,16 +38,16 @@ switch ($Action) {
         if (Test-Listening $pgPort) {
             $conn = Get-NetTCPConnection -State Listen -LocalPort $pgPort | Select-Object -First 1
             Stop-Process -Id $conn.OwningProcess -Force
-            Write-Host "PostgreSQL 已停止"
+            Write-Host "PostgreSQL stopped"
         } else {
-            Write-Host "PostgreSQL 未在运行"
+            Write-Host "PostgreSQL not running"
         }
     }
     'status' {
         if (Test-Listening $pgPort) {
-            Write-Host "PostgreSQL 运行中（端口 $pgPort）"
+            Write-Host "PostgreSQL running (port $pgPort)"
         } else {
-            Write-Host "PostgreSQL 未运行"
+            Write-Host "PostgreSQL not running"
         }
     }
 }

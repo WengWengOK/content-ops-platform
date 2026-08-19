@@ -1,0 +1,19 @@
+{
+  "scheduledTime" : "2026-08-20T01:42:38.595423500",
+  "publishMode" : "text-cover",
+  "successCount" : 3,
+  "publishedPlatforms" : [ {
+    "platform" : "小红书",
+    "postUrl" : "https://xhslink.com/mock/1",
+    "status" : "success"
+  }, {
+    "platform" : "公众号",
+    "postUrl" : "https://mp.weixin.qq.com/mock/1",
+    "status" : "success"
+  }, {
+    "platform" : "抖音",
+    "postUrl" : "https://v.douyin.com/mock/1",
+    "status" : "success"
+  } ],
+  "totalPlatforms" : 3
+}

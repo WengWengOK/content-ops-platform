@@ -928,6 +928,16 @@ export function CreateWorkflowPage() {
               <h2 style={{ fontSize: 14, fontWeight: 600, color: '#1D2129', marginBottom: 16 }}>
                 流水线预览
               </h2>
+              <p
+                style={{
+                  fontSize: 12,
+                  color: '#86909C',
+                  marginBottom: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                流程示意：点击「开始创作」后跳转执行页，选题 → 内容 → 配图 → 发布将按阶段实时流式展示产出。
+              </p>
 
               <div style={{ position: 'relative' }}>
                 {PIPELINE_STAGES.map((stage, index) => (

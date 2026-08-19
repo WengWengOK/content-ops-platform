@@ -20,6 +20,7 @@ import java.util.Map;
  * <p>契约清单：
  * <ul>
  *   <li>POST /internal/api/tools/rag/search    → RagSearchResponse（向量检索）</li>
+ *   <li>POST /internal/api/tools/rag/ingest    → RagIngestResponse（Agent 输出写入知识库）</li>
  *   <li>GET  /internal/api/tools/trends        → TrendsResponse（趋势热点查询）</li>
  * </ul>
  */
@@ -97,6 +98,35 @@ public class ToolsInternalContractController {
         } catch (Exception e) {
             log.warn("[Tools-Internal] 趋势查询失败: {}", e.getMessage(), e);
             return ResponseEntity.status(500).body(TrendsResponse.builder()
+                    .success(false)
+                    .errorMessage(e.getMessage())
+                    .build());
+        }
+    }
+
+    /** Agent 输出 → 知识库写入接口（供编排器侧 AgentOutputIngester 在 microservice 模式下调用） */
+    @PostMapping("/rag/ingest")
+    public ResponseEntity<RagIngestResponse> ragIngest(@RequestBody RagIngestRequest req) {
+        log.debug("[Tools-Internal] RAG 写入: type={}, agent={}, niche={}, workflowId={}",
+                req.getType(), req.getAgent(), req.getNiche(), req.getWorkflowId());
+        try {
+            // 构造 metadata（与 KnowledgeBaseService 的 metadata 约定对齐）
+            Map<String, String> metadata = new java.util.HashMap<>();
+            if (req.getType() != null) metadata.put("type", req.getType());
+            if (req.getAgent() != null) metadata.put("agent", req.getAgent());
+            if (req.getNiche() != null) metadata.put("niche", req.getNiche());
+            if (req.getWorkflowId() != null) metadata.put("workflowId", req.getWorkflowId());
+            if (req.getAccountId() != null) metadata.put("accountId", req.getAccountId());
+            metadata.put("timestamp", java.time.LocalDateTime.now().toString());
+
+            boolean ok = knowledgeBaseService.ingest(req.getContent(), metadata);
+            return ResponseEntity.ok(RagIngestResponse.builder()
+                    .success(ok)
+                    .errorMessage(ok ? null : "KnowledgeBaseService.ingest 返回 false")
+                    .build());
+        } catch (Exception e) {
+            log.warn("[Tools-Internal] RAG 写入失败: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(RagIngestResponse.builder()
                     .success(false)
                     .errorMessage(e.getMessage())
                     .build());
