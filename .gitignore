@@ -30,6 +30,7 @@ content-ops-frontend/content-ops-frontend/.vite/
 *.zip
 backend-*.log
 frontend.dev.log
+**/content-outputs/
 
 # ── 操作系统 ──
 Thumbs.db

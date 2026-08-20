@@ -564,3 +564,40 @@ export interface DiscussStartRequest {
 export interface DiscussChatRequest {
   message: string
 }
+
+// ═══════════════════════════════════════════════════════════════
+// 评论区 AI 助手（MVP：小红书）
+// ═══════════════════════════════════════════════════════════════
+
+export type CommentReplyStatus = 'NONE' | 'DRAFT' | 'APPROVED' | 'SENT'
+
+export interface PlatformComment {
+  commentId: string
+  ownerId?: string
+  platform: string
+  workId?: string
+  workflowId?: string
+  author?: string
+  content: string
+  likes?: number
+  commentTime?: string
+  replyTo?: string
+  intent?: string
+  sentiment?: string
+  aiSummary?: string
+  aiReply?: string
+  replyStatus?: CommentReplyStatus
+  dialogHistory?: string
+  collectedAt?: string
+}
+
+export interface CommentStatsItem {
+  intent?: string
+  sentiment?: string
+  cnt: number
+}
+
+export interface CommentStats {
+  intent: CommentStatsItem[]
+  sentiment: CommentStatsItem[]
+}

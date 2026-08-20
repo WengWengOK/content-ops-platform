@@ -6,6 +6,7 @@ import { WorkflowDetailPage } from './pages/WorkflowDetailPage'
 import { WorkCenterPage } from './pages/WorkCenterPage'
 import { CollectionsPage } from './pages/CollectionsPage'
 import { TrendsPage } from './pages/TrendsPage'
+import { CommentsPage } from './pages/CommentsPage'
 import { DataCenterPage } from './pages/DataCenterPage'
 import { ObservabilityPage } from './pages/ObservabilityPage'
 import { UserProfilePage } from './pages/UserProfilePage'
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/work-center" element={<WorkCenterPage />} />
       <Route path="/collections" element={<CollectionsPage />} />
       <Route path="/trends" element={<TrendsPage />} />
+      <Route path="/comments" element={<CommentsPage />} />
       <Route path="/data-center" element={<DataCenterPage />} />
       <Route path="/observability" element={<ObservabilityPage />} />
       <Route path="/user-profile" element={<UserProfilePage />} />

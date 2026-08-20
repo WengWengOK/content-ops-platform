@@ -11,12 +11,14 @@ public enum ErrorCode {
 
     // ════════════════ 工作流相关 4xx ════════════════
     WORKFLOW_NOT_FOUND(HttpStatus.NOT_FOUND, 40401, "工作流不存在: %s"),
+    NOT_FOUND(HttpStatus.NOT_FOUND, 40400, "资源不存在: %s"),
     FORBIDDEN(HttpStatus.FORBIDDEN, 40300, "无权限访问: %s"),
     WORKFLOW_NOT_AWAITING_REVIEW(HttpStatus.CONFLICT, 40901, "工作流当前状态不是等待人工审核，当前状态: %s"),
     WORKFLOW_NOT_AWAITING_CONFIRMATION(HttpStatus.CONFLICT, 40902, "工作流当前状态不是等待确认，当前状态: %s"),
     NO_SUBSTAGE_TO_CONFIRM(HttpStatus.BAD_REQUEST, 40001, "当前没有待确认的子阶段，可能是普通阶段审批"),
     MISSING_REQUIRED_INPUT(HttpStatus.BAD_REQUEST, 40002, "缺少必需的输入参数: %s"),
     INVALID_WORKFLOW_STATE(HttpStatus.CONFLICT, 40903, "工作流状态非法: %s"),
+    INVALID_STATE(HttpStatus.CONFLICT, 40904, "当前状态不允许该操作: %s"),
 
     // ════════════════ 系统相关 5xx ════════════════
     PIPELINE_EXECUTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, 50001, "流水线执行失败: %s"),

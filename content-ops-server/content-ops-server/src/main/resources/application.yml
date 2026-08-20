@@ -89,29 +89,29 @@ contentops:
     #  全阶段统一 qwen-flash，最大化成本节省；如需差异化，创作档可换 qwen-plus（¥0.8/¥4.8）
     stage-overrides:
       topic-planning:
-        model: qwen-flash
+        model: ${LLM_MODEL:qwen-flash}
         temperature: 0.8
         max-tokens: 4096
       content-creation:
-        model: qwen-flash
+        model: ${LLM_MODEL:qwen-flash}
         temperature: 0.9
         max-tokens: 6144
       image-design:
-        model: qwen-flash
+        model: ${LLM_MODEL:qwen-flash}
         temperature: 0.8
         max-tokens: 4096
       publishing:
-        model: qwen-flash
+        model: ${LLM_MODEL:qwen-flash}
         temperature: 0.3
         # 发布阶段需要完整输出格式化后的长文（含标题/正文/标签），2048 会被截断导致 JSON 解析失败；
         # 8192 足够容纳单平台完整作品，仍是「一次性格式化」成本，不做循环调用。
         max-tokens: 8192
       data-analysis:
-        model: qwen-flash
+        model: ${LLM_MODEL:qwen-flash}
         temperature: 0.2
         max-tokens: 2048
       optimization:
-        model: qwen-flash
+        model: ${LLM_MODEL:qwen-flash}
         temperature: 0.3
         max-tokens: 2048
     # P2 #10 大厂特色：动态模型路由网关（多模型路由自动化，按难度/成本动态选择）。
@@ -119,8 +119,8 @@ contentops:
     dynamic-gateway:
       enabled: ${CONTENTOPS_DYNAMIC_GATEWAY:true}   # ✅ 启用动态路由（最便宜配置三档统一）
       tiered-chatmodels:
-        cheap: "qwen-flash"          # 💰 最便宜档：Qwen3.5 Flash ¥0.2/¥2.0（无峰谷）
-        strong: "qwen-flash"         # 💰 创作档：同为 qwen-flash，最大化节省（可升级为 qwen-plus ¥0.8/¥4.8）
+        cheap: "${LLM_MODEL:qwen-flash}"   # 💰 最便宜档：Qwen3.5 Flash ¥0.2/¥2.0（无峰谷）
+        strong: "${LLM_MODEL:qwen-flash}"  # 💰 创作档：同为 qwen-flash，最大化节省（可升级为 qwen-plus ¥0.8/¥4.8）
         vision: "qwen-vl-plus"        # 多模态视觉：图片理解等（vision-stage-codes 指定的阶段走此档）
       stage-tier:                    # 按阶段 → 默认档位
         topic-planning: "strong"
@@ -281,6 +281,12 @@ contentops:
         enabled: ${CONTENTOPS_NOTIFY_EMAIL_ENABLED:true}
         recipients: ${CONTENTOPS_NOTIFY_EMAIL_RECIPIENTS:}
         from: ${CONTENTOPS_NOTIFY_EMAIL_FROM:contentops@localhost}
+
+  # 评论区 AI 助手（MVP：小红书）：作品发布后评论采集/意图识别/AI 对话/审核发送
+  comment:
+    enabled: ${CONTENTOPS_COMMENT_ENABLED:true}
+    collect-ms: ${CONTENTOPS_COMMENT_COLLECT_MS:60000}
+    mock-count: ${CONTENTOPS_COMMENT_MOCK_COUNT:10}
 
   # LLM 可观测性（P0）：每次真实模型调用的 trace + token/成本/延迟统计
   observability:
@@ -496,6 +502,7 @@ springdoc:
     - com.contentops.analysis
     - com.contentops.optimize
     - com.contentops.trend
+    - com.contentops.comment
     - com.contentops.common.profile.style
     - com.contentops.common.profile.competitor
     - com.contentops.common.profile.audience

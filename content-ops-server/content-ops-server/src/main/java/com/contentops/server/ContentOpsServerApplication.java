@@ -19,7 +19,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
         "com.contentops.publish",
         "com.contentops.analysis",
         "com.contentops.optimize",
-        "com.contentops.trend"
+        "com.contentops.trend",
+        "com.contentops.comment"
 })
 public class ContentOpsServerApplication {
     public static void main(String[] args) {

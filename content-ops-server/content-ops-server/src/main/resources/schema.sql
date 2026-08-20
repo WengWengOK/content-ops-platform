@@ -210,3 +210,32 @@ CREATE INDEX IF NOT EXISTS idx_audit_owner_time
     ON contentops_audit_log (owner_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_action_time
     ON contentops_audit_log (action, created_at DESC);
+
+-- 评论区 AI 助手（MVP：小红书）：作品发布后评论采集/意图识别/AI 对话
+CREATE TABLE IF NOT EXISTS contentops_comment (
+    comment_id    VARCHAR(64)  PRIMARY KEY,
+    owner_id      VARCHAR(64),
+    platform      VARCHAR(32)  NOT NULL,
+    work_id       VARCHAR(128),
+    workflow_id   VARCHAR(64),
+    author        VARCHAR(128),
+    content       TEXT         NOT NULL,
+    likes         INT          DEFAULT 0,
+    comment_time  TIMESTAMP,
+    reply_to      VARCHAR(128),
+    intent        VARCHAR(32),
+    sentiment     VARCHAR(16),
+    ai_summary    VARCHAR(1000),
+    ai_reply      TEXT,
+    reply_status  VARCHAR(16)  DEFAULT 'NONE',
+    dialog_history TEXT,
+    collected_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_comment_platform_work
+    ON contentops_comment (platform, work_id, collected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_comment_intent
+    ON contentops_comment (intent);
+CREATE INDEX IF NOT EXISTS idx_comment_owner_time
+    ON contentops_comment (owner_id, collected_at DESC);
