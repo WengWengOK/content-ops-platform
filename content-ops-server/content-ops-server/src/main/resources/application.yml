@@ -71,56 +71,57 @@ contentops:
   # 模型路由（P2：创意类 gpt-4o/0.8，格式化类 gpt-4o-mini/0.3）——
   # 接入 AiModelConfig：按阶段创建 creativeChatModel / formattingChatModel，
   # 并统一包裹 GuardedChatModel（SafetyGuard 输入/输出双层防护）。
+  #
+  # 💰 2026-08 最便宜配置：全档切换到阿里云 DashScope qwen-flash（Qwen3.5 Flash）
+  #    输入 ¥0.2/百万，输出 ¥2.0/百万，无峰谷定价，1M 上下文
+  #    单工作流成本约 ¥0.03（较旧 DeepSeek V3 价 ¥0.054 便宜 44%）
   model-routing:
     enabled: ${CONTENTOPS_MODEL_ROUTING:true}
-    # api-key 默认给非空占位符：保证模型 Bean 能创建、应用可启动；
-    # 未配置真实 Key 时实际 LLM 调用会失败（401），但各环节均有降级。
-    # 优先使用 DEEPSEEK_API_KEY；注意：本机可能设置了旧的 OPENAI_API_KEY 环境变量，
-    # 若直接回退到 OPENAI_API_KEY 会被旧 key 覆盖导致 401，因此层级顺序刻意先取 DEEPSEEK_API_KEY。
-    api-key: ${DEEPSEEK_API_KEY:${OPENAI_API_KEY:sk-your-openai-compatible-key}}
-    base-url: ${OPENAI_BASE_URL:https://api.deepseek.com/v1}
-    default-model: ${LLM_MODEL:deepseek-chat}
+    # api-key 切换到 DashScope（阿里云百炼 → API-KEY 管理）
+    api-key: ${DASHSCOPE_API_KEY:sk-your-dashscope-key}
+    # base-url 切换到 DashScope OpenAI 兼容模式
+    base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    # 默认模型：qwen-flash（Qwen3.5 Flash，全网最便宜）
+    default-model: ${LLM_MODEL:qwen-flash}
     default-temperature: 0.8
     default-max-tokens: 4096
     # 按阶段分层（成本控制）：
-    #  - 创意类（选题/内容/配图）保留大输出，控制 4096~6144
-    #  - 格式化类（发布/分析/优化）压到 2048，输出 JSON/短报告足够
-    #  - 若接入更便宜的模型，只需改对应 stage 的 model 字段即可分层计费
+    #  全阶段统一 qwen-flash，最大化成本节省；如需差异化，创作档可换 qwen-plus（¥0.8/¥4.8）
     stage-overrides:
       topic-planning:
-        model: deepseek-chat
+        model: qwen-flash
         temperature: 0.8
         max-tokens: 4096
       content-creation:
-        model: deepseek-chat
+        model: qwen-flash
         temperature: 0.9
         max-tokens: 6144
       image-design:
-        model: deepseek-chat
+        model: qwen-flash
         temperature: 0.8
         max-tokens: 4096
       publishing:
-        model: deepseek-chat
+        model: qwen-flash
         temperature: 0.3
         # 发布阶段需要完整输出格式化后的长文（含标题/正文/标签），2048 会被截断导致 JSON 解析失败；
         # 8192 足够容纳单平台完整作品，仍是「一次性格式化」成本，不做循环调用。
         max-tokens: 8192
       data-analysis:
-        model: deepseek-chat
+        model: qwen-flash
         temperature: 0.2
         max-tokens: 2048
       optimization:
-        model: deepseek-chat
+        model: qwen-flash
         temperature: 0.3
         max-tokens: 2048
     # P2 #10 大厂特色：动态模型路由网关（多模型路由自动化，按难度/成本动态选择）。
     # 默认关闭，渐进开启；所有开关默认值均与 DynamicGatewayProperties 对齐：
     dynamic-gateway:
-      enabled: ${CONTENTOPS_DYNAMIC_GATEWAY:false}   # 关闭时回退到原 stage-overrides 静态路由
+      enabled: ${CONTENTOPS_DYNAMIC_GATEWAY:true}   # ✅ 启用动态路由（最便宜配置三档统一）
       tiered-chatmodels:
-        cheap: "deepseek-chat"       # 轻量/格式化/分析：低成本小模型档位
-        strong: "deepseek-chat"      # 创作/推理/优化：高质量大模型档位
-        vision: "qwen-vl-plus"       # 多模态视觉：图片理解等（vision-stage-codes 指定的阶段走此档）
+        cheap: "qwen-flash"          # 💰 最便宜档：Qwen3.5 Flash ¥0.2/¥2.0（无峰谷）
+        strong: "qwen-flash"         # 💰 创作档：同为 qwen-flash，最大化节省（可升级为 qwen-plus ¥0.8/¥4.8）
+        vision: "qwen-vl-plus"        # 多模态视觉：图片理解等（vision-stage-codes 指定的阶段走此档）
       stage-tier:                    # 按阶段 → 默认档位
         topic-planning: "strong"
         content-creation: "strong"
