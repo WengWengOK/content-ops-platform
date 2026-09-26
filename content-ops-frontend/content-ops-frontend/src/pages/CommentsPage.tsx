@@ -83,6 +83,7 @@ export function CommentsPage() {
   const [scheduler, setScheduler] = useState<CommentSchedulerStatus | null>(null)
   const [sourceStatus, setSourceStatus] = useState<CommentSourceStatus | null>(null)
   const [watchInput, setWatchInput] = useState('')
+  const [watchXsecToken, setWatchXsecToken] = useState('')
   const [watchAutoAnalyze, setWatchAutoAnalyze] = useState(true)
   const [watchBusy, setWatchBusy] = useState('')
 
@@ -273,8 +274,14 @@ export function CommentsPage() {
       return
     }
     try {
-      await addCommentWatch({ workId: id, platform: platform || 'xiaohongshu', autoAnalyze: watchAutoAnalyze })
+      await addCommentWatch({
+        workId: id,
+        platform: platform || 'xiaohongshu',
+        autoAnalyze: watchAutoAnalyze,
+        xsecToken: watchXsecToken.trim() || undefined,
+      })
       setWatchInput('')
+      setWatchXsecToken('')
       await loadWatches()
       await loadScheduler()
       showToast(`已加入自动采集监控：${id}`, '#00B42A')
@@ -462,6 +469,18 @@ export function CommentsPage() {
               onChange={(e) => setWatchInput(e.target.value)}
               placeholder="填入要长期监控的作品 ID"
               className="w-64 rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: '#E5E6EB' }}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: '#86909C' }}>
+              xsec_token（自建桥必填，会过期）
+            </span>
+            <input
+              value={watchXsecToken}
+              onChange={(e) => setWatchXsecToken(e.target.value)}
+              placeholder="形如 AB1cD…；用第三方数据服务可留空"
+              className="w-72 rounded-lg border px-3 py-2 text-sm outline-none"
               style={{ borderColor: '#E5E6EB' }}
             />
           </div>

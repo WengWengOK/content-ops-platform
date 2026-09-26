@@ -70,7 +70,8 @@ public class CommentController {
         String platform = blank(request.getPlatform()).isBlank() ? "xiaohongshu" : request.getPlatform().trim();
         CommentCollector.CollectionResult result;
         try {
-            result = collector.collect(platform, request.getWorkId().trim(), ownerId());
+            result = collector.collect(platform, request.getWorkId().trim(), ownerId(),
+                    request.getXsecToken());
         } catch (CommentSourceException e) {
             return AgentResponse.failure("comment", "[" + e.getCode() + "] " + e.getMessage());
         }
@@ -168,6 +169,7 @@ public class CommentController {
                 .platform(platform)
                 .workId(request.getWorkId().trim())
                 .workflowId(blank(request.getWorkflowId()))
+                .xsecToken(blank(request.getXsecToken()))
                 .autoAnalyze(request.getAutoAnalyze() == null ? properties.isAutoAnalyze() : request.getAutoAnalyze())
                 .enabled(true)
                 .totalCollected(0)
@@ -341,6 +343,8 @@ public class CommentController {
         @NotBlank(message = "workId 不能为空")
         private String workId;
         private String platform;
+        /** 自建桥（xiaohongshu-mcp）必填：笔记访问票据 */
+        private String xsecToken;
     }
 
     @Data
@@ -350,6 +354,8 @@ public class CommentController {
         private String platform;
         private String workflowId;
         private Boolean autoAnalyze;
+        /** 自建桥（xiaohongshu-mcp）必填：笔记访问票据 */
+        private String xsecToken;
     }
 
     @Data

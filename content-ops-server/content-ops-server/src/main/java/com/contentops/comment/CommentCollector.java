@@ -47,8 +47,10 @@ public class CommentCollector {
 
     /** 采集指定作品的小红书评论（默认平台）。 */
     public CollectionResult collect(String workId, String ownerId) {
-        return collect("xiaohongshu", workId, ownerId);
+        return collect("xiaohongshu", workId, ownerId, null);
     }
+
+
 
     /**
      * 采集指定平台作品的评论。
@@ -58,6 +60,11 @@ public class CommentCollector {
      * @param ownerId  归属用户（租户隔离，可为 null 表示开发模式）
      */
     public CollectionResult collect(String platform, String workId, String ownerId) {
+        return collect(platform, workId, ownerId, null);
+    }
+
+    /** 采集指定平台作品评论（可带 xsec_token）。 */
+    public CollectionResult collect(String platform, String workId, String ownerId, String xsecToken) {
         String p = platform == null || platform.isBlank() ? "xiaohongshu" : platform.trim();
         if (workId == null || workId.isBlank()) {
             throw new CommentSourceException("COMMENT_WORK_ID_REQUIRED", "workId 不能为空");
@@ -74,7 +81,7 @@ public class CommentCollector {
             if (!apiConfigured) {
                 throw new CommentSourceException("COMMENT_SOURCE_NOT_CONFIGURED", apiClient.statusHint());
             }
-            List<Comment> comments = fetchFromApi(p, workId, ownerId);
+            List<Comment> comments = fetchFromApi(p, workId, ownerId, xsecToken);
             log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
             return new CollectionResult(p, workId, "api", null, comments);
         }
@@ -89,7 +96,7 @@ public class CommentCollector {
         }
 
         try {
-            List<Comment> comments = fetchFromApi(p, workId, ownerId);
+            List<Comment> comments = fetchFromApi(p, workId, ownerId, xsecToken);
             log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
             return new CollectionResult(p, workId, "api", null, comments);
         } catch (CommentSourceException e) {
@@ -103,7 +110,7 @@ public class CommentCollector {
         }
     }
     /** 真实接口分页拉取。 */
-    private List<Comment> fetchFromApi(String platform, String workId, String ownerId) {
+    private List<Comment> fetchFromApi(String platform, String workId, String ownerId, String xsecToken) {
         if (!"xiaohongshu".equalsIgnoreCase(platform)) {
             throw new CommentSourceException("COMMENT_PLATFORM_NOT_SUPPORTED",
                     "暂未接入 " + platform + " 的真实评论接口，可配置 contentops.comment.source=mock 使用模拟数据");
@@ -115,7 +122,7 @@ public class CommentCollector {
         int maxPages = Math.max(1, cfg.getMaxPages());
         for (int page = 0; page < maxPages; page++) {
             XhsCommentApiClient.FetchPage fetched =
-                    apiClient.fetchPage(workId, cursor, cfg.getPageSize());
+                    apiClient.fetchPage(workId, cursor, cfg.getPageSize(), xsecToken);
             for (XhsCommentApiClient.XhsComment item : fetched.comments()) {
                 all.add(Comment.builder()
                         .commentId(resolveCommentId(workId, item))

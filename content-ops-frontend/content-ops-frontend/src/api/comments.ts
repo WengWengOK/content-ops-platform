@@ -138,6 +138,7 @@ export async function addCommentWatch(body: {
   platform?: string
   workflowId?: string
   autoAnalyze?: boolean
+  xsecToken?: string
 }): Promise<CommentWatch> {
   const { data } = await apiClient.post<AgentResponse<CommentWatch>>('/comments/watches', body)
   return unwrap(data)

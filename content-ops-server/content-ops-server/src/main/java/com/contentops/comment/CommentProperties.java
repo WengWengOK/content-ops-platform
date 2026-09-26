@@ -55,11 +55,13 @@ public class CommentProperties {
      *
      * <p><b>关于数据来源：</b>小红书官方开放平台（open.xiaohongshu.com）当前仅开放电商类 API
      * （公共/订单/售后/商品/库存/素材中心/物流/财务/即时零售/会员通/供货商），
-     * <b>不含笔记评论接口</b>。因此真实评论数据需来自以下任一渠道，配置后即可直接切换，无需改代码：
+     * <b>不含笔记评论接口</b>。因此真实评论数据需来自以下渠道，配置后即可直接切换，无需改代码：
      * <ol>
-     *   <li><b>第三方数据服务 / 自建采集桥</b>（推荐）：配置 {@code endpoint} + {@code access-token}，
-     *       鉴权 {@code bearer}（默认）或 {@code query}；</li>
-     *   <li><b>官方开放平台网关</b>（如已获批对应接口权限）：配置 {@code endpoint} +
+     *   <li><b>自建采集桥 xiaohongshu-mcp</b>（推荐，用自己账号登录后拉评论区数据）：
+     *       设 {@code preset=xhs-mcp}，再配 {@code base-url=http://127.0.0.1:18060} 与 {@code access-token}，
+     *       接口为 {@code POST /api/v1/feeds/detail}，需要 {@code feed_id + xsec_token}；</li>
+     *   <li><b>第三方数据服务</b>：配置 {@code endpoint} + {@code access-token}，鉴权 {@code bearer} 或 {@code query}；</li>
+     *   <li><b>官方开放平台网关</b>（如已获批接口权限）：配置 {@code endpoint} +
      *       {@code app-id}/{@code app-secret}，鉴权 {@code ark-sign}（appId+timestamp+secret 签名）。</li>
      * </ol>
      */
@@ -68,6 +70,12 @@ public class CommentProperties {
 
         /** 是否启用真实小红书评论接口 */
         private boolean enabled = false;
+
+        /**
+         * 预设数据源：{@code custom}（自定义端点，默认）| {@code xhs-mcp}
+         * （自建桥 xiaohongshu-mcp：自动使用 POST /api/v1/feeds/detail + feed_id/xsec_token 请求体）。
+         */
+        private String preset = "custom";
 
         /** 接口基址（endpoint 为相对路径时使用） */
         private String baseUrl = "https://open.xiaohongshu.com";
@@ -81,8 +89,17 @@ public class CommentProperties {
         /** 鉴权方式：bearer | query | ark-sign | none */
         private String authMode = "bearer";
 
-        /** 静态访问令牌（第三方数据服务 / 自建采集桥 / 官方授权令牌） */
+        /** 静态访问令牌（自建桥的 Bearer Token / 第三方数据服务令牌 / 官方授权令牌） */
         private String accessToken = "";
+
+        /**
+         * 默认 xsec_token（小红书笔记的访问票据，形如 {@code AB...}）。
+         * 单篇笔记一个 token 且会过期，推荐在「监控作品」里逐个填写。
+         */
+        private String xsecToken = "";
+
+        /** xsec_token 在请求体中的字段名 */
+        private String xsecTokenParam = "xsec_token";
 
         /** 开放平台 AppID（ark-sign 模式必填） */
         private String appId = "";

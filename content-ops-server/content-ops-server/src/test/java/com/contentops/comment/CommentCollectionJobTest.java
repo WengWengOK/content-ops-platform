@@ -51,7 +51,7 @@ class CommentCollectionJobTest {
         properties.setAutoAnalyzeLimit(2);
         CommentWatch watch = watch("w-1", true);
 
-        when(collector.collect("xiaohongshu", "note-1", "owner-1")).thenReturn(
+        when(collector.collect("xiaohongshu", "note-1", "owner-1", null)).thenReturn(
                 new CommentCollector.CollectionResult("xiaohongshu", "note-1", "api", null,
                         List.of(comment("c-1"), comment("c-2"), comment("c-3"))));
         when(commentRepository.exists("c-1")).thenReturn(true);
@@ -84,7 +84,7 @@ class CommentCollectionJobTest {
     void runForWatch_autoAnalyzeDisabled_skipsModel() {
         properties.setAutoAnalyze(true);
         CommentWatch watch = watch("w-1", false);
-        when(collector.collect(anyString(), anyString(), any())).thenReturn(
+        when(collector.collect(anyString(), anyString(), any(), any())).thenReturn(
                 new CommentCollector.CollectionResult("xiaohongshu", "note-1", "api", null,
                         List.of(comment("c-9"))));
         when(commentRepository.exists("c-9")).thenReturn(false, true);
@@ -100,7 +100,7 @@ class CommentCollectionJobTest {
     @DisplayName("采集异常时记录错误，不影响任务继续")
     void runForWatch_collectError_recordsError() {
         CommentWatch watch = watch("w-2", true);
-        when(collector.collect(anyString(), anyString(), any()))
+        when(collector.collect(anyString(), anyString(), any(), any()))
                 .thenThrow(new CommentSourceException("COMMENT_SOURCE_UNAUTHORIZED", "鉴权失败"));
 
         CommentCollectionJob.WatchRunResult result = job.runForWatch(watch, 5);

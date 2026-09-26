@@ -324,6 +324,13 @@ contentops:
     # ════════════════════════════════════════════════════════════════
     xiaohongshu:
       enabled: ${CONTENTOPS_XHS_COMMENT_ENABLED:false}
+      # preset: custom（自定义端点）| xhs-mcp（自建桥 xiaohongshu-mcp，自动用 POST /api/v1/feeds/detail）
+      preset: ${CONTENTOPS_XHS_COMMENT_PRESET:custom}
+      # 自建桥默认地址（xiaohongshu-mcp 默认监听 18060）
+      # base-url: ${CONTENTOPS_XHS_COMMENT_BASE_URL:http://127.0.0.1:18060}
+      # xsec-token 建议按作品填在「监控作品」里（会过期），这里只放兜底默认值
+      xsec-token: ${XHS_XSEC_TOKEN:}
+      xsec-token-param: ${CONTENTOPS_XHS_COMMENT_XSEC_PARAM:xsec_token}
       base-url: ${CONTENTOPS_XHS_COMMENT_BASE_URL:https://open.xiaohongshu.com}
       endpoint: ${CONTENTOPS_XHS_COMMENT_ENDPOINT:}
       method: ${CONTENTOPS_XHS_COMMENT_METHOD:POST}

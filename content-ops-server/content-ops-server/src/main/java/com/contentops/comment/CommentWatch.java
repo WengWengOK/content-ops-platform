@@ -33,6 +33,9 @@ public class CommentWatch {
     @Schema(description = "关联工作流 ID（可空）")
     private String workflowId;
 
+    @Schema(description = "笔记访问票据 xsec_token（自建桥必填，有有效期需更新）")
+    private String xsecToken;
+
     @Schema(description = "是否对新评论自动做 AI 分析")
     private boolean autoAnalyze;
 

@@ -197,6 +197,83 @@ class XhsCommentApiClientTest {
         assertThat(page.hasMore()).isFalse();
     }
 
+    // ──────────────────────── xiaohongshu-mcp 自建桥预设 ────────────────────────
+
+    @Test
+    @DisplayName("xhs-mcp 预设：请求体含 feed_id/xsec_token/load_all_comments，并解析 data.data.comments.list（含子评论）")
+    void fetchPage_bridgePreset_parsesNestedComments() {
+        responseBody = """
+                {"success":true,"message":"获取Feed详情成功","data":{"feed_id":"note-9","data":{
+                  "note":{"noteId":"note-9","title":"标题","interactInfo":{"commentCount":"2"}},
+                  "comments":{"list":[
+                    {"id":"c1","content":"求教程","likeCount":"12","createTime":1735689600000,
+                     "userInfo":{"userId":"u1","nickname":"小红"},
+                     "subComments":[{"id":"c1-1","content":"同求","likeCount":"1","createTime":1735689600000,
+                        "userInfo":{"nickname":"小蓝"}}]},
+                    {"id":"c2","content":"已收藏","likeCount":"3","createTime":1735689600000,
+                     "userInfo":{"nickname":"小绿"}}
+                  ],"cursor":"","hasMore":false}
+                }}}
+                """;
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        XhsCommentApiClient.FetchPage page = client.fetchPage("note-9", "", 20, "xsec-token-1");
+
+        assertThat(page.comments()).hasSize(3);
+        XhsCommentApiClient.XhsComment first = page.comments().get(0);
+        assertThat(first.commentId()).isEqualTo("c1");
+        assertThat(first.author()).isEqualTo("小红");
+        assertThat(first.content()).isEqualTo("求教程");
+        assertThat(first.likes()).isEqualTo(12);
+        assertThat(first.replyTo()).isNull();
+        XhsCommentApiClient.XhsComment sub = page.comments().get(1);
+        assertThat(sub.commentId()).isEqualTo("c1-1");
+        assertThat(sub.author()).isEqualTo("小蓝");
+        assertThat(sub.replyTo()).isEqualTo("c1");
+        assertThat(page.comments().get(2).commentId()).isEqualTo("c2");
+
+        String body = bodies.get(0);
+        assertThat(body).contains("\"feed_id\":\"note-9\"")
+                .contains("\"xsec_token\":\"xsec-token-1\"")
+                .contains("\"load_all_comments\":true")
+                .contains("comment_config");
+        assertThat(headers.get(0).getFirst("Authorization")).isEqualTo("Bearer token-abc");
+    }
+
+    @Test
+    @DisplayName("xhs-mcp 预设缺少 xsec_token 时给出可读错误，不发请求")
+    void fetchPage_bridgePresetWithoutToken_throws() {
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        CommentSourceException ex = catchThrowableOfType(
+                () -> client.fetchPage("note-9", "", 20, null), CommentSourceException.class);
+
+        assertThat(ex).isNotNull();
+        assertThat(ex.getCode()).isEqualTo("COMMENT_XSEC_TOKEN_REQUIRED");
+        assertThat(ex.getMessage()).contains("xsec_token");
+        assertThat(bodies).isEmpty();
+    }
+
+    @Test
+    @DisplayName("未知响应结构：递归扫描仍能定位评论数组")
+    void parse_recursiveFallback_findsComments() {
+        XhsCommentApiClient client = new XhsCommentApiClient(properties("bearer"), new ObjectMapper());
+
+        XhsCommentApiClient.FetchPage page = client.parse("""
+                {"result":{"noteData":{"commentList":[
+                  {"id":"r1","content":"结构不常见也能解析","likeCount":"2","userInfo":{"nickname":"路人"}}
+                ]}}}
+                """);
+
+        assertThat(page.comments()).hasSize(1);
+        assertThat(page.comments().get(0).commentId()).isEqualTo("r1");
+        assertThat(page.comments().get(0).author()).isEqualTo("路人");
+        assertThat(page.comments().get(0).likes()).isEqualTo(2);
+    }
     // ──────────────────────── 辅助 ────────────────────────
 
     private CommentProperties properties(String authMode) {

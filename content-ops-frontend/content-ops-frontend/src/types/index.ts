@@ -608,6 +608,7 @@ export interface CommentWatch {
   platform: string
   workId: string
   workflowId?: string
+  xsecToken?: string
   autoAnalyze: boolean
   enabled: boolean
   lastCollectedAt?: string

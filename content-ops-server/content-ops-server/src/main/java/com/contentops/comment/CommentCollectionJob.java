@@ -95,8 +95,8 @@ public class CommentCollectionJob {
         String source = null, fallbackReason = null, error = null;
         List<Comment> fresh = new ArrayList<>();
         try {
-            CommentCollector.CollectionResult result =
-                    collector.collect(watch.getPlatform(), watch.getWorkId(), watch.getOwnerId());
+            CommentCollector.CollectionResult result = collector.collect(
+                    watch.getPlatform(), watch.getWorkId(), watch.getOwnerId(), watch.getXsecToken());
             source = result.source();
             fallbackReason = result.fallbackReason();
             for (Comment c : result.commentsOrEmpty()) {

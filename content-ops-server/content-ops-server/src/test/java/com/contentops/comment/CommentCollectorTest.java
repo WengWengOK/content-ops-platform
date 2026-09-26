@@ -69,7 +69,7 @@ class CommentCollectorTest {
     void collect_autoWithConfig_usesRealApi() {
         properties.setSource("auto");
         when(apiClient.isConfigured()).thenReturn(true);
-        when(apiClient.fetchPage(anyString(), any(), anyInt())).thenReturn(
+        when(apiClient.fetchPage(anyString(), any(), anyInt(), any())).thenReturn(
                 new XhsCommentApiClient.FetchPage(List.of(
                         new XhsCommentApiClient.XhsComment("c-1", "小红", "求教程", 5,
                                 LocalDateTime.of(2025, 1, 1, 12, 0), null)), null, false));
@@ -91,7 +91,7 @@ class CommentCollectorTest {
     void collect_apiFailure_fallsBackWithReason() {
         properties.setSource("auto");
         when(apiClient.isConfigured()).thenReturn(true);
-        when(apiClient.fetchPage(anyString(), any(), anyInt()))
+        when(apiClient.fetchPage(anyString(), any(), anyInt(), any()))
                 .thenThrow(new CommentSourceException("COMMENT_SOURCE_FORBIDDEN", "无权限：该接口需开通权限"));
 
         CommentCollector.CollectionResult result = collector.collect("note-1", "owner-1");

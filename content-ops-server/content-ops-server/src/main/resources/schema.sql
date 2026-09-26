@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS contentops_comment_watch (
     platform           VARCHAR(32)  NOT NULL,
     work_id            VARCHAR(128) NOT NULL,
     workflow_id        VARCHAR(64),
+    xsec_token         VARCHAR(256),
     auto_analyze       BOOLEAN      DEFAULT TRUE,
     enabled            BOOLEAN      DEFAULT TRUE,
     last_collected_at  TIMESTAMP,
@@ -279,3 +280,6 @@ CREATE TABLE IF NOT EXISTS contentops_comment_job_run (
 
 CREATE INDEX IF NOT EXISTS idx_comment_job_run_time
     ON contentops_comment_job_run (started_at DESC);
+
+-- 存量库迁移：为已存在的监控表补 xsec_token 列（幂等）
+ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS xsec_token VARCHAR(256);
