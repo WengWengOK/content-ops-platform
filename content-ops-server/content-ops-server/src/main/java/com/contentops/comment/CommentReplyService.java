@@ -28,6 +28,9 @@ public class CommentReplyService {
     private final CommentRepository repository;
     private final ObjectMapper objectMapper;
     private final @Qualifier("formattingChatModel") ChatModel chatModel;
+    private final XhsCommentApiClient apiClient;
+    private final CommentWatchRepository watchRepository;
+    private final CommentProperties properties;
 
     private static final String CHAT_PROMPT = """
             你是小红书博主的评论区回复助手，用自然口语化、有小红书风格的中文回复用户。
@@ -97,13 +100,93 @@ public class CommentReplyService {
      * 发送：APPROVED → SENT（MVP 记录已发送状态，真实发布接入平台 API）。
      */
     public Comment send(String commentId) {
+        return send(commentId, null).comment();
+    }
+
+    /**
+     * 发送回复：优先调用真实接口（自建桥），未配置时退化为「仅记录状态」的模拟发送。
+     *
+     * <p>失败语义：真实接口调用失败时保持 APPROVED 状态并抛出可读错误，用户可修正后重试，
+     * 不会把「没发出去」的回复误标成 SENT。
+     */
+    public SendResult send(String commentId, String xsecTokenOverride) {
         Comment comment = findAndCheckOwner(commentId);
         if (!"APPROVED".equals(comment.getReplyStatus())) {
             throw new BusinessException(ErrorCode.INVALID_STATE, "请先审核通过再发送");
         }
-        repository.updateReply(commentId, comment.getAiReply(), "SENT");
-        log.info("[Comment] 评论回复已发送（模拟）: id={}", commentId);
-        return repository.findById(commentId).orElse(comment);
+        String reply = comment.getAiReply();
+        if (reply == null || reply.isBlank()) {
+            throw new BusinessException(ErrorCode.MISSING_REQUIRED_INPUT, "回复内容为空，无法发送");
+        }
+
+        boolean realSendAllowed = properties.getXiaohongshu().isReplyEnabled()
+                && "xiaohongshu".equalsIgnoreCase(comment.getPlatform())
+                && apiClient.isReplyConfigured();
+        if (!realSendAllowed) {
+            repository.updateReply(commentId, reply, "SENT");
+            log.info("[Comment] 回复已发送（模拟，未配置真实回复接口）: id={}", commentId);
+            return new SendResult(repository.findById(commentId).orElse(comment), "simulated",
+                    "模拟发送：未配置真实回复接口（" + apiClient.replyStatusHint() + "）");
+        }
+
+        String platformCommentId = resolvePlatformCommentId(comment);
+        String xsecToken = resolveXsecToken(comment, xsecTokenOverride);
+        XhsCommentApiClient.ReplyResult result;
+        try {
+            result = apiClient.reply(comment.getWorkId(), xsecToken, platformCommentId, reply);
+        } catch (CommentSourceException e) {
+            throw new BusinessException(replyErrorCode(e.getCode()), e.getMessage());
+        }
+        if (!result.success()) {
+            throw new BusinessException(ErrorCode.AGENT_CALL_FAILED, "真实回复失败：" + result.message());
+        }
+        repository.updateReply(commentId, reply, "SENT");
+        log.info("[Comment] 真实回复已发送: id={}, platformCommentId={}", commentId, platformCommentId);
+        return new SendResult(repository.findById(commentId).orElse(comment), "real",
+                "已通过真实接口回复：" + result.message());
+    }
+
+    /** 平台原始评论 ID：优先取采集时保存的值，其次从内部 ID 前缀还原（内容指纹 ID 除外）。 */
+    private String resolvePlatformCommentId(Comment comment) {
+        if (comment.getPlatformCommentId() != null && !comment.getPlatformCommentId().isBlank()) {
+            return comment.getPlatformCommentId().trim();
+        }
+        String id = comment.getCommentId();
+        if (id != null && id.startsWith("xhs-")) {
+            String raw = id.substring(4);
+            if (raw.length() != 24 && !raw.startsWith("mock-")) {
+                return raw;
+            }
+        }
+        return null;
+    }
+
+    /** xsec_token 解析顺序：接口入参 → 该作品的监控项 → 全局默认值。 */
+    private String resolveXsecToken(Comment comment, String override) {
+        if (override != null && !override.isBlank()) {
+            return override.trim();
+        }
+        return watchRepository.findByWork(comment.getPlatform(), comment.getWorkId(), comment.getOwnerId())
+                .map(CommentWatch::getXsecToken)
+                .filter(token -> token != null && !token.isBlank())
+                .orElseGet(() -> properties.getXiaohongshu().getXsecToken());
+    }
+
+    private ErrorCode replyErrorCode(String code) {
+        if (code == null) {
+            return ErrorCode.AGENT_CALL_FAILED;
+        }
+        return switch (code) {
+            case "COMMENT_XSEC_TOKEN_REQUIRED", "COMMENT_PLATFORM_ID_REQUIRED",
+                 "COMMENT_REPLY_CONTENT_REQUIRED" -> ErrorCode.MISSING_REQUIRED_INPUT;
+            case "COMMENT_REPLY_NOT_CONFIGURED" -> ErrorCode.INVALID_STATE;
+            case "COMMENT_SOURCE_UNAUTHORIZED", "COMMENT_SOURCE_FORBIDDEN" -> ErrorCode.FORBIDDEN;
+            default -> ErrorCode.AGENT_CALL_FAILED;
+        };
+    }
+
+    /** 发送结果：真实发送还是模拟发送。 */
+    public record SendResult(Comment comment, String sendMode, String message) {
     }
 
     /**

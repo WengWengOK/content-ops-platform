@@ -331,6 +331,11 @@ contentops:
       # xsec-token 建议按作品填在「监控作品」里（会过期），这里只放兜底默认值
       xsec-token: ${XHS_XSEC_TOKEN:}
       xsec-token-param: ${CONTENTOPS_XHS_COMMENT_XSEC_PARAM:xsec_token}
+      # 真实发送回复：审核通过后调用平台接口真正回复评论（关闭则仅记录状态）
+      reply-enabled: ${CONTENTOPS_XHS_COMMENT_REPLY_ENABLED:true}
+      reply-path: ${CONTENTOPS_XHS_COMMENT_REPLY_PATH:}
+      comment-id-param: ${CONTENTOPS_XHS_COMMENT_ID_PARAM:comment_id}
+      content-param: ${CONTENTOPS_XHS_COMMENT_CONTENT_PARAM:content}
       base-url: ${CONTENTOPS_XHS_COMMENT_BASE_URL:https://open.xiaohongshu.com}
       endpoint: ${CONTENTOPS_XHS_COMMENT_ENDPOINT:}
       method: ${CONTENTOPS_XHS_COMMENT_METHOD:POST}

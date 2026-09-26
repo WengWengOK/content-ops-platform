@@ -213,8 +213,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_action_time
 
 -- 评论区 AI 助手（MVP：小红书）：作品发布后评论采集/意图识别/AI 对话
 CREATE TABLE IF NOT EXISTS contentops_comment (
-    comment_id    VARCHAR(64)  PRIMARY KEY,
-    owner_id      VARCHAR(64),
+    comment_id          VARCHAR(64)  PRIMARY KEY,
+    platform_comment_id VARCHAR(128),
+    owner_id            VARCHAR(64),
     platform      VARCHAR(32)  NOT NULL,
     work_id       VARCHAR(128),
     workflow_id   VARCHAR(64),
@@ -283,3 +284,6 @@ CREATE INDEX IF NOT EXISTS idx_comment_job_run_time
 
 -- 存量库迁移：为已存在的监控表补 xsec_token 列（幂等）
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS xsec_token VARCHAR(256);
+
+-- 存量库迁移：评论表补「平台原始评论 ID」列（真实回复需要，幂等）
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS platform_comment_id VARCHAR(128);

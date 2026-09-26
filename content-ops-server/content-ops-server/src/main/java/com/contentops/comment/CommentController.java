@@ -106,6 +106,9 @@ public class CommentController {
         data.put("xiaohongshuAuthMode", properties.getXiaohongshu().getAuthMode());
         data.put("fallbackToMock", properties.isFallbackToMock());
         data.put("hint", apiClient.statusHint());
+        data.put("xiaohongshuReplyEnabled", properties.getXiaohongshu().isReplyEnabled());
+        data.put("xiaohongshuReplyConfigured", apiClient.isReplyConfigured());
+        data.put("replyHint", apiClient.replyStatusHint());
         data.put("platformNote",
                 "小红书官方开放平台当前仅开放电商类 API（订单/售后/商品/库存/物流/财务），"
                         + "未提供笔记评论接口；真实评论数据请配置第三方数据服务或自建采集桥的 endpoint + access-token");
@@ -301,9 +304,16 @@ public class CommentController {
     }
 
     @PostMapping("/{commentId}/send")
-    @Operation(summary = "发送回复：APPROVED → SENT（当前为模拟发送）")
-    public AgentResponse<Comment> send(@PathVariable String commentId) {
-        return AgentResponse.success("comment", replyService.send(commentId));
+    @Operation(summary = "发送回复：APPROVED → SENT（已配置真实接口则真实回复，否则模拟发送）")
+    public AgentResponse<Map<String, Object>> send(@PathVariable String commentId,
+                                                   @RequestBody(required = false) SendRequest request) {
+        CommentReplyService.SendResult result =
+                replyService.send(commentId, request == null ? null : request.getXsecToken());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("comment", result.comment());
+        data.put("sendMode", result.sendMode());
+        data.put("message", result.message());
+        return AgentResponse.success("comment", data);
     }
 
     @PutMapping("/{commentId}/reply")
@@ -380,5 +390,11 @@ public class CommentController {
     public static class UpdateReplyRequest {
         private String reply;
         private String status;
+    }
+
+    @Data
+    public static class SendRequest {
+        /** 可选：真实发送所需的 xsec_token（不传则取该作品的监控项/全局默认值） */
+        private String xsecToken;
     }
 }

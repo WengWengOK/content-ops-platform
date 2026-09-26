@@ -126,6 +126,7 @@ public class CommentCollector {
             for (XhsCommentApiClient.XhsComment item : fetched.comments()) {
                 all.add(Comment.builder()
                         .commentId(resolveCommentId(workId, item))
+                        .platformCommentId(item.commentId())
                         .ownerId(ownerId)
                         .platform("xiaohongshu")
                         .workId(workId)

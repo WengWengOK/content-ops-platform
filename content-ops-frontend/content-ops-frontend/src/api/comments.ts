@@ -102,11 +102,16 @@ export async function approveCommentReply(commentId: string): Promise<PlatformCo
   return unwrap(data)
 }
 
-/** POST /comments/{id}/send — 发送回复（MVP 模拟） */
-export async function sendCommentReply(commentId: string): Promise<PlatformComment> {
-  const { data } = await apiClient.post<AgentResponse<PlatformComment>>(
-    `/comments/${commentId}/send`
-  )
+/** POST /comments/{id}/send — 发送回复（已配置真实接口则真实回复，否则模拟） */
+export async function sendCommentReply(
+  commentId: string,
+  xsecToken?: string
+): Promise<{ comment: PlatformComment; sendMode: string; message: string }> {
+  const { data } = await apiClient.post<AgentResponse<{
+    comment: PlatformComment
+    sendMode: string
+    message: string
+  }>>(`/comments/${commentId}/send`, xsecToken ? { xsecToken } : {})
   return unwrap(data)
 }
 

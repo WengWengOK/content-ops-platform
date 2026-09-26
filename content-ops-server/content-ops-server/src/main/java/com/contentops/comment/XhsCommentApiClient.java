@@ -650,6 +650,147 @@ public class XhsCommentApiClient {
         return s == null || s.isBlank();
     }
 
+    // ════════════════════════ 真实发送回复 ════════════════════════
+
+    /** 是否具备真实发送回复的能力（接口启用 + reply-enabled + 端点/凭据齐备）。 */
+    public boolean isReplyConfigured() {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!c.isEnabled() || !c.isReplyEnabled()) {
+            return false;
+        }
+        boolean hasEndpoint = isBridgePreset() || !isBlank(c.getReplyPath());
+        boolean hasAuth = "none".equals(normalizeAuth(c.getAuthMode())) || !isBlank(c.getAccessToken());
+        return hasEndpoint && hasAuth;
+    }
+
+    /** 真实发送的配置诊断提示。 */
+    public String replyStatusHint() {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!c.isEnabled()) {
+            return "真实接口未启用：contentops.comment.xiaohongshu.enabled=false";
+        }
+        if (!c.isReplyEnabled()) {
+            return "真实发送已关闭：contentops.comment.xiaohongshu.reply-enabled=false（发送仅记录状态）";
+        }
+        if (!isBridgePreset() && isBlank(c.getReplyPath())) {
+            return "未配置回复接口：contentops.comment.xiaohongshu.reply-path";
+        }
+        if (!"none".equals(normalizeAuth(c.getAuthMode())) && isBlank(c.getAccessToken())) {
+            return "缺少 access-token（自建桥为启动时的 AUTH_TOKEN）";
+        }
+        return "可真实发送：" + replyUrl();
+    }
+
+    /**
+     * 真实回复一条评论（自建桥 {@code POST /api/v1/feeds/comment/reply}）。
+     *
+     * @param feedId            笔记 ID
+     * @param xsecToken         笔记票据（可空，取配置默认值）
+     * @param platformCommentId 平台原始评论 ID（必填）
+     * @param content           回复内容
+     */
+    public ReplyResult reply(String feedId, String xsecToken, String platformCommentId, String content) {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (isBlank(feedId)) {
+            throw new CommentSourceException("COMMENT_WORK_ID_REQUIRED", "feedId 不能为空");
+        }
+        if (isBlank(platformCommentId)) {
+            throw new CommentSourceException("COMMENT_PLATFORM_ID_REQUIRED",
+                    "缺少平台原始评论 ID，无法真实回复（该评论可能是基于内容指纹生成的，请重新采集）");
+        }
+        if (isBlank(content)) {
+            throw new CommentSourceException("COMMENT_REPLY_CONTENT_REQUIRED", "回复内容不能为空");
+        }
+        if (!isReplyConfigured()) {
+            throw new CommentSourceException("COMMENT_REPLY_NOT_CONFIGURED", replyStatusHint());
+        }
+        String token = isBlank(xsecToken) ? c.getXsecToken() : xsecToken;
+        if (isBlank(token)) {
+            throw new CommentSourceException("COMMENT_XSEC_TOKEN_REQUIRED",
+                    "真实回复需要 xsec_token：请在「监控作品」里补该笔记的 xsec_token");
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put(isBridgePreset() ? "feed_id" : c.getNoteIdParam(), feedId);
+        body.put(c.getXsecTokenParam(), token);
+        body.put(c.getCommentIdParam(), platformCommentId);
+        body.put(c.getContentParam(), content);
+
+        try {
+            RestClient client = buildClient();
+            var spec = client.post()
+                    .uri(replyUrl())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON);
+            String authorization = authorizationHeader(normalizeAuth(c.getAuthMode()));
+            if (!isBlank(authorization)) {
+                spec = spec.header("Authorization", authorization);
+            }
+            String raw = spec.body(body).retrieve().body(String.class);
+            ReplyResult result = parseReply(raw);
+            log.info("[Comment] 真实回复结果: feedId={}, commentId={}, success={}",
+                    feedId, platformCommentId, result.success());
+            return result;
+        } catch (RestClientResponseException e) {
+            throw new CommentSourceException(httpErrorCode(e.getStatusCode().value()),
+                    "发送回复失败（HTTP " + e.getStatusCode().value() + "）："
+                            + preview(e.getResponseBodyAsString()), e);
+        } catch (CommentSourceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new CommentSourceException("COMMENT_REPLY_IO_ERROR",
+                    "发送回复失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 解析回复接口响应（兼容 {success,message} 与 {error,code} 两种风格）。 */
+    public ReplyResult parseReply(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return new ReplyResult(true, "已发送");
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(raw);
+        } catch (Exception e) {
+            return new ReplyResult(true, preview(raw));
+        }
+        boolean success = !root.has("success") || root.path("success").asBoolean(true);
+        JsonNode data = root.path("data");
+        if (data.isObject() && data.has("success")) {
+            success = success && data.path("success").asBoolean(true);
+        }
+        String error = textOf(root, List.of("error", "error_message"));
+        if (!isBlank(error)) {
+            success = false;
+        }
+        String message = textOf(root, List.of("message", "msg", "error", "error_message"));
+        if (isBlank(message)) {
+            message = success ? "已发送" : "发送失败";
+        }
+        return new ReplyResult(success, message);
+    }
+
+    private String replyUrl() {
+        CommentProperties.XiaohongshuProperties c = config();
+        String path = isBlank(c.getReplyPath())
+                ? (isBridgePreset() ? "/api/v1/feeds/comment/reply" : "")
+                : c.getReplyPath().trim();
+        if (path.startsWith("http://") || path.startsWith("https://")) {
+            return path;
+        }
+        String base = c.getBaseUrl() == null ? "" : c.getBaseUrl().trim();
+        if (base.endsWith("/") && path.startsWith("/")) {
+            return base.substring(0, base.length() - 1) + path;
+        }
+        if (!base.endsWith("/") && !path.startsWith("/") && !path.isEmpty()) {
+            return base + "/" + path;
+        }
+        return base + path;
+    }
+
+    /** 回复接口返回结果。 */
+    public record ReplyResult(boolean success, String message) {
+    }
     /** 一页评论数据。 */
     public record FetchPage(List<XhsComment> comments, String nextCursor, boolean hasMore) {
     }

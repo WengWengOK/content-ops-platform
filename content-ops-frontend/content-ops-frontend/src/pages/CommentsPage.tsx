@@ -228,10 +228,14 @@ export function CommentsPage() {
 
   const handleSend = async (id: string) => {
     try {
-      const updated = await sendCommentReply(id)
+      const res = await sendCommentReply(id)
+      const updated = res.comment
       setComments((prev) => prev.map((c) => (c.commentId === id ? updated : c)))
       if (chatComment?.commentId === id) setChatComment(updated)
-      showToast('回复已发送（模拟）', '#00B42A')
+      showToast(
+        res.sendMode === 'real' ? `已真实回复到平台：${res.message}` : `模拟发送：${res.message}`,
+        res.sendMode === 'real' ? '#00B42A' : '#FF7D00'
+      )
     } catch (err: any) {
       showToast(err?.message || '发送失败', '#F53F3F')
     }

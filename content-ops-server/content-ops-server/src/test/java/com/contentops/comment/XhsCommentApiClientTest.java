@@ -274,6 +274,67 @@ class XhsCommentApiClientTest {
         assertThat(page.comments().get(0).author()).isEqualTo("路人");
         assertThat(page.comments().get(0).likes()).isEqualTo(2);
     }
+    // ──────────────────────── 真实发送回复 ────────────────────────
+
+    @Test
+    @DisplayName("xhs-mcp 预设回复：请求体含 feed_id/xsec_token/comment_id/content，并解析 success/message")
+    void reply_bridgePreset_sendsAndParses() {
+        responseBody = "{\"success\":true,\"message\":\"回复成功\",\"data\":{\"feed_id\":\"note-9\",\"success\":true}}";
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        props.getXiaohongshu().setReplyPath(url());
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        XhsCommentApiClient.ReplyResult result = client.reply("note-9", "xs-1", "c-1", "谢谢支持～");
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.message()).isEqualTo("回复成功");
+        String body = bodies.get(0);
+        assertThat(body).contains("\"feed_id\":\"note-9\"")
+                .contains("\"xsec_token\":\"xs-1\"")
+                .contains("\"comment_id\":\"c-1\"")
+                .contains("谢谢支持");
+        assertThat(headers.get(0).getFirst("Authorization")).isEqualTo("Bearer token-abc");
+    }
+
+    @Test
+    @DisplayName("回复接口返回 error 字段时判定为失败")
+    void reply_errorPayload_marksFailure() {
+        XhsCommentApiClient client = new XhsCommentApiClient(properties("bearer"), new ObjectMapper());
+
+        XhsCommentApiClient.ReplyResult result =
+                client.parseReply("{\"error\":\"回复过于频繁\",\"code\":\"RATE_LIMIT\"}");
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.message()).contains("回复过于频繁");
+    }
+
+    @Test
+    @DisplayName("reply-enabled=false 时不具备真实发送能力")
+    void reply_disabled_hasNoCapability() {
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        props.getXiaohongshu().setReplyEnabled(false);
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        assertThat(client.isReplyConfigured()).isFalse();
+        assertThat(client.replyStatusHint()).contains("真实发送已关闭");
+    }
+
+    @Test
+    @DisplayName("缺少平台评论 ID 时拒绝真实回复")
+    void reply_withoutPlatformCommentId_throws() {
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        props.getXiaohongshu().setReplyPath(url());
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        CommentSourceException ex = catchThrowableOfType(
+                () -> client.reply("note-9", "xs-1", null, "内容"), CommentSourceException.class);
+
+        assertThat(ex).isNotNull();
+        assertThat(ex.getCode()).isEqualTo("COMMENT_PLATFORM_ID_REQUIRED");
+    }
     // ──────────────────────── 辅助 ────────────────────────
 
     private CommentProperties properties(String authMode) {

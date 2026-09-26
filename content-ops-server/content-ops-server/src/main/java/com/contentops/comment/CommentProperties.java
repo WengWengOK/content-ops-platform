@@ -133,5 +133,20 @@ public class CommentProperties {
 
         /** 同一作品两次采集之间的最小间隔（秒），防止高频调用触发风控 */
         private int minIntervalSeconds = 60;
+
+        /**
+         * 是否允许「真实发送回复」（审核通过后调用平台接口回复评论）。
+         * 关闭或未配置接口时，发送仅记录状态（模拟发送），不会真的回复到平台。
+         */
+        private boolean replyEnabled = true;
+
+        /** 回复接口路径（自建桥默认 /api/v1/feeds/comment/reply） */
+        private String replyPath = "";
+
+        /** 回复请求体中的评论 ID 字段名 */
+        private String commentIdParam = "comment_id";
+
+        /** 回复请求体中的内容字段名 */
+        private String contentParam = "content";
     }
 }

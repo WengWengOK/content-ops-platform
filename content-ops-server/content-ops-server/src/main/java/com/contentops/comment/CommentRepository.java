@@ -20,16 +20,16 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class CommentRepository {
 
-    private static final String COLS = "comment_id, owner_id, platform, work_id, workflow_id, author, content, "
-            + "likes, comment_time, reply_to, intent, sentiment, ai_summary, ai_reply, reply_status, "
-            + "dialog_history, collected_at";
+    private static final String COLS = "comment_id, platform_comment_id, owner_id, platform, work_id, "
+            + "workflow_id, author, content, likes, comment_time, reply_to, intent, sentiment, ai_summary, "
+            + "ai_reply, reply_status, dialog_history, collected_at";
 
     private static final String SQL_INSERT =
             "INSERT INTO contentops_comment "
-                    + "(comment_id, owner_id, platform, work_id, workflow_id, author, content, likes, "
-                    + " comment_time, reply_to, intent, sentiment, ai_summary, ai_reply, "
+                    + "(comment_id, platform_comment_id, owner_id, platform, work_id, workflow_id, author, "
+                    + " content, likes, comment_time, reply_to, intent, sentiment, ai_summary, ai_reply, "
                     + " reply_status, dialog_history, collected_at) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment "
                     + "WHERE (? = '' OR owner_id = ?) "
@@ -69,7 +69,8 @@ public class CommentRepository {
     public void insert(Comment c) {
         try {
             jdbcTemplate.update(SQL_INSERT,
-                    c.getCommentId(), c.getOwnerId(), c.getPlatform(), c.getWorkId(), c.getWorkflowId(),
+                    c.getCommentId(), c.getPlatformCommentId(), c.getOwnerId(), c.getPlatform(),
+                    c.getWorkId(), c.getWorkflowId(),
                     c.getAuthor(), c.getContent(), c.getLikes(),
                     c.getCommentTime() == null ? null : Timestamp.valueOf(c.getCommentTime()),
                     c.getReplyTo(), c.getIntent(), c.getSentiment(), c.getAiSummary(), c.getAiReply(),
@@ -173,6 +174,7 @@ public class CommentRepository {
         Timestamp collected = rs.getTimestamp("collected_at");
         return Comment.builder()
                 .commentId(rs.getString("comment_id"))
+                .platformCommentId(rs.getString("platform_comment_id"))
                 .ownerId(rs.getString("owner_id"))
                 .platform(rs.getString("platform"))
                 .workId(rs.getString("work_id"))

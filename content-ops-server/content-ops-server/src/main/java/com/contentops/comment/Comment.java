@@ -15,8 +15,11 @@ import java.time.LocalDateTime;
 @Schema(description = "平台评论条目")
 public class Comment {
 
-    @Schema(description = "评论 ID")
+    @Schema(description = "评论 ID（平台无关的内部 ID）")
     private String commentId;
+
+    @Schema(description = "平台原始评论 ID（真实回复时需要）")
+    private String platformCommentId;
 
     @Schema(description = "所属用户 ID（租户隔离）")
     private String ownerId;
