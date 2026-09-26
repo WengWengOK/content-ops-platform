@@ -3,19 +3,26 @@ package com.contentops.comment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.DigestUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
 /**
- * 小红书评论采集器（MVP：模拟数据源）。
+ * 评论采集器：统一入口，按配置选择「真实接口」或「模拟数据」。
  *
- * <p>当前阶段以 {@link #collectMockComments} 提供真实感评论数据用于跑通
- * 「采集 → 分析 → 意图识别 → AI 对话 → 审核回复」全链路；
- * 真实平台采集接口预留 {@link #collectFromPlatform}，后续接入小红书开放平台
- * 或爬虫采集（注意合规风控）时替换实现即可。
+ * <p>数据源策略（{@code contentops.comment.source}）：
+ * <ul>
+ *   <li>{@code auto}（默认）：真实接口已配置则走真实接口，否则/调用失败时回退模拟数据；</li>
+ *   <li>{@code api}：只走真实接口，失败直接抛错（生产环境推荐，避免把模拟数据当真实数据）；</li>
+ *   <li>{@code mock}：只走模拟数据（开发/演示）。</li>
+ * </ul>
+ *
+ * <p>是否允许回退由 {@code contentops.comment.fallback-to-mock} 控制，返回结果里的
+ * {@code source} 与 {@code fallbackReason} 会一并落库/返回前端，保证「数据来源可追溯」。
  */
 @Slf4j
 @Component
@@ -23,8 +30,126 @@ import java.util.Random;
 public class CommentCollector {
 
     private final CommentProperties properties;
+    private final XhsCommentApiClient apiClient;
 
-    /** 小红书评论语料池（按种子抽取，保证同一作品多次采集结果稳定） */
+    /** 采集结果：评论 + 数据源标记 + 回退原因。 */
+    public record CollectionResult(String platform, String workId, String source,
+                                   String fallbackReason, List<Comment> comments) {
+
+        public List<Comment> commentsOrEmpty() {
+            return comments == null ? List.of() : comments;
+        }
+
+        public boolean fromApi() {
+            return "api".equalsIgnoreCase(source);
+        }
+    }
+
+    /** 采集指定作品的小红书评论（默认平台）。 */
+    public CollectionResult collect(String workId, String ownerId) {
+        return collect("xiaohongshu", workId, ownerId);
+    }
+
+    /**
+     * 采集指定平台作品的评论。
+     *
+     * @param platform 平台编码（当前真实接口仅支持 xiaohongshu，其余平台回退模拟）
+     * @param workId   作品/笔记 ID
+     * @param ownerId  归属用户（租户隔离，可为 null 表示开发模式）
+     */
+    public CollectionResult collect(String platform, String workId, String ownerId) {
+        String p = platform == null || platform.isBlank() ? "xiaohongshu" : platform.trim();
+        if (workId == null || workId.isBlank()) {
+            throw new CommentSourceException("COMMENT_WORK_ID_REQUIRED", "workId 不能为空");
+        }
+        if (properties.mockOnly()) {
+            return mock(p, workId, ownerId, "数据源配置为 mock（contentops.comment.source=mock）");
+        }
+
+        String source = properties.getSource() == null ? "auto" : properties.getSource().trim().toLowerCase();
+        boolean apiConfigured = apiClient.isConfigured();
+
+        // source=api：只走真实接口，未配置或调用失败都直接报错，避免把模拟数据当成真实数据
+        if ("api".equals(source)) {
+            if (!apiConfigured) {
+                throw new CommentSourceException("COMMENT_SOURCE_NOT_CONFIGURED", apiClient.statusHint());
+            }
+            List<Comment> comments = fetchFromApi(p, workId, ownerId);
+            log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
+            return new CollectionResult(p, workId, "api", null, comments);
+        }
+
+        // source=auto：真实接口优先；未配置或失败时按 fallback-to-mock 决定是否回退模拟数据
+        if (!apiConfigured) {
+            String reason = apiClient.statusHint();
+            if (!properties.isFallbackToMock()) {
+                throw new CommentSourceException("COMMENT_SOURCE_NOT_CONFIGURED", reason);
+            }
+            return mock(p, workId, ownerId, reason);
+        }
+
+        try {
+            List<Comment> comments = fetchFromApi(p, workId, ownerId);
+            log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
+            return new CollectionResult(p, workId, "api", null, comments);
+        } catch (CommentSourceException e) {
+            if (!properties.isFallbackToMock()) {
+                throw e;
+            }
+            log.warn("[Comment] 真实接口采集失败，回退模拟数据: code={}, msg={}", e.getCode(), e.getMessage());
+            CollectionResult fallback = mock(p, workId, ownerId, e.getCode() + ": " + e.getMessage());
+            return new CollectionResult(fallback.platform(), fallback.workId(), "mock",
+                    fallback.fallbackReason(), fallback.comments());
+        }
+    }
+    /** 真实接口分页拉取。 */
+    private List<Comment> fetchFromApi(String platform, String workId, String ownerId) {
+        if (!"xiaohongshu".equalsIgnoreCase(platform)) {
+            throw new CommentSourceException("COMMENT_PLATFORM_NOT_SUPPORTED",
+                    "暂未接入 " + platform + " 的真实评论接口，可配置 contentops.comment.source=mock 使用模拟数据");
+        }
+        CommentProperties.XiaohongshuProperties cfg = properties.getXiaohongshu();
+        List<Comment> all = new ArrayList<>();
+        String cursor = "";
+        LocalDateTime now = LocalDateTime.now();
+        int maxPages = Math.max(1, cfg.getMaxPages());
+        for (int page = 0; page < maxPages; page++) {
+            XhsCommentApiClient.FetchPage fetched =
+                    apiClient.fetchPage(workId, cursor, cfg.getPageSize());
+            for (XhsCommentApiClient.XhsComment item : fetched.comments()) {
+                all.add(Comment.builder()
+                        .commentId(resolveCommentId(workId, item))
+                        .ownerId(ownerId)
+                        .platform("xiaohongshu")
+                        .workId(workId)
+                        .author(item.author() == null ? "匿名用户" : item.author())
+                        .content(item.content())
+                        .likes(item.likes())
+                        .commentTime(item.commentTime() == null ? now : item.commentTime())
+                        .replyTo(item.replyTo())
+                        .replyStatus("NONE")
+                        .collectedAt(now)
+                        .build());
+            }
+            if (!fetched.hasMore() || fetched.nextCursor() == null || fetched.nextCursor().isBlank()) {
+                break;
+            }
+            cursor = fetched.nextCursor();
+        }
+        return all;
+    }
+
+    /** 平台未返回评论 ID 时，用内容指纹生成稳定 ID，保证重复采集不重复入库。 */
+    private String resolveCommentId(String workId, XhsCommentApiClient.XhsComment item) {
+        if (item.commentId() != null && !item.commentId().isBlank()) {
+            return "xhs-" + item.commentId().trim();
+        }
+        String raw = workId + "|" + safe(item.author()) + "|" + safe(item.content()) + "|"
+                + (item.commentTime() == null ? "" : item.commentTime().toString());
+        return "xhs-" + DigestUtils.md5DigestAsHex(raw.getBytes(StandardCharsets.UTF_8)).substring(0, 24);
+    }
+
+    /** 小红书评论语料池（模拟数据源，按种子抽取保证同一作品多次采集结果稳定）。 */
     private static final String[][] MOCK_POOL = {
             {"种草小鹿", "蹲一个详细教程，真的太需要了！", "咨询"},
             {"爱吃火锅的喵", "这个配色好好看，求链接求链接~", "潜在客户"},
@@ -52,17 +177,12 @@ public class CommentCollector {
             {"行动派", "已经下单啦，到货来反馈", "潜在客户"},
     };
 
-    /**
-     * 模拟采集：按 workId 种子抽取 8-12 条评论（含少量楼中楼回复）。
-     */
-    public List<Comment> collectMockComments(String workId, String ownerId) {
+    /** 模拟采集：按 workId 种子抽取若干条评论（含少量楼中楼回复）。 */
+    private CollectionResult mock(String platform, String workId, String ownerId, String reason) {
         Random random = new Random(workId == null ? 42L : workId.hashCode() * 31L + 7L);
-        int count = properties.getMockCount() > 0
-                ? properties.getMockCount()
-                : 8 + random.nextInt(5);
+        int count = properties.getMockCount() > 0 ? properties.getMockCount() : 8 + random.nextInt(5);
         count = Math.min(count, MOCK_POOL.length);
 
-        // 打乱语料池下标
         List<Integer> indexes = new ArrayList<>();
         for (int i = 0; i < MOCK_POOL.length; i++) {
             indexes.add(i);
@@ -78,11 +198,10 @@ public class CommentCollector {
         LocalDateTime now = LocalDateTime.now();
         for (int i = 0; i < count; i++) {
             String[] row = MOCK_POOL[indexes.get(i)];
-            String commentId = "xhs-mock-" + (workId == null ? "none" : workId) + "-" + (i + 1);
             comments.add(Comment.builder()
-                    .commentId(commentId)
+                    .commentId("xhs-mock-" + (workId == null ? "none" : workId) + "-" + (i + 1))
                     .ownerId(ownerId)
-                    .platform("xiaohongshu")
+                    .platform(platform)
                     .workId(workId)
                     .author(row[0])
                     .content(row[1])
@@ -92,15 +211,13 @@ public class CommentCollector {
                     .collectedAt(now)
                     .build());
         }
-
-        // 给部分评论追加楼中楼（replyTo 指向一条已有评论）
         if (comments.size() >= 3) {
             int threadIdx = random.nextInt(comments.size());
             Comment parent = comments.get(threadIdx);
             comments.add(Comment.builder()
                     .commentId("xhs-mock-" + (workId == null ? "none" : workId) + "-thread-" + (threadIdx + 1))
                     .ownerId(ownerId)
-                    .platform("xiaohongshu")
+                    .platform(platform)
                     .workId(workId)
                     .author("楼主")
                     .content("谢谢支持！已私信你啦～")
@@ -111,16 +228,22 @@ public class CommentCollector {
                     .collectedAt(now)
                     .build());
         }
-        log.info("[Comment] 模拟采集完成: workId={}, count={}", workId, comments.size());
-        return comments;
+        log.info("[Comment] 模拟采集完成: project={}, workId={}, 条数={}, 原因={}",
+                platform, workId, comments.size(), reason);
+        return new CollectionResult(platform, workId, "mock", reason, comments);
     }
 
-    /**
-     * 真实平台采集入口（预留）：当前返回空并记录日志，接入小红书开放平台后替换。
-     */
+    /** 兼容旧调用：仅返回模拟数据。 */
+    public List<Comment> collectMockComments(String workId, String ownerId) {
+        return mock("xiaohongshu", workId, ownerId, "手动调用模拟采集").comments();
+    }
+
+    /** 兼容旧调用：返回采集结果里的评论列表（内部按配置选择数据源）。 */
     public List<Comment> collectFromPlatform(String workId, String ownerId) {
-        log.warn("[Comment] 真实平台采集未接入，回退模拟数据: workId={}", workId);
-        return collectMockComments(workId, ownerId);
+        return collect(workId, ownerId).commentsOrEmpty();
     }
 
+    private String safe(String s) {
+        return s == null ? "" : s;
+    }
 }

@@ -239,3 +239,43 @@ CREATE INDEX IF NOT EXISTS idx_comment_intent
     ON contentops_comment (intent);
 CREATE INDEX IF NOT EXISTS idx_comment_owner_time
     ON contentops_comment (owner_id, collected_at DESC);
+
+-- 评论自动采集监控项：把作品加入监控后由定时任务周期性抓取新评论
+CREATE TABLE IF NOT EXISTS contentops_comment_watch (
+    watch_id           VARCHAR(64)  PRIMARY KEY,
+    owner_id           VARCHAR(64),
+    platform           VARCHAR(32)  NOT NULL,
+    work_id            VARCHAR(128) NOT NULL,
+    workflow_id        VARCHAR(64),
+    auto_analyze       BOOLEAN      DEFAULT TRUE,
+    enabled            BOOLEAN      DEFAULT TRUE,
+    last_collected_at  TIMESTAMP,
+    last_new_count     INT          DEFAULT 0,
+    total_collected    INT          DEFAULT 0,
+    last_source        VARCHAR(32),
+    last_error         VARCHAR(1000),
+    created_at         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_comment_watch_owner
+    ON contentops_comment_watch (owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_comment_watch_due
+    ON contentops_comment_watch (enabled, last_collected_at);
+
+-- 评论采集任务运行记录（每轮定时/手动采集的执行结果）
+CREATE TABLE IF NOT EXISTS contentops_comment_job_run (
+    run_id             VARCHAR(64)  PRIMARY KEY,
+    trigger_type       VARCHAR(32),
+    started_at         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at        TIMESTAMP,
+    works_scanned      INT          DEFAULT 0,
+    comments_collected INT          DEFAULT 0,
+    comments_new       INT          DEFAULT 0,
+    analyzed           INT          DEFAULT 0,
+    failed             INT          DEFAULT 0,
+    source             VARCHAR(64),
+    detail             VARCHAR(2000)
+);
+
+CREATE INDEX IF NOT EXISTS idx_comment_job_run_time
+    ON contentops_comment_job_run (started_at DESC);

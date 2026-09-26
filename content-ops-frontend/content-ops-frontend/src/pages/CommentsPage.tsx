@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Layout } from '@/components/layout/Layout'
 import {
+  addCommentWatch,
   analyzeAllComments,
   analyzeComment,
   approveCommentReply,
   chatCommentReply,
   collectComments,
+  getCommentScheduler,
+  getCommentSourceStatus,
   getCommentStats,
   listComments,
+  listCommentWatches,
+  removeCommentWatch,
+  runAllCommentWatches,
+  runCommentWatch,
   sendCommentReply,
+  setCommentWatchEnabled,
   updateCommentReply,
 } from '@/api/comments'
-import type { CommentStats, PlatformComment } from '@/types'
+import type {
+  CommentSchedulerStatus,
+  CommentSourceStatus,
+  CommentStats,
+  CommentWatch,
+  PlatformComment,
+} from '@/types'
 
 const INTENTS = ['咨询', '求教程', '售后', '吐槽', '表扬', '推广', '潜在客户', '反馈', '无关']
 const SENTIMENTS = ['POSITIVE', 'NEUTRAL', 'NEGATIVE']
@@ -64,6 +78,14 @@ export function CommentsPage() {
   const [dialogTurns, setDialogTurns] = useState<DialogTurn[]>([])
   const [editReply, setEditReply] = useState('')
 
+  // 自动采集监控
+  const [watches, setWatches] = useState<CommentWatch[]>([])
+  const [scheduler, setScheduler] = useState<CommentSchedulerStatus | null>(null)
+  const [sourceStatus, setSourceStatus] = useState<CommentSourceStatus | null>(null)
+  const [watchInput, setWatchInput] = useState('')
+  const [watchAutoAnalyze, setWatchAutoAnalyze] = useState(true)
+  const [watchBusy, setWatchBusy] = useState('')
+
   const showToast = (msg: string, color = '#165DFF') => {
     setToast({ msg, color })
     setTimeout(() => setToast(null), 2600)
@@ -108,10 +130,12 @@ export function CommentsPage() {
       return
     }
     try {
-      const res = await collectComments(workId.trim())
-      showToast(`采集完成：新增 ${res.inserted}/${res.collected} 条评论`, '#00B42A')
+      const res = await collectComments(workId.trim(), platform || 'xiaohongshu')
+      const srcLabel = res.source === 'api' ? '真实接口' : '模拟数据'
+      showToast(`采集完成（${srcLabel}）：新增 ${res.inserted}/${res.collected} 条评论`, '#00B42A')
       await loadComments()
       await loadStats()
+      await loadWatches()
     } catch (err: any) {
       showToast(err?.message || '采集失败', '#F53F3F')
     }
@@ -212,6 +236,109 @@ export function CommentsPage() {
     }
   }
 
+  const loadWatches = useCallback(async () => {
+    try {
+      setWatches(await listCommentWatches())
+    } catch {
+      setWatches([])
+    }
+  }, [])
+
+  const loadScheduler = useCallback(async () => {
+    try {
+      setScheduler(await getCommentScheduler())
+    } catch {
+      setScheduler(null)
+    }
+  }, [])
+
+  const loadSourceStatus = useCallback(async () => {
+    try {
+      setSourceStatus(await getCommentSourceStatus())
+    } catch {
+      setSourceStatus(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadWatches()
+    void loadScheduler()
+    void loadSourceStatus()
+  }, [loadWatches, loadScheduler, loadSourceStatus])
+
+  const handleAddWatch = async () => {
+    const id = watchInput.trim()
+    if (!id) {
+      showToast('请先输入要监控的作品 ID', '#F53F3F')
+      return
+    }
+    try {
+      await addCommentWatch({ workId: id, platform: platform || 'xiaohongshu', autoAnalyze: watchAutoAnalyze })
+      setWatchInput('')
+      await loadWatches()
+      await loadScheduler()
+      showToast(`已加入自动采集监控：${id}`, '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '加入监控失败', '#F53F3F')
+    }
+  }
+
+  const handleToggleWatch = async (watch: CommentWatch) => {
+    try {
+      await setCommentWatchEnabled(watch.watchId, !watch.enabled)
+      await loadWatches()
+      await loadScheduler()
+      showToast(watch.enabled ? '已暂停监控' : '已启用监控', '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '操作失败', '#F53F3F')
+    }
+  }
+
+  const handleRemoveWatch = async (watchId: string) => {
+    try {
+      await removeCommentWatch(watchId)
+      await loadWatches()
+      await loadScheduler()
+      showToast('已移除监控作品', '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '移除失败', '#F53F3F')
+    }
+  }
+
+  const handleRunWatch = async (watchId: string) => {
+    setWatchBusy(watchId)
+    try {
+      const res = await runCommentWatch(watchId)
+      const srcLabel = res.source === 'api' ? '真实接口' : res.source === 'mock' ? '模拟数据' : '无数据'
+      showToast(`采集完成（${srcLabel}）：新增 ${res.inserted} 条，分析 ${res.analyzed} 条`, '#00B42A')
+      await loadWatches()
+      await loadComments()
+      await loadStats()
+      await loadScheduler()
+    } catch (err: any) {
+      showToast(err?.message || '采集失败', '#F53F3F')
+      await loadWatches()
+    } finally {
+      setWatchBusy('')
+    }
+  }
+
+  const handleRunAll = async () => {
+    try {
+      const run = await runAllCommentWatches()
+      showToast(
+        `批量采集完成：作品 ${run.worksScanned}，新增 ${run.commentsNew}，分析 ${run.analyzed}`,
+        run.failed > 0 ? '#FF7D00' : '#00B42A'
+      )
+      await loadWatches()
+      await loadComments()
+      await loadStats()
+      await loadScheduler()
+    } catch (err: any) {
+      showToast(err?.message || '批量采集失败', '#F53F3F')
+    }
+  }
+
   const timeStr = (t?: string) => {
     if (!t) return ''
     return new Date(t).toLocaleString('zh-CN', { hour12: false })
@@ -302,6 +429,155 @@ export function CommentsPage() {
             {error}
           </div>
         )}
+      </div>
+
+      {/* 自动采集监控 */}
+      <div className="mb-4 rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-medium" style={{ color: '#1D2129' }}>
+            ⏱️ 自动采集监控
+            {scheduler && (
+              <span className="ml-2 text-xs font-normal" style={{ color: '#86909C' }}>
+                {scheduler.scheduled ? `每 ${Math.max(1, Math.round(scheduler.collectMs / 60000))} 分钟自动采集` : '定时任务已关闭'}
+                {' · '}监控 {scheduler.watchCount} 个作品
+                {' · '}自动分析 {scheduler.autoAnalyze ? `开（单轮≤${scheduler.autoAnalyzeLimit}条）` : '关'}
+                {' · '}单作品最小间隔 {scheduler.minIntervalSeconds}s
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => void handleRunAll()}
+            className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+            style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
+          >
+            ▶ 立即执行一轮
+          </button>
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: '#86909C' }}>作品 ID</span>
+            <input
+              value={watchInput}
+              onChange={(e) => setWatchInput(e.target.value)}
+              placeholder="填入要长期监控的作品 ID"
+              className="w-64 rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: '#E5E6EB' }}
+            />
+          </div>
+          <label className="flex items-center gap-2 pb-2 text-xs" style={{ color: '#4E5969' }}>
+            <input
+              type="checkbox"
+              checked={watchAutoAnalyze}
+              onChange={(e) => setWatchAutoAnalyze(e.target.checked)}
+            />
+            新评论自动 AI 分析
+          </label>
+          <button
+            onClick={() => void handleAddWatch()}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white"
+            style={{ background: '#722ED1' }}
+          >
+            ＋ 加入监控
+          </button>
+        </div>
+
+        {sourceStatus && (
+          <div
+            className="mb-3 rounded-lg px-3 py-2 text-xs"
+            style={{
+              background: sourceStatus.xiaohongshuConfigured ? '#E8FFEA' : '#FFF7E8',
+              color: sourceStatus.xiaohongshuConfigured ? '#00782C' : '#9C5B00',
+            }}
+          >
+            数据源：
+            {sourceStatus.configuredSource === 'auto'
+              ? '真实接口优先（不可用时回退模拟）'
+              : sourceStatus.configuredSource === 'api'
+                ? '仅真实接口（失败即报错）'
+                : '仅模拟数据'}
+            {sourceStatus.xiaohongshuConfigured
+              ? ` · 小红书真实接口已配置（${sourceStatus.xiaohongshuAuthMode}）`
+              : ` · 小红书真实接口未配置：${sourceStatus.hint}`}
+          </div>
+        )}
+
+        {scheduler?.lastRun && (
+          <div className="mb-3 text-xs" style={{ color: '#86909C' }}>
+            上次运行：{timeStr(scheduler.lastRun.startedAt)}（{scheduler.lastRun.triggerType === 'schedule' ? '定时' : '手动'}）
+            {' · '}作品 {scheduler.lastRun.worksScanned}
+            {' · '}抓取 {scheduler.lastRun.commentsCollected}
+            {' · '}新增 {scheduler.lastRun.commentsNew}
+            {' · '}分析 {scheduler.lastRun.analyzed}
+            {scheduler.lastRun.failed > 0 ? ` · 失败 ${scheduler.lastRun.failed}` : ''}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {watches.length === 0 && (
+            <div className="text-xs" style={{ color: '#86909C' }}>
+              还没有监控作品。把作品 ID 加入监控后，定时任务会持续抓取新评论并（可选）自动分析。
+            </div>
+          )}
+          {watches.map((w) => (
+            <div
+              key={w.watchId}
+              className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs"
+              style={{ borderColor: '#F2F3F5' }}
+            >
+              <span className="font-medium" style={{ color: '#1D2129' }}>{w.workId}</span>
+              <span className="rounded px-2 py-0.5" style={{ background: '#F2F3F5', color: '#4E5969' }}>{w.platform}</span>
+              <span
+                className="rounded px-2 py-0.5"
+                style={{
+                  background: w.enabled ? '#E8FFEA' : '#F2F3F5',
+                  color: w.enabled ? '#00782C' : '#86909C',
+                }}
+              >
+                {w.enabled ? '监控中' : '已暂停'}
+              </span>
+              {w.autoAnalyze && (
+                <span className="rounded px-2 py-0.5" style={{ background: '#F5E8FF', color: '#722ED1' }}>
+                  自动分析
+                </span>
+              )}
+              {w.lastSource && (
+                <span className="rounded px-2 py-0.5" style={{ background: '#F2F3F5', color: '#4E5969' }}>
+                  上次源 {w.lastSource}
+                </span>
+              )}
+              <span style={{ color: '#86909C' }}>
+                累计 {w.totalCollected} 条 · 上次新增 {w.lastNewCount} ·{' '}
+                {w.lastCollectedAt ? timeStr(w.lastCollectedAt) : '尚未采集'}
+              </span>
+              {w.lastError && <span style={{ color: '#F53F3F' }}>⚠️ {w.lastError}</span>}
+              <span className="ml-auto flex gap-2">
+                <button
+                  onClick={() => void handleRunWatch(w.watchId)}
+                  disabled={watchBusy === w.watchId}
+                  className="rounded-lg border px-2 py-1 disabled:opacity-40"
+                  style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
+                >
+                  {watchBusy === w.watchId ? '采集中…' : '立即采集'}
+                </button>
+                <button
+                  onClick={() => void handleToggleWatch(w)}
+                  className="rounded-lg border px-2 py-1"
+                  style={{ borderColor: '#E5E6EB', color: '#FF7D00' }}
+                >
+                  {w.enabled ? '暂停' : '启用'}
+                </button>
+                <button
+                  onClick={() => void handleRemoveWatch(w.watchId)}
+                  className="rounded-lg border px-2 py-1"
+                  style={{ borderColor: '#E5E6EB', color: '#F53F3F' }}
+                >
+                  移除
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 统计区 */}

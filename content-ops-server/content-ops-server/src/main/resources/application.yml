@@ -230,6 +230,12 @@ contentops:
   # 多 Agent 协作框架（com.contentops.common.agent）
   # 图片生成（OpenAI 兼容协议，支持火山引擎 ARK / DALL-E 等）
   platform:
+    # 小红书开放平台凭据（供平台工具/评论接口签名使用）
+    xiaohongshu:
+      app-id: ${XHS_APP_ID:}
+      app-secret: ${XHS_APP_SECRET:}
+      enabled: ${XHS_PLATFORM_ENABLED:false}
+      base-url: ${XHS_PLATFORM_BASE_URL:https://open.xiaohongshu.com}
     image-generation:
       # 火山引擎 ARK Key（开发默认内置；生产请改用环境变量 VOLCENGINE_IMAGE_API_KEY 注入，勿入库）
       api-key: ${VOLCENGINE_IMAGE_API_KEY:ark-your-volcengine-key}
@@ -285,8 +291,55 @@ contentops:
   # 评论区 AI 助手（MVP：小红书）：作品发布后评论采集/意图识别/AI 对话/审核发送
   comment:
     enabled: ${CONTENTOPS_COMMENT_ENABLED:true}
-    collect-ms: ${CONTENTOPS_COMMENT_COLLECT_MS:60000}
+    # 定时采集间隔（默认 10 分钟）与首次启动延迟
+    collect-ms: ${CONTENTOPS_COMMENT_COLLECT_MS:600000}
+    initial-delay-ms: ${CONTENTOPS_COMMENT_INITIAL_DELAY_MS:30000}
+    scheduled: ${CONTENTOPS_COMMENT_SCHEDULED:true}
     mock-count: ${CONTENTOPS_COMMENT_MOCK_COUNT:10}
+    # 数据源：auto（真实优先，失败回退）| api（仅真实，失败报错）| mock（仅模拟）
+    source: ${CONTENTOPS_COMMENT_SOURCE:auto}
+    fallback-to-mock: ${CONTENTOPS_COMMENT_FALLBACK_TO_MOCK:true}
+    max-works-per-tick: ${CONTENTOPS_COMMENT_MAX_WORKS_PER_TICK:20}
+    # 新评论自动 AI 分析（成本控制：单轮最多分析 auto-analyze-limit 条）
+    auto-analyze: ${CONTENTOPS_COMMENT_AUTO_ANALYZE:true}
+    auto-analyze-limit: ${CONTENTOPS_COMMENT_AUTO_ANALYZE_LIMIT:20}
+
+    # ════════════════════════════════════════════════════════════════
+    # 小红书真实评论接口（可插拔数据源：换服务商只改配置）
+    # 注意：小红书官方开放平台当前仅开放电商类 API（订单/售后/商品/库存/物流/财务），
+    #       没有笔记评论接口。真实评论数据需配置第三方数据服务或自建采集桥的 endpoint + token。
+    # 示例（第三方数据服务，bearer 鉴权）：
+    #   enabled: true
+    #   endpoint: https://api.your-data-provider.com/xhs/note/comments
+    #   method: POST
+    #   auth-mode: bearer
+    #   access-token: ${XHS_COMMENT_ACCESS_TOKEN}
+    # 示例（官方开放平台网关，签名鉴权）：
+    #   enabled: true
+    #   base-url: https://open.xiaohongshu.com
+    #   endpoint: /ark/open_api/v3/common_controller
+    #   auth-mode: ark-sign
+    #   app-id: ${XHS_APP_ID}
+    #   app-secret: ${XHS_APP_SECRET}
+    # ════════════════════════════════════════════════════════════════
+    xiaohongshu:
+      enabled: ${CONTENTOPS_XHS_COMMENT_ENABLED:false}
+      base-url: ${CONTENTOPS_XHS_COMMENT_BASE_URL:https://open.xiaohongshu.com}
+      endpoint: ${CONTENTOPS_XHS_COMMENT_ENDPOINT:}
+      method: ${CONTENTOPS_XHS_COMMENT_METHOD:POST}
+      auth-mode: ${CONTENTOPS_XHS_COMMENT_AUTH_MODE:bearer}
+      access-token: ${XHS_COMMENT_ACCESS_TOKEN:}
+      app-id: ${XHS_APP_ID:}
+      app-secret: ${XHS_APP_SECRET:}
+      method-name: ${CONTENTOPS_XHS_COMMENT_METHOD_NAME:note.comment.list}
+      timeout-ms: ${CONTENTOPS_XHS_COMMENT_TIMEOUT_MS:20000}
+      page-size: ${CONTENTOPS_XHS_COMMENT_PAGE_SIZE:20}
+      max-pages: ${CONTENTOPS_XHS_COMMENT_MAX_PAGES:5}
+      note-id-param: ${CONTENTOPS_XHS_COMMENT_NOTE_ID_PARAM:note_id}
+      cursor-param: ${CONTENTOPS_XHS_COMMENT_CURSOR_PARAM:cursor}
+      page-size-param: ${CONTENTOPS_XHS_COMMENT_PAGE_SIZE_PARAM:limit}
+      list-path: ${CONTENTOPS_XHS_COMMENT_LIST_PATH:}
+      min-interval-seconds: ${CONTENTOPS_XHS_COMMENT_MIN_INTERVAL:60}
 
   # LLM 可观测性（P0）：每次真实模型调用的 trace + token/成本/延迟统计
   observability:

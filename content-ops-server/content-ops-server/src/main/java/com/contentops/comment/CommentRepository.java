@@ -5,17 +5,24 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * 评论仓储：采集入库（按 comment_id 去重）、过滤查询、意图/情感统计、分析与回复状态更新。
+ */
 @Slf4j
 @Repository
 @RequiredArgsConstructor
 public class CommentRepository {
 
-    private final JdbcTemplate jdbcTemplate;
+    private static final String COLS = "comment_id, owner_id, platform, work_id, workflow_id, author, content, "
+            + "likes, comment_time, reply_to, intent, sentiment, ai_summary, ai_reply, reply_status, "
+            + "dialog_history, collected_at";
 
     private static final String SQL_INSERT =
             "INSERT INTO contentops_comment "
@@ -24,9 +31,7 @@ public class CommentRepository {
                     + " reply_status, dialog_history, collected_at) "
                     + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String SQL_LIST =
-            "SELECT comment_id, owner_id, platform, work_id, workflow_id, author, content, likes, "
-                    + "comment_time, reply_to, intent, sentiment, ai_summary, ai_reply, "
-                    + "reply_status, dialog_history, collected_at FROM contentops_comment "
+            "SELECT " + COLS + " FROM contentops_comment "
                     + "WHERE (? = '' OR owner_id = ?) "
                     + "  AND (? IS NULL OR ? = '' OR platform = ?) "
                     + "  AND (? IS NULL OR ? = '' OR work_id = ?) "
@@ -34,12 +39,15 @@ public class CommentRepository {
                     + "  AND (? IS NULL OR ? = '' OR sentiment = ?) "
                     + "ORDER BY collected_at DESC LIMIT ?";
     private static final String SQL_BY_ID =
-            "SELECT comment_id, owner_id, platform, work_id, workflow_id, author, content, likes, "
-                    + "comment_time, reply_to, intent, sentiment, ai_summary, ai_reply, "
-                    + "reply_status, dialog_history, collected_at FROM contentops_comment "
-                    + "WHERE comment_id = ?";
+            "SELECT " + COLS + " FROM contentops_comment WHERE comment_id = ?";
+    private static final String SQL_EXISTS =
+            "SELECT COUNT(1) FROM contentops_comment WHERE comment_id = ?";
     private static final String SQL_UPDATE_ANALYSIS =
             "UPDATE contentops_comment SET intent = ?, sentiment = ?, ai_summary = ?, ai_reply = ? "
+                    + "WHERE comment_id = ?";
+    private static final String SQL_UPDATE_ANALYSIS_DRAFT =
+            "UPDATE contentops_comment SET intent = ?, sentiment = ?, ai_summary = ?, ai_reply = ?, "
+                    + "reply_status = CASE WHEN reply_status = 'NONE' THEN 'DRAFT' ELSE reply_status END "
                     + "WHERE comment_id = ?";
     private static final String SQL_UPDATE_REPLY =
             "UPDATE contentops_comment SET ai_reply = ?, reply_status = ? WHERE comment_id = ?";
@@ -56,6 +64,8 @@ public class CommentRepository {
                     + "  AND (? IS NULL OR ? = '' OR work_id = ?) "
                     + "GROUP BY sentiment ORDER BY cnt DESC";
 
+    private final JdbcTemplate jdbcTemplate;
+
     public void insert(Comment c) {
         try {
             jdbcTemplate.update(SQL_INSERT,
@@ -66,19 +76,33 @@ public class CommentRepository {
                     c.getReplyStatus() == null ? "NONE" : c.getReplyStatus(),
                     c.getDialogHistory(), Timestamp.valueOf(java.time.LocalDateTime.now()));
         } catch (Exception e) {
-            log.warn("[Comment] 插入失败: err={}", e.getMessage());
+            log.warn("[Comment] 插入失败(可能是重复评论): id={}, err={}", c.getCommentId(), e.getMessage());
+        }
+    }
+
+    /** 评论是否已存在（采集去重，避免重复调用模型分析）。 */
+    public boolean exists(String commentId) {
+        if (commentId == null || commentId.isBlank()) {
+            return false;
+        }
+        try {
+            Integer count = jdbcTemplate.queryForObject(SQL_EXISTS, Integer.class, commentId);
+            return count != null && count > 0;
+        } catch (Exception e) {
+            log.debug("[Comment] 存在性检查失败: id={}, err={}", commentId, e.getMessage());
+            return false;
         }
     }
 
     public List<Comment> list(String ownerId, String platform, String workId,
                               String intent, String sentiment, int limit) {
+        String o = ownerId == null ? "" : ownerId;
+        String p = platform == null ? "" : platform;
+        String w = workId == null ? "" : workId;
+        String i = intent == null ? "" : intent;
+        String s = sentiment == null ? "" : sentiment;
         try {
-            String o = ownerId == null ? "" : ownerId;
-            String p = platform == null ? "" : platform;
-            String w = workId == null ? "" : workId;
-            String i = intent == null ? "" : intent;
-            String s = sentiment == null ? "" : sentiment;
-            return jdbcTemplate.query(SQL_LIST, (rs, n) -> mapRow(rs),
+            return jdbcTemplate.query(SQL_LIST, this::mapRow,
                     o, o, p, p, p, w, w, w, i, i, i, s, s, s, limit);
         } catch (Exception e) {
             log.error("[Comment] 查询失败", e);
@@ -88,7 +112,7 @@ public class CommentRepository {
 
     public Optional<Comment> findById(String commentId) {
         try {
-            return jdbcTemplate.query(SQL_BY_ID, (rs, n) -> mapRow(rs), commentId).stream().findFirst();
+            return jdbcTemplate.query(SQL_BY_ID, this::mapRow, commentId).stream().findFirst();
         } catch (Exception e) {
             log.error("[Comment] 按 ID 查询失败", e);
             return Optional.empty();
@@ -101,6 +125,16 @@ public class CommentRepository {
             jdbcTemplate.update(SQL_UPDATE_ANALYSIS, intent, sentiment, summary, reply, commentId);
         } catch (Exception e) {
             log.warn("[Comment] 更新分析失败: id={}", commentId);
+        }
+    }
+
+    /** 更新分析结果，并把尚未处理的评论置为「草稿」状态（有待发回复）。 */
+    public void updateAnalysisAndStatus(String commentId, String intent, String sentiment,
+                                        String summary, String reply) {
+        try {
+            jdbcTemplate.update(SQL_UPDATE_ANALYSIS_DRAFT, intent, sentiment, summary, reply, commentId);
+        } catch (Exception e) {
+            log.warn("[Comment] 更新分析(含状态)失败: id={}, err={}", commentId, e.getMessage());
         }
     }
 
@@ -134,7 +168,7 @@ public class CommentRepository {
         return jdbcTemplate.queryForList(SQL_STATS_SENTIMENT, o, o, p, p, p, w, w, w);
     }
 
-    private Comment mapRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+    private Comment mapRow(ResultSet rs, int rowNum) throws SQLException {
         Timestamp commentTime = rs.getTimestamp("comment_time");
         Timestamp collected = rs.getTimestamp("collected_at");
         return Comment.builder()

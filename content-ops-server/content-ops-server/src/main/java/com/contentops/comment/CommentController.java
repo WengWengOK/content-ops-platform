@@ -1,6 +1,9 @@
 package com.contentops.comment;
 
+import com.contentops.common.audit.AuditService;
 import com.contentops.common.dto.AgentResponse;
+import com.contentops.common.exception.BusinessException;
+import com.contentops.common.exception.ErrorCode;
 import com.contentops.common.security.AuthContext;
 import com.contentops.common.security.RequireRole;
 import com.contentops.common.security.UserRole;
@@ -10,16 +13,27 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
- * 评论区 AI 助手（MVP：小红书）：
- * 作品发布后的评论采集 → 意图/情感分析 → 多轮 AI 对话 → 审核/发送。
+ * 评论区 AI 助手（小红书优先）：
+ * 评论采集（真实接口/模拟）→ 意图情感分析 → 多轮 AI 对话 → 审核发送，
+ * 并支持把作品加入「自动采集监控」由定时任务持续拉取新评论。
  */
 @Slf4j
 @RestController
@@ -33,34 +47,71 @@ public class CommentController {
     private final CommentRepository repository;
     private final CommentAnalysisService analysisService;
     private final CommentReplyService replyService;
+    private final CommentWatchRepository watchRepository;
+    private final CommentCollectionJob collectionJob;
+    private final CommentJobRunRepository jobRunRepository;
+    private final CommentProperties properties;
+    private final XhsCommentApiClient apiClient;
+    private final AuditService auditService;
 
     /** 开发模式（未开启鉴权）时 ownerId 为 null，SQL 侧自动不过滤，保证联调可用 */
     private String ownerId() {
         return AuthContext.currentUserId();
     }
 
+    // ──────────────────────── 采集 ────────────────────────
+
     @PostMapping("/collect")
-    @Operation(summary = "采集评论（MVP 模拟小红书数据源）")
+    @Operation(summary = "采集评论（按配置走真实接口或模拟数据源）")
     public AgentResponse<Map<String, Object>> collect(@RequestBody CollectRequest request) {
         if (request.getWorkId() == null || request.getWorkId().isBlank()) {
             return AgentResponse.failure("comment", "workId 不能为空");
         }
-        List<Comment> comments = collector.collectFromPlatform(request.getWorkId().trim(), ownerId());
+        String platform = blank(request.getPlatform()).isBlank() ? "xiaohongshu" : request.getPlatform().trim();
+        CommentCollector.CollectionResult result;
+        try {
+            result = collector.collect(platform, request.getWorkId().trim(), ownerId());
+        } catch (CommentSourceException e) {
+            return AgentResponse.failure("comment", "[" + e.getCode() + "] " + e.getMessage());
+        }
+
         int inserted = 0;
-        for (Comment c : comments) {
-            long before = repository.findById(c.getCommentId()).isPresent() ? 1 : 0;
+        for (Comment c : result.commentsOrEmpty()) {
+            if (repository.exists(c.getCommentId())) {
+                continue;
+            }
             repository.insert(c);
-            long after = repository.findById(c.getCommentId()).isPresent() ? 1 : 0;
-            if (after > before) {
+            if (repository.exists(c.getCommentId())) {
                 inserted++;
             }
         }
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("collected", comments.size());
+        data.put("collected", result.commentsOrEmpty().size());
         data.put("inserted", inserted);
-        data.put("comments", comments);
+        data.put("source", result.source());
+        data.put("fallbackReason", result.fallbackReason());
+        data.put("comments", result.commentsOrEmpty());
         return AgentResponse.success("comment", data);
     }
+
+    @GetMapping("/source-status")
+    @Operation(summary = "数据源诊断：真实接口是否已配置及排查提示")
+    public AgentResponse<Map<String, Object>> sourceStatus() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("configuredSource", properties.getSource());
+        data.put("xiaohongshuEnabled", properties.getXiaohongshu().isEnabled());
+        data.put("xiaohongshuConfigured", apiClient.isConfigured());
+        data.put("xiaohongshuEndpoint", properties.getXiaohongshu().getEndpoint());
+        data.put("xiaohongshuAuthMode", properties.getXiaohongshu().getAuthMode());
+        data.put("fallbackToMock", properties.isFallbackToMock());
+        data.put("hint", apiClient.statusHint());
+        data.put("platformNote",
+                "小红书官方开放平台当前仅开放电商类 API（订单/售后/商品/库存/物流/财务），"
+                        + "未提供笔记评论接口；真实评论数据请配置第三方数据服务或自建采集桥的 endpoint + access-token");
+        return AgentResponse.success("comment", data);
+    }
+
+    // ──────────────────────── 列表 / 统计 ────────────────────────
 
     @GetMapping
     @Operation(summary = "评论列表（平台/作品/意图/情感过滤）")
@@ -90,13 +141,111 @@ public class CommentController {
         return AgentResponse.success("comment", data);
     }
 
-    @GetMapping("/{commentId}")
-    @Operation(summary = "评论详情")
-    public AgentResponse<Comment> get(@PathVariable String commentId) {
-        return repository.findById(commentId)
-                .map(c -> AgentResponse.success("comment", c))
-                .orElseGet(() -> AgentResponse.failure("comment", "评论不存在: " + commentId));
+    // ──────────────────────── 自动采集监控 ────────────────────────
+
+    @GetMapping("/watches")
+    @Operation(summary = "我的评论监控作品列表")
+    public AgentResponse<List<CommentWatch>> watches() {
+        return AgentResponse.success("comment", watchRepository.list(ownerId(), 100));
     }
+
+    @PostMapping("/watches")
+    @Operation(summary = "把作品加入自动采集监控（可选自动分析）")
+    public AgentResponse<CommentWatch> addWatch(@RequestBody AddWatchRequest request) {
+        if (request.getWorkId() == null || request.getWorkId().isBlank()) {
+            return AgentResponse.failure("comment", "workId 不能为空");
+        }
+        String platform = blank(request.getPlatform()).isBlank() ? "xiaohongshu" : request.getPlatform().trim();
+        String owner = ownerId();
+        CommentWatch existing = watchRepository.findByWork(platform, request.getWorkId().trim(), owner).orElse(null);
+        if (existing != null) {
+            return AgentResponse.success("comment", existing,
+                    Map.of("message", "该作品已在监控列表中"));
+        }
+        CommentWatch watch = CommentWatch.builder()
+                .watchId(UUID.randomUUID().toString())
+                .ownerId(owner)
+                .platform(platform)
+                .workId(request.getWorkId().trim())
+                .workflowId(blank(request.getWorkflowId()))
+                .autoAnalyze(request.getAutoAnalyze() == null ? properties.isAutoAnalyze() : request.getAutoAnalyze())
+                .enabled(true)
+                .totalCollected(0)
+                .createdAt(LocalDateTime.now())
+                .build();
+        watchRepository.insert(watch);
+        auditService.record("COMMENT_WATCH_ADD", "comment-watch", watch.getWatchId(),
+                "添加评论监控作品：" + platform + "/" + watch.getWorkId());
+        return AgentResponse.success("comment", watch);
+    }
+
+    @PutMapping("/watches/{watchId}/enabled")
+    @Operation(summary = "启用/暂停监控作品")
+    public AgentResponse<Map<String, Object>> setWatchEnabled(@PathVariable String watchId,
+                                                              @RequestBody SetEnabledRequest request) {
+        CommentWatch watch = requireWatch(watchId);
+        watchRepository.updateEnabled(watch.getWatchId(), request.isEnabled());
+        auditService.record("COMMENT_WATCH_TOGGLE", "comment-watch", watchId,
+                request.isEnabled() ? "启用评论监控" : "暂停评论监控");
+        return AgentResponse.success("comment", Map.of(
+                "watchId", watchId,
+                "enabled", request.isEnabled()));
+    }
+
+    @DeleteMapping("/watches/{watchId}")
+    @Operation(summary = "移除监控作品")
+    public AgentResponse<Map<String, Object>> removeWatch(@PathVariable String watchId) {
+        CommentWatch watch = requireWatch(watchId);
+        watchRepository.delete(watch.getWatchId());
+        auditService.record("COMMENT_WATCH_REMOVE", "comment-watch", watchId, "移除评论监控作品");
+        return AgentResponse.success("comment", Map.of("removed", true, "watchId", watchId));
+    }
+
+    @PostMapping("/watches/{watchId}/run")
+    @Operation(summary = "立即采集该监控作品的新评论")
+    public AgentResponse<Map<String, Object>> runWatch(@PathVariable String watchId) {
+        CommentWatch watch = requireWatch(watchId);
+        CommentCollectionJob.WatchRunResult result =
+                collectionJob.runForWatch(watch, Math.max(0, properties.getAutoAnalyzeLimit()));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("watchId", result.watchId());
+        data.put("workId", result.workId());
+        data.put("source", result.source());
+        data.put("fallbackReason", result.fallbackReason());
+        data.put("collected", result.collected());
+        data.put("inserted", result.inserted());
+        data.put("analyzed", result.analyzed());
+        data.put("error", result.error());
+        return result.error() == null
+                ? AgentResponse.success("comment", data)
+                : AgentResponse.failure("comment", result.error());
+    }
+
+    @PostMapping("/watches/run-all")
+    @Operation(summary = "立即执行一轮批量采集（等价于一次定时任务）")
+    public AgentResponse<CommentJobRun> runAll() {
+        CommentJobRun run = collectionJob.runOnce("manual");
+        return AgentResponse.success("comment", run);
+    }
+
+    @GetMapping("/scheduler")
+    @Operation(summary = "定时采集状态：间隔、自动分析、监控数量、最近一次运行")
+    public AgentResponse<Map<String, Object>> schedulerStatus() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("enabled", properties.isEnabled());
+        data.put("scheduled", properties.isScheduled());
+        data.put("collectMs", properties.getCollectMs());
+        data.put("maxWorksPerTick", properties.getMaxWorksPerTick());
+        data.put("autoAnalyze", properties.isAutoAnalyze());
+        data.put("autoAnalyzeLimit", properties.getAutoAnalyzeLimit());
+        data.put("minIntervalSeconds", properties.getXiaohongshu().getMinIntervalSeconds());
+        data.put("watchCount", watchRepository.list(ownerId(), 500).size());
+        data.put("lastRun", jobRunRepository.latest().orElse(null));
+        data.put("timestamp", LocalDateTime.now());
+        return AgentResponse.success("comment", data);
+    }
+
+    // ──────────────────────── 分析 / 对话 / 回复 ────────────────────────
 
     @PostMapping("/analyze-all")
     @Operation(summary = "批量分析某作品的评论（意图/情感/摘要/回复草稿）")
@@ -108,7 +257,7 @@ public class CommentController {
         for (Comment c : comments) {
             if (c.getIntent() == null || c.getIntent().isBlank()) {
                 Comment analyzed = analysisService.analyze(c);
-                repository.updateAnalysis(c.getCommentId(), analyzed.getIntent(),
+                repository.updateAnalysisAndStatus(c.getCommentId(), analyzed.getIntent(),
                         analyzed.getSentiment(), analyzed.getAiSummary(), analyzed.getAiReply());
                 updated.add(analyzed);
             }
@@ -122,13 +271,12 @@ public class CommentController {
     @PostMapping("/{commentId}/analyze")
     @Operation(summary = "单条评论 AI 分析")
     public AgentResponse<Comment> analyze(@PathVariable String commentId) {
-        Comment comment = repository.findById(commentId)
-                .orElse(null);
+        Comment comment = repository.findById(commentId).orElse(null);
         if (comment == null) {
             return AgentResponse.failure("comment", "评论不存在: " + commentId);
         }
         Comment analyzed = analysisService.analyze(comment);
-        repository.updateAnalysis(commentId, analyzed.getIntent(), analyzed.getSentiment(),
+        repository.updateAnalysisAndStatus(commentId, analyzed.getIntent(), analyzed.getSentiment(),
                 analyzed.getAiSummary(), analyzed.getAiReply());
         return AgentResponse.success("comment", analyzed);
     }
@@ -147,23 +295,41 @@ public class CommentController {
     @PostMapping("/{commentId}/approve")
     @Operation(summary = "审核通过：DRAFT → APPROVED")
     public AgentResponse<Comment> approve(@PathVariable String commentId) {
-        Comment comment = replyService.approve(commentId);
-        return AgentResponse.success("comment", comment);
+        return AgentResponse.success("comment", replyService.approve(commentId));
     }
 
     @PostMapping("/{commentId}/send")
-    @Operation(summary = "发送回复：APPROVED → SENT（MVP 模拟发送）")
+    @Operation(summary = "发送回复：APPROVED → SENT（当前为模拟发送）")
     public AgentResponse<Comment> send(@PathVariable String commentId) {
-        Comment comment = replyService.send(commentId);
-        return AgentResponse.success("comment", comment);
+        return AgentResponse.success("comment", replyService.send(commentId));
     }
 
     @PutMapping("/{commentId}/reply")
     @Operation(summary = "人工修改回复内容/状态")
     public AgentResponse<Comment> updateReply(@PathVariable String commentId,
                                               @RequestBody UpdateReplyRequest request) {
-        Comment comment = replyService.updateReply(commentId, request.getReply(), request.getStatus());
-        return AgentResponse.success("comment", comment);
+        return AgentResponse.success("comment",
+                replyService.updateReply(commentId, request.getReply(), request.getStatus()));
+    }
+
+    @GetMapping("/{commentId}")
+    @Operation(summary = "评论详情")
+    public AgentResponse<Comment> get(@PathVariable String commentId) {
+        return repository.findById(commentId)
+                .map(c -> AgentResponse.success("comment", c))
+                .orElseGet(() -> AgentResponse.failure("comment", "评论不存在: " + commentId));
+    }
+
+    // ──────────────────────── 内部工具 ────────────────────────
+
+    private CommentWatch requireWatch(String watchId) {
+        CommentWatch watch = watchRepository.findById(watchId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "监控项不存在: " + watchId));
+        String owner = ownerId();
+        if (owner != null && watch.getOwnerId() != null && !owner.equals(watch.getOwnerId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作该监控项");
+        }
+        return watch;
     }
 
     private String blank(String s) {
@@ -174,6 +340,21 @@ public class CommentController {
     public static class CollectRequest {
         @NotBlank(message = "workId 不能为空")
         private String workId;
+        private String platform;
+    }
+
+    @Data
+    public static class AddWatchRequest {
+        @NotBlank(message = "workId 不能为空")
+        private String workId;
+        private String platform;
+        private String workflowId;
+        private Boolean autoAnalyze;
+    }
+
+    @Data
+    public static class SetEnabledRequest {
+        private boolean enabled = true;
     }
 
     @Data

@@ -601,3 +601,57 @@ export interface CommentStats {
   intent: CommentStatsItem[]
   sentiment: CommentStatsItem[]
 }
+
+export interface CommentWatch {
+  watchId: string
+  ownerId?: string
+  platform: string
+  workId: string
+  workflowId?: string
+  autoAnalyze: boolean
+  enabled: boolean
+  lastCollectedAt?: string
+  lastNewCount: number
+  totalCollected: number
+  lastSource?: string
+  lastError?: string
+  createdAt?: string
+}
+
+export interface CommentJobRun {
+  runId: string
+  triggerType?: string
+  startedAt?: string
+  finishedAt?: string
+  worksScanned: number
+  commentsCollected: number
+  commentsNew: number
+  analyzed: number
+  failed: number
+  source?: string
+  detail?: string
+}
+
+export interface CommentSchedulerStatus {
+  enabled: boolean
+  scheduled: boolean
+  collectMs: number
+  maxWorksPerTick: number
+  autoAnalyze: boolean
+  autoAnalyzeLimit: number
+  minIntervalSeconds: number
+  watchCount: number
+  lastRun?: CommentJobRun | null
+  timestamp?: string
+}
+
+export interface CommentSourceStatus {
+  configuredSource: string
+  xiaohongshuEnabled: boolean
+  xiaohongshuConfigured: boolean
+  xiaohongshuEndpoint?: string
+  xiaohongshuAuthMode?: string
+  fallbackToMock: boolean
+  hint: string
+  platformNote: string
+}

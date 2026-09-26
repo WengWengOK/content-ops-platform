@@ -2,22 +2,39 @@
  * 评论区 AI 助手 API —— 采集/分析/对话/审核/统计。
  */
 import { apiClient } from './client'
-import type { AgentResponse, CommentStats, PlatformComment } from '@/types'
+import type {
+  AgentResponse,
+  CommentJobRun,
+  CommentSchedulerStatus,
+  CommentSourceStatus,
+  CommentStats,
+  CommentWatch,
+  PlatformComment,
+} from '@/types'
 
 function unwrap<T>(resp: AgentResponse<T>): T {
   if (resp.success) return resp.data
   throw new Error(resp.error || resp.message || 'API returned failure')
 }
 
-/** POST /comments/collect — 采集评论（MVP 模拟小红书数据源） */
+/** POST /comments/collect — 采集评论（后端按配置走真实接口或模拟数据源） */
 export async function collectComments(
-  workId: string
-): Promise<{ collected: number; inserted: number; comments: PlatformComment[] }> {
+  workId: string,
+  platform = 'xiaohongshu'
+): Promise<{
+  collected: number
+  inserted: number
+  source: string
+  fallbackReason?: string
+  comments: PlatformComment[]
+}> {
   const { data } = await apiClient.post<AgentResponse<{
     collected: number
     inserted: number
+    source: string
+    fallbackReason?: string
     comments: PlatformComment[]
-  }>>('/comments/collect', { workId })
+  }>>('/comments/collect', { workId, platform })
   return unwrap(data)
 }
 
@@ -102,5 +119,78 @@ export async function updateCommentReply(
     `/comments/${commentId}/reply`,
     body
   )
+  return unwrap(data)
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  自动采集监控 + 调度状态 + 数据源诊断
+// ═══════════════════════════════════════════════════════════════
+
+/** GET /comments/watches — 我的评论监控作品列表 */
+export async function listCommentWatches(): Promise<CommentWatch[]> {
+  const { data } = await apiClient.get<AgentResponse<CommentWatch[]>>('/comments/watches')
+  return unwrap(data)
+}
+
+/** POST /comments/watches — 把作品加入自动采集监控 */
+export async function addCommentWatch(body: {
+  workId: string
+  platform?: string
+  workflowId?: string
+  autoAnalyze?: boolean
+}): Promise<CommentWatch> {
+  const { data } = await apiClient.post<AgentResponse<CommentWatch>>('/comments/watches', body)
+  return unwrap(data)
+}
+
+/** PUT /comments/watches/{id}/enabled — 启用/暂停监控 */
+export async function setCommentWatchEnabled(watchId: string, enabled: boolean): Promise<void> {
+  await apiClient.put(`/comments/watches/${watchId}/enabled`, { enabled })
+}
+
+/** DELETE /comments/watches/{id} — 移除监控 */
+export async function removeCommentWatch(watchId: string): Promise<void> {
+  await apiClient.delete(`/comments/watches/${watchId}`)
+}
+
+/** POST /comments/watches/{id}/run — 立即采集该作品的新评论 */
+export async function runCommentWatch(watchId: string): Promise<{
+  watchId: string
+  workId: string
+  source?: string
+  fallbackReason?: string
+  collected: number
+  inserted: number
+  analyzed: number
+  error?: string
+}> {
+  const { data } = await apiClient.post<AgentResponse<{
+    watchId: string
+    workId: string
+    source?: string
+    fallbackReason?: string
+    collected: number
+    inserted: number
+    analyzed: number
+    error?: string
+  }>>(`/comments/watches/${watchId}/run`)
+  return unwrap(data)
+}
+
+/** POST /comments/watches/run-all — 立即执行一轮批量采集 */
+export async function runAllCommentWatches(): Promise<CommentJobRun> {
+  const { data } = await apiClient.post<AgentResponse<CommentJobRun>>('/comments/watches/run-all')
+  return unwrap(data)
+}
+
+/** GET /comments/scheduler — 定时采集状态 */
+export async function getCommentScheduler(): Promise<CommentSchedulerStatus> {
+  const { data } = await apiClient.get<AgentResponse<CommentSchedulerStatus>>('/comments/scheduler')
+  return unwrap(data)
+}
+
+/** GET /comments/source-status — 数据源诊断（真实接口是否已配置） */
+export async function getCommentSourceStatus(): Promise<CommentSourceStatus> {
+  const { data } = await apiClient.get<AgentResponse<CommentSourceStatus>>('/comments/source-status')
   return unwrap(data)
 }
