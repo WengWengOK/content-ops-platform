@@ -21,6 +21,9 @@ public class Comment {
     @Schema(description = "平台原始评论 ID（真实回复时需要）")
     private String platformCommentId;
 
+    @Schema(description = "采集渠道：note（按笔记）/ notification（评论通知）/ mock")
+    private String collectedVia;
+
     @Schema(description = "所属用户 ID（租户隔离）")
     private String ownerId;
 

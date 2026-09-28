@@ -113,6 +113,8 @@ public class CommentController {
         data.put("xiaohongshuNotificationConfigured", apiClient.isNotificationConfigured());
         data.put("notificationTab", properties.getXiaohongshu().getNotificationTab());
         data.put("notificationHint", apiClient.notificationStatusHint());
+        data.put("xiaohongshuNotificationReplyConfigured", apiClient.isNotificationReplyConfigured());
+        data.put("notificationReplyHint", apiClient.notificationReplyStatusHint());
         data.put("platformNote",
                 "小红书官方开放平台当前仅开放电商类 API（订单/售后/商品/库存/物流/财务），"
                         + "未提供笔记评论接口；真实评论数据请配置第三方数据服务或自建采集桥的 endpoint + access-token");

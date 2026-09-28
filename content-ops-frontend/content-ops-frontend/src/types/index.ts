@@ -573,6 +573,8 @@ export type CommentReplyStatus = 'NONE' | 'DRAFT' | 'APPROVED' | 'SENT'
 
 export interface PlatformComment {
   commentId: string
+  platformCommentId?: string
+  collectedVia?: string
   ownerId?: string
   platform: string
   workId?: string

@@ -1082,6 +1082,96 @@ public class XhsCommentApiClient {
                     || (commentText != null && !commentText.isBlank());
         }
     }
+    // ════════════════════════ 通知直回复 ════════════════════════
+    //
+    // 通知里发现的评论往往没有笔记票据（feed_xsec_token），而通知回复接口只需要
+    // comment_id + content，因此对「通知来源」的评论优先走这条路径。
+
+    /** 是否具备通知直回复能力。 */
+    public boolean isNotificationReplyConfigured() {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!c.isEnabled() || !c.isNotificationReplyEnabled()) {
+            return false;
+        }
+        boolean hasEndpoint = isBridgePreset() || !isBlank(c.getNotificationReplyPath());
+        boolean hasAuth = "none".equals(normalizeAuth(c.getAuthMode())) || !isBlank(c.getAccessToken());
+        return hasEndpoint && hasAuth;
+    }
+
+    /** 通知直回复的配置诊断提示。 */
+    public String notificationReplyStatusHint() {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!c.isEnabled()) {
+            return "真实接口未启用：contentops.comment.xiaohongshu.enabled=false";
+        }
+        if (!c.isNotificationReplyEnabled()) {
+            return "通知直回复已关闭：contentops.comment.xiaohongshu.notification-reply-enabled=false";
+        }
+        if (!isBridgePreset() && isBlank(c.getNotificationReplyPath())) {
+            return "未配置通知回复接口：contentops.comment.xiaohongshu.notification-reply-path";
+        }
+        if (!"none".equals(normalizeAuth(c.getAuthMode())) && isBlank(c.getAccessToken())) {
+            return "缺少 access-token（自建桥为启动时的 AUTH_TOKEN）";
+        }
+        return "可通知直回复：" + notificationReplyUrl();
+    }
+
+    /**
+     * 通过通知接口回复评论（自建桥 {@code POST /api/v1/notifications/reply}）。
+     *
+     * @param platformCommentId 平台原始评论 ID（必填）
+     * @param content           回复内容
+     */
+    public ReplyResult replyToNotification(String platformCommentId, String content) {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (isBlank(platformCommentId)) {
+            throw new CommentSourceException("COMMENT_PLATFORM_ID_REQUIRED",
+                    "缺少平台原始评论 ID，无法回复（该评论可能是基于内容指纹生成的，请重新采集）");
+        }
+        if (isBlank(content)) {
+            throw new CommentSourceException("COMMENT_REPLY_CONTENT_REQUIRED", "回复内容不能为空");
+        }
+        if (!isNotificationReplyConfigured()) {
+            throw new CommentSourceException("COMMENT_REPLY_NOT_CONFIGURED", notificationReplyStatusHint());
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put(c.getCommentIdParam(), platformCommentId);
+        body.put(c.getContentParam(), content);
+
+        try {
+            RestClient client = buildClient();
+            var spec = client.post()
+                    .uri(notificationReplyUrl())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON);
+            String authorization = authorizationHeader(normalizeAuth(c.getAuthMode()));
+            if (!isBlank(authorization)) {
+                spec = spec.header("Authorization", authorization);
+            }
+            String raw = spec.body(body).retrieve().body(String.class);
+            ReplyResult result = parseReply(raw);
+            log.info("[Comment] 通知直回复结果: commentId={}, success={}", platformCommentId, result.success());
+            return result;
+        } catch (RestClientResponseException e) {
+            throw new CommentSourceException(httpErrorCode(e.getStatusCode().value()),
+                    "通知回复失败（HTTP " + e.getStatusCode().value() + "）："
+                            + preview(e.getResponseBodyAsString()), e);
+        } catch (CommentSourceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new CommentSourceException("COMMENT_REPLY_IO_ERROR",
+                    "通知回复失败: " + e.getMessage(), e);
+        }
+    }
+
+    private String notificationReplyUrl() {
+        CommentProperties.XiaohongshuProperties c = config();
+        String path = isBlank(c.getNotificationReplyPath())
+                ? (isBridgePreset() ? "/api/v1/notifications/reply" : "")
+                : c.getNotificationReplyPath().trim();
+        return joinUrl(c.getBaseUrl(), path);
+    }
     /** 一页评论数据。 */
     public record FetchPage(List<XhsComment> comments, String nextCursor, boolean hasMore) {
     }

@@ -121,6 +121,68 @@ class CommentReplyServiceTest {
         assertThat(ex.getMessage()).contains("请先审核通过");
     }
 
+    @Test
+    @DisplayName("通知来源的评论：优先走通知直回复，不调用笔记页回复")
+    void send_notificationSourced_prefersNotificationReply() {
+        Comment comment = comment("c1", "APPROVED");
+        comment.setCollectedVia("notification");
+        when(repository.findById("c1")).thenReturn(Optional.of(comment));
+        when(apiClient.isNotificationReplyConfigured()).thenReturn(true);
+        when(apiClient.isReplyConfigured()).thenReturn(true);
+        when(apiClient.replyToNotification("c-raw-1", "谢谢支持～"))
+                .thenReturn(new XhsCommentApiClient.ReplyResult(true, "回复成功"));
+
+        CommentReplyService.SendResult result = service.send("c1", null);
+
+        assertThat(result.sendMode()).isEqualTo("real");
+        assertThat(result.message()).contains("通知直接回复");
+        verify(apiClient, never()).reply(anyString(), any(), anyString(), anyString());
+        verify(repository).updateReply("c1", "谢谢支持～", "SENT");
+    }
+
+    @Test
+    @DisplayName("通知直回复失败：回退笔记页回复（有票据时）")
+    void send_notificationReplyFails_fallsBackToFeedReply() {
+        Comment comment = comment("c1", "APPROVED");
+        comment.setCollectedVia("notification");
+        when(repository.findById("c1")).thenReturn(Optional.of(comment));
+        when(apiClient.isNotificationReplyConfigured()).thenReturn(true);
+        when(apiClient.isReplyConfigured()).thenReturn(true);
+        when(apiClient.replyToNotification(anyString(), anyString()))
+                .thenThrow(new CommentSourceException("COMMENT_SOURCE_HTTP_500", "通知已过期"));
+        when(watchRepository.findByWork("xiaohongshu", "note-9", "owner-1"))
+                .thenReturn(Optional.of(CommentWatch.builder()
+                        .watchId("w1").platform("xiaohongshu").workId("note-9")
+                        .xsecToken("xs-1").autoAnalyze(true).enabled(true).build()));
+        when(apiClient.reply(eq("note-9"), eq("xs-1"), eq("c-raw-1"), eq("谢谢支持～")))
+                .thenReturn(new XhsCommentApiClient.ReplyResult(true, "回复成功"));
+
+        CommentReplyService.SendResult result = service.send("c1", null);
+
+        assertThat(result.sendMode()).isEqualTo("real");
+        assertThat(result.message()).contains("笔记页回复");
+    }
+
+    @Test
+    @DisplayName("笔记来源的评论：走笔记页回复，不调用通知直回复")
+    void send_noteSourced_usesFeedReply() {
+        Comment comment = comment("c1", "APPROVED");
+        comment.setCollectedVia("note");
+        when(repository.findById("c1")).thenReturn(Optional.of(comment));
+        when(apiClient.isNotificationReplyConfigured()).thenReturn(true);
+        when(apiClient.isReplyConfigured()).thenReturn(true);
+        when(watchRepository.findByWork("xiaohongshu", "note-9", "owner-1"))
+                .thenReturn(Optional.of(CommentWatch.builder()
+                        .watchId("w1").platform("xiaohongshu").workId("note-9")
+                        .xsecToken("xs-1").autoAnalyze(true).enabled(true).build()));
+        when(apiClient.reply(eq("note-9"), eq("xs-1"), eq("c-raw-1"), eq("谢谢支持～")))
+                .thenReturn(new XhsCommentApiClient.ReplyResult(true, "回复成功"));
+
+        CommentReplyService.SendResult result = service.send("c1", null);
+
+        assertThat(result.message()).contains("笔记页回复");
+        verify(apiClient, never()).replyToNotification(anyString(), anyString());
+    }
     private Comment comment(String id, String status) {
         return Comment.builder()
                 .commentId(id)

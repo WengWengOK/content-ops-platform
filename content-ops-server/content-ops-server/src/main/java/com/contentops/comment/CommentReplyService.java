@@ -119,9 +119,12 @@ public class CommentReplyService {
             throw new BusinessException(ErrorCode.MISSING_REQUIRED_INPUT, "回复内容为空，无法发送");
         }
 
+        boolean notificationReplyAvailable = "notification".equalsIgnoreCase(comment.getCollectedVia())
+                && apiClient.isNotificationReplyConfigured();
+        boolean feedReplyAvailable = apiClient.isReplyConfigured();
         boolean realSendAllowed = properties.getXiaohongshu().isReplyEnabled()
                 && "xiaohongshu".equalsIgnoreCase(comment.getPlatform())
-                && apiClient.isReplyConfigured();
+                && (feedReplyAvailable || notificationReplyAvailable);
         if (!realSendAllowed) {
             repository.updateReply(commentId, reply, "SENT");
             log.info("[Comment] 回复已发送（模拟，未配置真实回复接口）: id={}", commentId);
@@ -131,19 +134,41 @@ public class CommentReplyService {
 
         String platformCommentId = resolvePlatformCommentId(comment);
         String xsecToken = resolveXsecToken(comment, xsecTokenOverride);
-        XhsCommentApiClient.ReplyResult result;
-        try {
-            result = apiClient.reply(comment.getWorkId(), xsecToken, platformCommentId, reply);
-        } catch (CommentSourceException e) {
-            throw new BusinessException(replyErrorCode(e.getCode()), e.getMessage());
+
+        // 通知来源的评论优先走「通知直回复」（只需 comment_id，不依赖笔记票据）；
+        // 失败时再回退到「笔记页回复」，两条路都不通就把通知那条错误暴露出来（更贴近真实原因）。
+        XhsCommentApiClient.ReplyResult result = null;
+        String channel = null;
+        CommentSourceException notificationFailure = null;
+        if (notificationReplyAvailable) {
+            try {
+                result = apiClient.replyToNotification(platformCommentId, reply);
+                channel = "notification";
+            } catch (CommentSourceException e) {
+                notificationFailure = e;
+                log.warn("[Comment] 通知直回复失败，尝试回退笔记页回复: id={}, err={}",
+                        commentId, e.getMessage());
+            }
+        }
+        if (result == null) {
+            try {
+                result = apiClient.reply(comment.getWorkId(), xsecToken, platformCommentId, reply);
+                channel = "feed";
+            } catch (CommentSourceException e) {
+                CommentSourceException toThrow = notificationFailure != null ? notificationFailure : e;
+                throw new BusinessException(replyErrorCode(toThrow.getCode()), toThrow.getMessage());
+            }
         }
         if (!result.success()) {
-            throw new BusinessException(ErrorCode.AGENT_CALL_FAILED, "真实回复失败：" + result.message());
+            throw new BusinessException(ErrorCode.AGENT_CALL_FAILED,
+                    ("notification".equals(channel) ? "通知直回复失败：" : "真实回复失败：") + result.message());
         }
         repository.updateReply(commentId, reply, "SENT");
-        log.info("[Comment] 真实回复已发送: id={}, platformCommentId={}", commentId, platformCommentId);
+        log.info("[Comment] 真实回复已发送: id={}, platformCommentId={}, channel={}",
+                commentId, platformCommentId, channel);
         return new SendResult(repository.findById(commentId).orElse(comment), "real",
-                "已通过真实接口回复：" + result.message());
+                ("notification".equals(channel) ? "已通过通知直接回复：" : "已通过笔记页回复：")
+                        + result.message());
     }
 
     /** 平台原始评论 ID：优先取采集时保存的值，其次从内部 ID 前缀还原（内容指纹 ID 除外）。 */

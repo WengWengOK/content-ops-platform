@@ -215,6 +215,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_action_time
 CREATE TABLE IF NOT EXISTS contentops_comment (
     comment_id          VARCHAR(64)  PRIMARY KEY,
     platform_comment_id VARCHAR(128),
+    collected_via       VARCHAR(16),
     owner_id            VARCHAR(64),
     platform      VARCHAR(32)  NOT NULL,
     work_id       VARCHAR(128),
@@ -287,3 +288,6 @@ ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS xsec_token VARCHAR
 
 -- 存量库迁移：评论表补「平台原始评论 ID」列（真实回复需要，幂等）
 ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS platform_comment_id VARCHAR(128);
+
+-- 存量库迁移：评论表补「采集渠道」列（note/notification/mock，幂等）
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS collected_via VARCHAR(16);

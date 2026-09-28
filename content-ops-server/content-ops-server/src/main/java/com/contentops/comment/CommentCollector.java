@@ -164,6 +164,7 @@ public class CommentCollector {
             comments.add(Comment.builder()
                     .commentId(internalId)
                     .platformCommentId(platformCommentId)
+                    .collectedVia("notification")
                     .ownerId(ownerId)
                     .platform("xiaohongshu")
                     .workId(isBlank(notification.feedId()) ? "" : notification.feedId().trim())
@@ -235,6 +236,7 @@ public class CommentCollector {
                 all.add(Comment.builder()
                         .commentId(resolveCommentId(workId, item))
                         .platformCommentId(item.commentId())
+                        .collectedVia("note")
                         .ownerId(ownerId)
                         .platform("xiaohongshu")
                         .workId(workId)
@@ -316,6 +318,7 @@ public class CommentCollector {
             String[] row = MOCK_POOL[indexes.get(i)];
             comments.add(Comment.builder()
                     .commentId("xhs-mock-" + (workId == null ? "none" : workId) + "-" + (i + 1))
+                    .collectedVia("mock")
                     .ownerId(ownerId)
                     .platform(platform)
                     .workId(workId)

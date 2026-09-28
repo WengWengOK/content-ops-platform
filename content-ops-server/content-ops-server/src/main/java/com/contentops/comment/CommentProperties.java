@@ -171,5 +171,13 @@ public class CommentProperties {
 
         /** 从通知里发现新笔记时，是否自动加入监控（带上通知里的 feed_xsec_token） */
         private boolean autoWatchFromNotifications = true;
+
+        // ─── 通知直回复（只需 comment_id，无需笔记票据，比笔记页回复更稳）───
+
+        /** 是否允许通过通知接口直接回复评论 */
+        private boolean notificationReplyEnabled = true;
+
+        /** 通知回复接口路径（自建桥默认 /api/v1/notifications/reply） */
+        private String notificationReplyPath = "";
     }
 }

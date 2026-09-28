@@ -715,6 +715,13 @@ export function CommentsPage() {
                   style={{ background: '#F2F3F5', color: '#4E5969' }}>
                   {STATUS_CN[c.replyStatus ?? 'NONE'] ?? c.replyStatus}
                 </span>
+                {c.collectedVia && (
+                  <span className="rounded px-2 py-0.5 text-xs"
+                    style={{ background: c.collectedVia === 'notification' ? '#F5E8FF' : '#F2F3F5',
+                             color: c.collectedVia === 'notification' ? '#722ED1' : '#86909C' }}>
+                    {c.collectedVia === 'notification' ? '通知采集' : c.collectedVia === 'mock' ? '模拟' : '笔记采集'}
+                  </span>
+                )}
                 <span className="text-xs" style={{ color: '#86909C' }}>
                   👍 {c.likes ?? 0} · {timeStr(c.commentTime)}
                 </span>

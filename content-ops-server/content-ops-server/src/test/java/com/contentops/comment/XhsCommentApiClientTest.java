@@ -403,6 +403,38 @@ class XhsCommentApiClientTest {
         assertThat(ex.getCode()).isEqualTo("COMMENT_NOTIFICATION_NOT_CONFIGURED");
         assertThat(bodies).isEmpty();
     }
+    // ──────────────────────── 通知直回复 ────────────────────────
+
+    @Test
+    @DisplayName("通知直回复：请求体只含 comment_id/content，解析 success/message")
+    void replyToNotification_sendsAndParses() {
+        responseBody = "{\"success\":true,\"message\":\"回复成功\"}";
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        props.getXiaohongshu().setNotificationReplyPath(url());
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        XhsCommentApiClient.ReplyResult result = client.replyToNotification("notif-c1", "谢谢支持～");
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.message()).isEqualTo("回复成功");
+        String body = bodies.get(0);
+        assertThat(body).contains("\"comment_id\":\"notif-c1\"").contains("谢谢支持");
+        assertThat(body).doesNotContain("xsec_token");
+        assertThat(headers.get(0).getFirst("Authorization")).isEqualTo("Bearer token-abc");
+    }
+
+    @Test
+    @DisplayName("通知回复开关关闭时不具备能力，给出诊断提示")
+    void replyToNotification_disabled_hasNoCapability() {
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        props.getXiaohongshu().setNotificationReplyEnabled(false);
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        assertThat(client.isNotificationReplyConfigured()).isFalse();
+        assertThat(client.notificationReplyStatusHint()).contains("通知直回复已关闭");
+    }
     // ──────────────────────── 辅助 ────────────────────────
 
     private CommentProperties properties(String authMode) {
