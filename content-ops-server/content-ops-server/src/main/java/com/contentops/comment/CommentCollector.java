@@ -8,8 +8,11 @@ import org.springframework.util.DigestUtils;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.UUID;
 
 /**
  * 评论采集器：统一入口，按配置选择「真实接口」或「模拟数据」。
@@ -31,6 +34,7 @@ public class CommentCollector {
 
     private final CommentProperties properties;
     private final XhsCommentApiClient apiClient;
+    private final CommentWatchRepository watchRepository;
 
     /** 采集结果：评论 + 数据源标记 + 回退原因。 */
     public record CollectionResult(String platform, String workId, String source,
@@ -107,6 +111,110 @@ public class CommentCollector {
             CollectionResult fallback = mock(p, workId, ownerId, e.getCode() + ": " + e.getMessage());
             return new CollectionResult(fallback.platform(), fallback.workId(), "mock",
                     fallback.fallbackReason(), fallback.comments());
+        }
+    }
+    /** 通知增量采集结果。 */
+    public record NotificationCollectionResult(String source, String fallbackReason, String tab,
+                                               int filtered, List<Comment> comments,
+                                               int createdWatches, Map<String, Object> unread) {
+
+        public List<Comment> commentsOrEmpty() {
+            return comments == null ? List.of() : comments;
+        }
+    }
+
+    /**
+     * 从「评论通知」增量采集（账号级）。
+     *
+     * <p>相比按笔记轮询：一次请求覆盖所有笔记的新评论，且通知自带 {@code feed_xsec_token}，
+     * 可用于后续读取/回复；发现新笔记时按配置自动加入监控。
+     */
+    public NotificationCollectionResult collectFromNotifications(String ownerId, String tab, int limit) {
+        if (!apiClient.isNotificationConfigured()) {
+            String hint = apiClient.notificationStatusHint();
+            if (!properties.isFallbackToMock()) {
+                throw new CommentSourceException("COMMENT_NOTIFICATION_NOT_CONFIGURED", hint);
+            }
+            return new NotificationCollectionResult("none", hint,
+                    tab == null ? "" : tab, 0, List.of(), 0, Map.of());
+        }
+
+        int effectiveLimit = limit <= 0 ? properties.getXiaohongshu().getNotificationLimit() : limit;
+        XhsCommentApiClient.NotificationPage page = apiClient.fetchNotifications(tab, effectiveLimit);
+        List<Comment> comments = new ArrayList<>();
+        Map<String, String> discoveredNotes = new LinkedHashMap<>();
+        LocalDateTime now = LocalDateTime.now();
+
+        for (XhsCommentApiClient.XhsNotification notification : page.items()) {
+            if (!notification.commentLike()) {
+                continue;
+            }
+            String content = !isBlank(notification.commentText())
+                    ? notification.commentText()
+                    : notification.title();
+            if (isBlank(content)) {
+                continue;
+            }
+            String platformCommentId = notification.commentId();
+            String internalId = !isBlank(platformCommentId)
+                    ? "xhs-" + platformCommentId.trim()
+                    : "xhs-notif-" + (isBlank(notification.id())
+                            ? Integer.toHexString(content.hashCode())
+                            : notification.id().trim());
+            comments.add(Comment.builder()
+                    .commentId(internalId)
+                    .platformCommentId(platformCommentId)
+                    .ownerId(ownerId)
+                    .platform("xiaohongshu")
+                    .workId(isBlank(notification.feedId()) ? "" : notification.feedId().trim())
+                    .author(isBlank(notification.nickname()) ? "匿名用户" : notification.nickname())
+                    .content(content)
+                    .likes(0)
+                    .commentTime(notification.time() == null ? now : notification.time())
+                    .replyStatus("NONE")
+                    .collectedAt(now)
+                    .build());
+            if (!isBlank(notification.feedId()) && !isBlank(notification.feedXsecToken())) {
+                discoveredNotes.putIfAbsent(notification.feedId().trim(),
+                        notification.feedXsecToken().trim());
+            }
+        }
+
+        int createdWatches = 0;
+        if (properties.getXiaohongshu().isAutoWatchFromNotifications()) {
+            for (Map.Entry<String, String> entry : discoveredNotes.entrySet()) {
+                createdWatches += autoWatch(ownerId, entry.getKey(), entry.getValue());
+            }
+        }
+        Map<String, Object> unread = apiClient.fetchUnreadCounts();
+        log.info("[Comment] 通知增量采集完成: tab={}, 通知={}, 评论={}, 新建监控={}, filtered={}",
+                page.tab(), page.items().size(), comments.size(), createdWatches, page.filtered());
+        return new NotificationCollectionResult("api", null, page.tab(), page.filtered(),
+                comments, createdWatches, unread);
+    }
+
+    /** 通知里发现的新笔记自动加入监控（带上通知自带的 feed_xsec_token）。 */
+    private int autoWatch(String ownerId, String workId, String xsecToken) {
+        try {
+            if (watchRepository.findByWork("xiaohongshu", workId, ownerId).isPresent()) {
+                return 0;
+            }
+            watchRepository.insert(CommentWatch.builder()
+                    .watchId(UUID.randomUUID().toString())
+                    .ownerId(ownerId)
+                    .platform("xiaohongshu")
+                    .workId(workId)
+                    .xsecToken(xsecToken)
+                    .autoAnalyze(properties.isAutoAnalyze())
+                    .enabled(true)
+                    .totalCollected(0)
+                    .createdAt(LocalDateTime.now())
+                    .build());
+            log.info("[Comment] 通知发现新笔记，已自动加入监控: workId={}", workId);
+            return 1;
+        } catch (Exception e) {
+            log.warn("[Comment] 自动加入监控失败: workId={}, err={}", workId, e.getMessage());
+            return 0;
         }
     }
     /** 真实接口分页拉取。 */
@@ -249,6 +357,10 @@ public class CommentCollector {
     /** 兼容旧调用：返回采集结果里的评论列表（内部按配置选择数据源）。 */
     public List<Comment> collectFromPlatform(String workId, String ownerId) {
         return collect(workId, ownerId).commentsOrEmpty();
+    }
+
+    private boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     private String safe(String s) {

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -40,6 +41,9 @@ class CommentCollectionJobTest {
         jobRunRepository = mock(CommentJobRunRepository.class);
         analysisService = mock(CommentAnalysisService.class);
         properties = new CommentProperties();
+        when(collector.collectFromNotifications(any(), any(), anyInt())).thenReturn(
+                new CommentCollector.NotificationCollectionResult("none", "未配置", "mentions", 0,
+                        List.of(), 0, Map.of()));
         job = new CommentCollectionJob(collector, commentRepository, watchRepository,
                 jobRunRepository, analysisService, properties);
     }

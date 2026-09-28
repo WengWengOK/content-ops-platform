@@ -148,5 +148,28 @@ public class CommentProperties {
 
         /** 回复请求体中的内容字段名 */
         private String contentParam = "content";
+
+        // ─── 评论通知增量采集（比按笔记轮询更快发现新评论、更省调用）───
+
+        /** 是否启用「评论通知」增量采集（接口未配置时自动跳过） */
+        private boolean notificationEnabled = true;
+
+        /** 通知列表接口路径（自建桥默认 /api/v1/notifications/list） */
+        private String notificationPath = "";
+
+        /** 通知接口 HTTP 方法：GET（query 参数）| POST（JSON 体） */
+        private String notificationMethod = "GET";
+
+        /** 通知分区：mentions（评论和@，默认）| likes | connections */
+        private String notificationTab = "mentions";
+
+        /** 单次拉取通知条数 */
+        private int notificationLimit = 20;
+
+        /** 未读数接口路径（自建桥默认 /api/v1/notifications/unread），为空则不查未读数 */
+        private String notificationUnreadPath = "";
+
+        /** 从通知里发现新笔记时，是否自动加入监控（带上通知里的 feed_xsec_token） */
+        private boolean autoWatchFromNotifications = true;
     }
 }

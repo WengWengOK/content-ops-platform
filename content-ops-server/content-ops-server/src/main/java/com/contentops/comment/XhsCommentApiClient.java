@@ -555,7 +555,10 @@ public class XhsCommentApiClient {
     }
 
     private URI uriForGet(Map<String, Object> params) {
-        String url = fullUrl();
+        return uriForGet(fullUrl(), params);
+    }
+
+    private URI uriForGet(String url, Map<String, Object> params) {
         StringBuilder sb = new StringBuilder(url);
         boolean first = !url.contains("?");
         for (Map.Entry<String, Object> e : params.entrySet()) {
@@ -790,6 +793,294 @@ public class XhsCommentApiClient {
 
     /** 回复接口返回结果。 */
     public record ReplyResult(boolean success, String message) {
+    }
+    // ════════════════════════ 评论通知增量采集 ════════════════════════
+    //
+    // 相比按笔记轮询，通知中心（tab=mentions 即「评论和@」）是账号级增量流：
+    // 一次请求就能拿到所有笔记的新评论，且 notification 里自带 feed_xsec_token，
+    // 可以直接用于后续读取/回复该笔记。
+
+    /** 是否具备通知采集能力（接口启用 + 端点/预设 + 凭据）。 */
+    public boolean isNotificationConfigured() {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!c.isEnabled() || !c.isNotificationEnabled()) {
+            return false;
+        }
+        boolean hasEndpoint = isBridgePreset() || !isBlank(c.getNotificationPath());
+        boolean hasAuth = "none".equals(normalizeAuth(c.getAuthMode())) || !isBlank(c.getAccessToken());
+        return hasEndpoint && hasAuth;
+    }
+
+    /** 通知采集的配置诊断提示。 */
+    public String notificationStatusHint() {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!c.isEnabled()) {
+            return "真实接口未启用：contentops.comment.xiaohongshu.enabled=false";
+        }
+        if (!c.isNotificationEnabled()) {
+            return "通知采集已关闭：contentops.comment.xiaohongshu.notification-enabled=false";
+        }
+        if (!isBridgePreset() && isBlank(c.getNotificationPath())) {
+            return "未配置通知接口：contentops.comment.xiaohongshu.notification-path";
+        }
+        if (!"none".equals(normalizeAuth(c.getAuthMode())) && isBlank(c.getAccessToken())) {
+            return "缺少 access-token（自建桥为启动时的 AUTH_TOKEN）";
+        }
+        return "可拉取评论通知：" + notificationUrl() + "（tab="
+                + (isBlank(c.getNotificationTab()) ? "mentions" : c.getNotificationTab()) + "）";
+    }
+
+    /** 拉取通知列表。 */
+    public NotificationPage fetchNotifications(String tab, int limit) {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!isNotificationConfigured()) {
+            throw new CommentSourceException("COMMENT_NOTIFICATION_NOT_CONFIGURED", notificationStatusHint());
+        }
+        String effectiveTab = isBlank(tab)
+                ? (isBlank(c.getNotificationTab()) ? "mentions" : c.getNotificationTab().trim())
+                : tab.trim();
+        int effectiveLimit = limit <= 0
+                ? Math.max(1, c.getNotificationLimit())
+                : Math.min(limit, 100);
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("tab", effectiveTab);
+        params.put("limit", effectiveLimit);
+
+        try {
+            RestClient client = buildClient();
+            String authorization = authorizationHeader(normalizeAuth(c.getAuthMode()));
+            String raw;
+            if ("POST".equalsIgnoreCase(c.getNotificationMethod())) {
+                var spec = client.post()
+                        .uri(notificationUrl())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON);
+                if (!isBlank(authorization)) {
+                    spec = spec.header("Authorization", authorization);
+                }
+                raw = spec.body(params).retrieve().body(String.class);
+            } else {
+                var spec = client.method(HttpMethod.GET)
+                        .uri(uriForGet(notificationUrl(), params))
+                        .accept(MediaType.APPLICATION_JSON);
+                if (!isBlank(authorization)) {
+                    spec = spec.header("Authorization", authorization);
+                }
+                raw = spec.retrieve().body(String.class);
+            }
+            NotificationPage page = parseNotifications(raw, effectiveTab);
+            log.debug("[Comment] 拉取通知: tab={}, 条数={}, filtered={}",
+                    page.tab(), page.items().size(), page.filtered());
+            return page;
+        } catch (RestClientResponseException e) {
+            throw new CommentSourceException(httpErrorCode(e.getStatusCode().value()),
+                    "拉取评论通知失败（HTTP " + e.getStatusCode().value() + "）："
+                            + preview(e.getResponseBodyAsString()), e);
+        } catch (CommentSourceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new CommentSourceException("COMMENT_NOTIFICATION_IO_ERROR",
+                    "拉取评论通知失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 解析通知列表响应（兼容 data.data.items 等嵌套）。 */
+    public NotificationPage parseNotifications(String raw, String tab) {
+        if (isBlank(raw)) {
+            return new NotificationPage(tab, 0, List.of());
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(raw);
+        } catch (Exception e) {
+            throw new CommentSourceException("COMMENT_SOURCE_BAD_JSON",
+                    "通知接口返回内容无法解析为 JSON: " + preview(raw), e);
+        }
+        String bizError = businessError(root);
+        if (bizError != null) {
+            throw new CommentSourceException("COMMENT_SOURCE_BIZ_ERROR", bizError);
+        }
+        JsonNode array = locateNotificationList(root);
+        List<XhsNotification> items = new ArrayList<>();
+        if (array != null) {
+            for (JsonNode node : array) {
+                XhsNotification item = mapNotification(node);
+                if (item != null) {
+                    items.add(item);
+                }
+            }
+        }
+        Integer filtered = intOf(root, List.of("data.data.filtered", "data.filtered", "filtered"));
+        String actualTab = textOf(root, List.of("data.data.tab", "data.tab", "tab"));
+        return new NotificationPage(isBlank(actualTab) ? tab : actualTab,
+                filtered == null ? 0 : filtered, items);
+    }
+
+    /** 未读数（mentions / likes / connections / unread）；未配置或失败时返回空 Map。 */
+    public Map<String, Object> fetchUnreadCounts() {
+        CommentProperties.XiaohongshuProperties c = config();
+        if (!isConfigurable(c.getNotificationUnreadPath())) {
+            return Map.of();
+        }
+        if (!isNotificationConfigured()) {
+            return Map.of();
+        }
+        try {
+            RestClient client = buildClient();
+            var spec = client.method(HttpMethod.GET)
+                    .uri(notificationUnreadUrl())
+                    .accept(MediaType.APPLICATION_JSON);
+            String authorization = authorizationHeader(normalizeAuth(c.getAuthMode()));
+            if (!isBlank(authorization)) {
+                spec = spec.header("Authorization", authorization);
+            }
+            String raw = spec.retrieve().body(String.class);
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode counts = descend(root, "data.data");
+            if (counts == null) {
+                counts = descend(root, "data");
+            }
+            if (counts == null || !counts.isObject()) {
+                return Map.of();
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (String field : List.of("mentions", "likes", "connections", "unread", "unreadCount")) {
+                JsonNode v = counts.path(field);
+                if (v.isNumber()) {
+                    result.put(field, v.asInt());
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.debug("[Comment] 获取未读数失败（忽略）: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private boolean isConfigurable(String path) {
+        return isBridgePreset() || !isBlank(path);
+    }
+
+    private String notificationUrl() {
+        CommentProperties.XiaohongshuProperties c = config();
+        String path = isBlank(c.getNotificationPath())
+                ? (isBridgePreset() ? "/api/v1/notifications/list" : "")
+                : c.getNotificationPath().trim();
+        return joinUrl(c.getBaseUrl(), path);
+    }
+
+    private String notificationUnreadUrl() {
+        CommentProperties.XiaohongshuProperties c = config();
+        String path = isBlank(c.getNotificationUnreadPath())
+                ? (isBridgePreset() ? "/api/v1/notifications/unread" : "")
+                : c.getNotificationUnreadPath().trim();
+        return joinUrl(c.getBaseUrl(), path);
+    }
+
+    private String joinUrl(String baseUrl, String path) {
+        String base = baseUrl == null ? "" : baseUrl.trim();
+        String p = path == null ? "" : path.trim();
+        if (p.startsWith("http://") || p.startsWith("https://")) {
+            return p;
+        }
+        if (base.endsWith("/") && p.startsWith("/")) {
+            return base.substring(0, base.length() - 1) + p;
+        }
+        if (!base.endsWith("/") && !p.startsWith("/") && !p.isEmpty()) {
+            return base + "/" + p;
+        }
+        return base + p;
+    }
+
+    private JsonNode locateNotificationList(JsonNode root) {
+        for (String path : List.of("data.data.items", "data.items", "items",
+                "data.data.list", "data.list")) {
+            JsonNode node = descend(root, path);
+            if (node != null && node.isArray()) {
+                return node;
+            }
+        }
+        return findArray(root, this::looksLikeNotification);
+    }
+
+    private boolean looksLikeNotification(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return false;
+        }
+        boolean hasIdentity = node.has("id") || node.has("notification_id");
+        boolean hasNotifyField = node.has("comment_text") || node.has("comment_id")
+                || node.has("type") || node.has("from") || node.has("feed_id");
+        return hasIdentity && hasNotifyField;
+    }
+
+    private JsonNode findArray(JsonNode node, java.util.function.Predicate<JsonNode> matcher) {
+        if (node == null) {
+            return null;
+        }
+        if (node.isArray()) {
+            if (node.size() > 0 && matcher.test(node.get(0))) {
+                return node;
+            }
+            for (JsonNode child : node) {
+                JsonNode found = findArray(child, matcher);
+                if (found != null) {
+                    return found;
+                }
+            }
+            return null;
+        }
+        if (node.isObject()) {
+            for (JsonNode child : node) {
+                JsonNode found = findArray(child, matcher);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private XhsNotification mapNotification(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        String id = textOf(node, List.of("id", "notification_id", "notify_id"));
+        String type = textOf(node, List.of("type", "notification_type", "category"));
+        String title = textOf(node, List.of("title", "desc"));
+        LocalDateTime time = timeOf(node, List.of("time", "createTime", "create_time",
+                "timestamp", "created_at"));
+        String userId = textOf(node, List.of("from.user_id", "from.userId", "user_id", "userId"));
+        String nickname = textOf(node, List.of("from.nickname", "from.nick_name", "nickname",
+                "user_name"));
+        String commentId = textOf(node, List.of("comment_id", "commentId", "cid"));
+        String commentText = textOf(node, List.of("comment_text", "commentText",
+                "comment_content", "content"));
+        String feedId = textOf(node, List.of("feed_id", "feedId", "note_id", "noteId"));
+        String feedToken = textOf(node, List.of("feed_xsec_token", "feedXsecToken",
+                "xsec_token", "xsecToken"));
+        String feedTitle = textOf(node, List.of("feed_title", "feedTitle", "note_title"));
+        if (isBlank(id) && isBlank(commentId) && isBlank(commentText)) {
+            return null;
+        }
+        return new XhsNotification(id, type, title, time, userId, nickname, commentId,
+                commentText, feedId, feedToken, feedTitle);
+    }
+
+    /** 通知列表结果。 */
+    public record NotificationPage(String tab, int filtered, List<XhsNotification> items) {
+    }
+
+    /** 一条通知（评论类通知带 comment_id / comment_text / feed_id / feed_xsec_token）。 */
+    public record XhsNotification(String id, String type, String title, LocalDateTime time,
+                                  String userId, String nickname, String commentId, String commentText,
+                                  String feedId, String feedXsecToken, String feedTitle) {
+
+        /** 是否为评论类通知（有评论 ID 或评论内容）。 */
+        public boolean commentLike() {
+            return (commentId != null && !commentId.isBlank())
+                    || (commentText != null && !commentText.isBlank());
+        }
     }
     /** 一页评论数据。 */
     public record FetchPage(List<XhsComment> comments, String nextCursor, boolean hasMore) {

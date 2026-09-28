@@ -6,6 +6,7 @@ import {
   analyzeComment,
   approveCommentReply,
   chatCommentReply,
+  collectCommentNotifications,
   collectComments,
   getCommentScheduler,
   getCommentSourceStatus,
@@ -86,6 +87,8 @@ export function CommentsPage() {
   const [watchXsecToken, setWatchXsecToken] = useState('')
   const [watchAutoAnalyze, setWatchAutoAnalyze] = useState(true)
   const [watchBusy, setWatchBusy] = useState('')
+  const [unread, setUnread] = useState<Record<string, number>>({})
+  const [notifBusy, setNotifBusy] = useState(false)
 
   const showToast = (msg: string, color = '#165DFF') => {
     setToast({ msg, color })
@@ -334,6 +337,32 @@ export function CommentsPage() {
     }
   }
 
+  const handleCollectNotifications = async () => {
+    setNotifBusy(true)
+    try {
+      const res = await collectCommentNotifications({ limit: 20, autoAnalyze: true })
+      if (res.source !== 'api') {
+        showToast(`未拉取到通知：${res.fallbackReason || '通知接口未配置'}`, '#FF7D00')
+      } else {
+        setUnread(res.unread || {})
+        showToast(
+          `通知增量：通知 ${res.notifications} 条，新增评论 ${res.inserted}，分析 ${res.analyzed}` +
+            (res.createdWatches > 0 ? `，新纳入监控 ${res.createdWatches} 篇` : '') +
+            (res.filtered > 0 ? `（平台过滤 ${res.filtered} 条已删除/异常）` : ''),
+          res.inserted > 0 ? '#00B42A' : '#165DFF'
+        )
+      }
+      await loadWatches()
+      await loadComments()
+      await loadStats()
+      await loadScheduler()
+    } catch (err: any) {
+      showToast(err?.message || '拉取通知失败', '#F53F3F')
+    } finally {
+      setNotifBusy(false)
+    }
+  }
+
   const handleRunAll = async () => {
     try {
       const run = await runAllCommentWatches()
@@ -456,13 +485,28 @@ export function CommentsPage() {
               </span>
             )}
           </div>
-          <button
-            onClick={() => void handleRunAll()}
-            className="rounded-lg border px-3 py-1.5 text-xs font-medium"
-            style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
-          >
-            ▶ 立即执行一轮
-          </button>
+          <div className="flex items-center gap-2">
+            {Object.keys(unread).length > 0 && (
+              <span className="text-xs" style={{ color: '#86909C' }}>
+                未读 评论/@{unread.mentions ?? 0} · 赞{unread.likes ?? 0} · 关注{unread.connections ?? 0}
+              </span>
+            )}
+            <button
+              onClick={() => void handleCollectNotifications()}
+              disabled={notifBusy}
+              className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+              style={{ borderColor: '#E5E6EB', color: '#722ED1' }}
+            >
+              {notifBusy ? '拉取中…' : '📥 拉取评论通知'}
+            </button>
+            <button
+              onClick={() => void handleRunAll()}
+              className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+              style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
+            >
+              ▶ 立即执行一轮
+            </button>
+          </div>
         </div>
 
         <div className="mb-3 flex flex-wrap items-end gap-3">

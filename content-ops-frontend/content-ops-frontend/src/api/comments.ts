@@ -200,3 +200,36 @@ export async function getCommentSourceStatus(): Promise<CommentSourceStatus> {
   const { data } = await apiClient.get<AgentResponse<CommentSourceStatus>>('/comments/source-status')
   return unwrap(data)
 }
+// ═══════════════════════════════════════════════════════════════
+//  评论通知增量采集（账号级，比按笔记轮询更快发现新评论）
+// ═══════════════════════════════════════════════════════════════
+
+/** POST /comments/notifications/collect — 拉取「评论通知」增量采集 */
+export async function collectCommentNotifications(body?: {
+  tab?: string
+  limit?: number
+  autoAnalyze?: boolean
+}): Promise<{
+  tab: string
+  source: string
+  fallbackReason?: string
+  notifications: number
+  filtered: number
+  inserted: number
+  analyzed: number
+  createdWatches: number
+  unread: Record<string, number>
+}> {
+  const { data } = await apiClient.post<AgentResponse<{
+    tab: string
+    source: string
+    fallbackReason?: string
+    notifications: number
+    filtered: number
+    inserted: number
+    analyzed: number
+    createdWatches: number
+    unread: Record<string, number>
+  }>>('/comments/notifications/collect', body ?? {})
+  return unwrap(data)
+}

@@ -47,6 +47,45 @@ public class CommentCollectionJob {
         int scanned = 0, collected = 0, inserted = 0, analyzed = 0, failed = 0;
         int analyzeBudget = Math.max(0, properties.getAutoAnalyzeLimit());
         StringBuilder detail = new StringBuilder();
+
+        // ① 通知增量：账号级拉取，最快发现新评论（接口未配置时自动跳过）
+        if (properties.getXiaohongshu().isNotificationEnabled()) {
+            try {
+                CommentCollector.NotificationCollectionResult notif = collector.collectFromNotifications(
+                        null, null, properties.getXiaohongshu().getNotificationLimit());
+                if ("api".equals(notif.source())) {
+                    int notifCollected = 0, notifInserted = 0;
+                    List<Comment> fresh = new ArrayList<>();
+                    for (Comment c : notif.commentsOrEmpty()) {
+                        notifCollected++;
+                        if (commentRepository.exists(c.getCommentId())) {
+                            continue;
+                        }
+                        commentRepository.insert(c);
+                        if (commentRepository.exists(c.getCommentId())) {
+                            notifInserted++;
+                            fresh.add(c);
+                        }
+                    }
+                    int notifAnalyzed = analyzeFresh(fresh, analyzeBudget);
+                    analyzeBudget -= notifAnalyzed;
+                    collected += notifCollected;
+                    inserted += notifInserted;
+                    analyzed += notifAnalyzed;
+                    detail.append("通知[").append(notif.tab()).append("]: 抓取").append(notifCollected)
+                            .append(" 新增").append(notifInserted)
+                            .append(" 分析").append(notifAnalyzed)
+                            .append(" 新监控").append(notif.createdWatches())
+                            .append(" filtered=").append(notif.filtered()).append("; ");
+                    log.info("[Comment] 通知增量: tab={}, 新增={}, 分析={}, 新监控={}",
+                            notif.tab(), notifInserted, notifAnalyzed, notif.createdWatches());
+                }
+            } catch (Exception e) {
+                failed++;
+                detail.append("通知采集失败[").append(e.getMessage()).append("]; ");
+                log.warn("[Comment] 通知增量采集失败: {}", e.getMessage());
+            }
+        }
         for (CommentWatch watch : watches) {
             scanned++;
             WatchRunResult result = runForWatch(watch, analyzeBudget);
@@ -69,6 +108,7 @@ public class CommentCollectionJob {
                 detail.append("; ");
             }
         }
+
 
         CommentJobRun run = CommentJobRun.builder()
                 .runId(UUID.randomUUID().toString())

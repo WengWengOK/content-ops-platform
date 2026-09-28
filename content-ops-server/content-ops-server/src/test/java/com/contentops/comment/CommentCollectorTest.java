@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -12,6 +14,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -21,8 +26,79 @@ class CommentCollectorTest {
 
     private final CommentProperties properties = new CommentProperties();
     private final XhsCommentApiClient apiClient = mock(XhsCommentApiClient.class);
-    private final CommentCollector collector = new CommentCollector(properties, apiClient);
+    private final CommentWatchRepository watchRepository = mock(CommentWatchRepository.class);
+    private final CommentCollector collector = new CommentCollector(properties, apiClient, watchRepository);
 
+    @Test
+    @DisplayName("通知增量：评论类通知映射为 Comment（内部 ID 复用评论 ID），含 filtered 与新笔记纳管")
+    void collectFromNotifications_mapsAndAutoWatches() {
+        properties.setAutoAnalyze(true);
+        when(apiClient.isNotificationConfigured()).thenReturn(true);
+        when(apiClient.fetchNotifications(null, 20)).thenReturn(new XhsCommentApiClient.NotificationPage(
+                "mentions", 1,
+                List.of(
+                        notification("n1", "评论", "c-1", "求同款链接！", "note-1", "xs-note-1", "桃桃"),
+                        notification("n2", "点赞", null, null, "note-1", "xs-note-1", "路人"),
+                        notification("n3", "回复", "c-2", "已收藏", "note-2", "xs-note-2", "老王"))));
+        when(apiClient.fetchUnreadCounts()).thenReturn(Map.of("mentions", 3));
+        when(watchRepository.findByWork("xiaohongshu", "note-1", "owner-1")).thenReturn(Optional.empty());
+        when(watchRepository.findByWork("xiaohongshu", "note-2", "owner-1")).thenReturn(Optional.empty());
+
+        CommentCollector.NotificationCollectionResult result =
+                collector.collectFromNotifications("owner-1", null, 20);
+
+        assertThat(result.source()).isEqualTo("api");
+        assertThat(result.tab()).isEqualTo("mentions");
+        assertThat(result.filtered()).isEqualTo(1);
+        assertThat(result.commentsOrEmpty()).hasSize(2);
+        Comment first = result.commentsOrEmpty().get(0);
+        assertThat(first.getCommentId()).isEqualTo("xhs-c-1");
+        assertThat(first.getPlatformCommentId()).isEqualTo("c-1");
+        assertThat(first.getWorkId()).isEqualTo("note-1");
+        assertThat(first.getAuthor()).isEqualTo("桃桃");
+        assertThat(result.createdWatches()).isEqualTo(2);
+        assertThat(result.unread()).containsEntry("mentions", 3);
+        verify(watchRepository, times(2)).insert(any(CommentWatch.class));
+    }
+
+    @Test
+    @DisplayName("通知增量：已监控笔记不重复纳管")
+    void collectFromNotifications_existingWatchNotDuplicated() {
+        when(apiClient.isNotificationConfigured()).thenReturn(true);
+        when(apiClient.fetchNotifications(null, 20)).thenReturn(new XhsCommentApiClient.NotificationPage(
+                "mentions", 0,
+                List.of(notification("n1", "评论", "c-1", "内容", "note-1", "xs-note-1", "桃桃"))));
+        when(apiClient.fetchUnreadCounts()).thenReturn(Map.of());
+        when(watchRepository.findByWork("xiaohongshu", "note-1", "owner-1"))
+                .thenReturn(Optional.of(CommentWatch.builder().watchId("w1").build()));
+
+        CommentCollector.NotificationCollectionResult result =
+                collector.collectFromNotifications("owner-1", null, 20);
+
+        assertThat(result.createdWatches()).isZero();
+        verify(watchRepository, never()).insert(any(CommentWatch.class));
+    }
+
+    @Test
+    @DisplayName("通知接口未配置：返回 none 与提示，不抛错")
+    void collectFromNotifications_notConfigured_returnsNone() {
+        when(apiClient.isNotificationConfigured()).thenReturn(false);
+        when(apiClient.notificationStatusHint()).thenReturn("真实接口未启用");
+
+        CommentCollector.NotificationCollectionResult result =
+                collector.collectFromNotifications("owner-1", null, 20);
+
+        assertThat(result.source()).isEqualTo("none");
+        assertThat(result.commentsOrEmpty()).isEmpty();
+        assertThat(result.fallbackReason()).contains("未启用");
+    }
+
+    private XhsCommentApiClient.XhsNotification notification(String id, String type, String commentId,
+                                                            String text, String feedId, String feedToken,
+                                                            String nickname) {
+        return new XhsCommentApiClient.XhsNotification(id, type, "标题", LocalDateTime.now(),
+                "u-" + id, nickname, commentId, text, feedId, feedToken, "笔记标题");
+    }
     @Test
     @DisplayName("source=mock：直接使用模拟数据，标记数据源为 mock")
     void collect_mockSource_returnsMockData() {

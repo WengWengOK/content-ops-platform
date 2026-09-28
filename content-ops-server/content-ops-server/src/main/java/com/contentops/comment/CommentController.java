@@ -109,6 +109,10 @@ public class CommentController {
         data.put("xiaohongshuReplyEnabled", properties.getXiaohongshu().isReplyEnabled());
         data.put("xiaohongshuReplyConfigured", apiClient.isReplyConfigured());
         data.put("replyHint", apiClient.replyStatusHint());
+        data.put("xiaohongshuNotificationEnabled", properties.getXiaohongshu().isNotificationEnabled());
+        data.put("xiaohongshuNotificationConfigured", apiClient.isNotificationConfigured());
+        data.put("notificationTab", properties.getXiaohongshu().getNotificationTab());
+        data.put("notificationHint", apiClient.notificationStatusHint());
         data.put("platformNote",
                 "小红书官方开放平台当前仅开放电商类 API（订单/售后/商品/库存/物流/财务），"
                         + "未提供笔记评论接口；真实评论数据请配置第三方数据服务或自建采集桥的 endpoint + access-token");
@@ -224,6 +228,63 @@ public class CommentController {
         return result.error() == null
                 ? AgentResponse.success("comment", data)
                 : AgentResponse.failure("comment", result.error());
+    }
+
+    @PostMapping("/notifications/collect")
+    @Operation(summary = "拉取「评论通知」增量采集（账号级，比按笔记轮询更快发现新评论）")
+    public AgentResponse<Map<String, Object>> collectNotifications(
+            @RequestBody(required = false) NotificationCollectRequest request) {
+        String tab = request == null ? null : request.getTab();
+        int limit = request == null || request.getLimit() == null ? 0 : request.getLimit();
+        boolean autoAnalyze = request == null || request.getAutoAnalyze() == null
+                ? properties.isAutoAnalyze() : request.getAutoAnalyze();
+
+        CommentCollector.NotificationCollectionResult result;
+        try {
+            result = collector.collectFromNotifications(ownerId(), tab, limit);
+        } catch (CommentSourceException e) {
+            return AgentResponse.failure("comment", "[" + e.getCode() + "] " + e.getMessage());
+        }
+
+        int inserted = 0;
+        int analyzed = 0;
+        List<Comment> fresh = new ArrayList<>();
+        for (Comment c : result.commentsOrEmpty()) {
+            if (repository.exists(c.getCommentId())) {
+                continue;
+            }
+            repository.insert(c);
+            if (repository.exists(c.getCommentId())) {
+                inserted++;
+                fresh.add(c);
+            }
+        }
+        if (autoAnalyze && !fresh.isEmpty()) {
+            int budget = Math.max(0, properties.getAutoAnalyzeLimit());
+            for (Comment c : fresh) {
+                if (analyzed >= budget) {
+                    break;
+                }
+                Comment analyzedComment = analysisService.analyze(c);
+                repository.updateAnalysisAndStatus(c.getCommentId(), analyzedComment.getIntent(),
+                        analyzedComment.getSentiment(), analyzedComment.getAiSummary(),
+                        analyzedComment.getAiReply());
+                analyzed++;
+            }
+        }
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("tab", result.tab());
+        data.put("source", result.source());
+        data.put("fallbackReason", result.fallbackReason());
+        data.put("notifications", result.commentsOrEmpty().size());
+        data.put("filtered", result.filtered());
+        data.put("collected", result.commentsOrEmpty().size());
+        data.put("inserted", inserted);
+        data.put("analyzed", analyzed);
+        data.put("createdWatches", result.createdWatches());
+        data.put("unread", result.unread());
+        return AgentResponse.success("comment", data);
     }
 
     @PostMapping("/watches/run-all")
@@ -390,6 +451,14 @@ public class CommentController {
     public static class UpdateReplyRequest {
         private String reply;
         private String status;
+    }
+
+    @Data
+    public static class NotificationCollectRequest {
+        /** 通知分区：mentions（评论和@，默认）| likes | connections */
+        private String tab;
+        private Integer limit;
+        private Boolean autoAnalyze;
     }
 
     @Data

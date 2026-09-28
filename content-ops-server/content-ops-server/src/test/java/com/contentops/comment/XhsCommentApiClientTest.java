@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -334,6 +335,73 @@ class XhsCommentApiClientTest {
 
         assertThat(ex).isNotNull();
         assertThat(ex.getCode()).isEqualTo("COMMENT_PLATFORM_ID_REQUIRED");
+    }
+    // ──────────────────────── 评论通知增量采集 ────────────────────────
+
+    @Test
+    @DisplayName("通知列表：解析 data.data.items（含 filtered），GET 请求带 tab/limit 与 Bearer")
+    void fetchNotifications_parsesBridgePayload() {
+        responseBody = """
+                {"success":true,"message":"获取通知列表成功","data":{"data":{"tab":"mentions","filtered":2,"items":[
+                  {"id":"n1","type":"评论","title":"评论了你","time":1767225600000,
+                   "from":{"user_id":"u1","nickname":"桃桃","xsec_token":"user-token"},
+                   "comment_id":"c-1","comment_text":"求同款链接！","liked":false,
+                   "feed_id":"note-1","feed_xsec_token":"xs-note-1","feed_title":"测试笔记"},
+                  {"id":"n2","type":"点赞","title":"赞了你","time":1767225600000,
+                   "from":{"user_id":"u2","nickname":"路人"},"liked":true,"feed_id":"note-1"}
+                ]}}}
+                """;
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        props.getXiaohongshu().setNotificationPath(url());
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        XhsCommentApiClient.NotificationPage page = client.fetchNotifications(null, 20);
+
+        assertThat(page.tab()).isEqualTo("mentions");
+        assertThat(page.filtered()).isEqualTo(2);
+        assertThat(page.items()).hasSize(2);
+        XhsCommentApiClient.XhsNotification first = page.items().get(0);
+        assertThat(first.commentId()).isEqualTo("c-1");
+        assertThat(first.commentText()).isEqualTo("求同款链接！");
+        assertThat(first.nickname()).isEqualTo("桃桃");
+        assertThat(first.feedId()).isEqualTo("note-1");
+        assertThat(first.feedXsecToken()).isEqualTo("xs-note-1");
+        assertThat(first.commentLike()).isTrue();
+        assertThat(page.items().get(1).commentLike()).isFalse();
+
+        assertThat(uris.get(0).getQuery()).contains("tab=mentions").contains("limit=20");
+        assertThat(headers.get(0).getFirst("Authorization")).isEqualTo("Bearer token-abc");
+    }
+
+    @Test
+    @DisplayName("未读数：解析 data.data 里的 mentions/likes/connections/unread")
+    void fetchUnreadCounts_parsesCounts() {
+        responseBody = "{\"success\":true,\"data\":{\"data\":{\"mentions\":3,\"likes\":1,\"connections\":0,\"unread\":4}}}";
+        CommentProperties props = properties("bearer");
+        props.getXiaohongshu().setPreset("xhs-mcp");
+        props.getXiaohongshu().setNotificationUnreadPath(url());
+        XhsCommentApiClient client = new XhsCommentApiClient(props, new ObjectMapper());
+
+        Map<String, Object> counts = client.fetchUnreadCounts();
+
+        assertThat(counts).containsEntry("mentions", 3)
+                .containsEntry("likes", 1)
+                .containsEntry("connections", 0)
+                .containsEntry("unread", 4);
+    }
+
+    @Test
+    @DisplayName("通知接口未配置时给出可读错误，不发请求")
+    void fetchNotifications_notConfigured_throws() {
+        XhsCommentApiClient client = new XhsCommentApiClient(new CommentProperties(), new ObjectMapper());
+
+        CommentSourceException ex = catchThrowableOfType(
+                () -> client.fetchNotifications(null, 20), CommentSourceException.class);
+
+        assertThat(ex).isNotNull();
+        assertThat(ex.getCode()).isEqualTo("COMMENT_NOTIFICATION_NOT_CONFIGURED");
+        assertThat(bodies).isEmpty();
     }
     // ──────────────────────── 辅助 ────────────────────────
 
