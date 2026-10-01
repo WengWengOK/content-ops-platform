@@ -1,5 +1,6 @@
 package com.contentops.comment;
 
+import com.contentops.common.credential.CredentialService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.model.chat.ChatModel;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +38,8 @@ class CommentReplyServiceTest {
         watchRepository = mock(CommentWatchRepository.class);
         properties = new CommentProperties();
         service = new CommentReplyService(repository, new ObjectMapper(), mock(ChatModel.class),
-                apiClient, watchRepository, properties);
+                apiClient, watchRepository, properties, mock(CredentialService.class),
+                mock(XhsClientFactory.class));
     }
 
     @Test

@@ -291,3 +291,30 @@ ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS platform_comment_id VARC
 
 -- 存量库迁移：评论表补「采集渠道」列（note/notification/mock，幂等）
 ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS collected_via VARCHAR(16);
+
+-- 平台账号凭据（多账号/多租户归属）：采集/回复/通知都按凭据走，避免多账号串数据
+CREATE TABLE IF NOT EXISTS contentops_platform_credential (
+    credential_id  VARCHAR(64)   PRIMARY KEY,
+    owner_id       VARCHAR(64),
+    platform       VARCHAR(32)   NOT NULL,
+    account_name   VARCHAR(128),
+    account_ref    VARCHAR(128),
+    preset         VARCHAR(32),
+    base_url       VARCHAR(256),
+    access_token   VARCHAR(1024),
+    enabled        BOOLEAN       DEFAULT TRUE,
+    is_default     BOOLEAN       DEFAULT FALSE,
+    last_used_at   TIMESTAMP,
+    last_error     VARCHAR(1000),
+    created_at     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_credential_owner_platform
+    ON contentops_platform_credential (owner_id, platform, is_default DESC);
+CREATE INDEX IF NOT EXISTS idx_credential_platform_enabled
+    ON contentops_platform_credential (platform, enabled);
+
+-- 存量库迁移：评论/监控项补「凭据归属」列（幂等）
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS credential_id VARCHAR(64);
+ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS credential_id VARCHAR(64);

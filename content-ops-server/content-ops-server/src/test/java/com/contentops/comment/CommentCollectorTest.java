@@ -1,5 +1,6 @@
 package com.contentops.comment;
 
+import com.contentops.common.credential.CredentialService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +28,10 @@ class CommentCollectorTest {
     private final CommentProperties properties = new CommentProperties();
     private final XhsCommentApiClient apiClient = mock(XhsCommentApiClient.class);
     private final CommentWatchRepository watchRepository = mock(CommentWatchRepository.class);
-    private final CommentCollector collector = new CommentCollector(properties, apiClient, watchRepository);
+    private final CredentialService credentialService = mock(CredentialService.class);
+    private final XhsClientFactory clientFactory = mock(XhsClientFactory.class);
+    private final CommentCollector collector =
+            new CommentCollector(properties, apiClient, watchRepository, credentialService, clientFactory);
 
     @Test
     @DisplayName("通知增量：评论类通知映射为 Comment（内部 ID 复用评论 ID），含 filtered 与新笔记纳管")

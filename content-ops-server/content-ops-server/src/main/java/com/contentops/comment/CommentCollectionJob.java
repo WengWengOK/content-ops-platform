@@ -1,5 +1,7 @@
 package com.contentops.comment;
 
+import com.contentops.common.credential.CredentialService;
+import com.contentops.common.credential.PlatformCredential;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,6 +32,7 @@ public class CommentCollectionJob {
     private final CommentJobRunRepository jobRunRepository;
     private final CommentAnalysisService analysisService;
     private final CommentProperties properties;
+    private final CredentialService credentialService;
 
     /** 单个监控项的采集结果。 */
     public record WatchRunResult(String watchId, String workId, String source, String fallbackReason,
@@ -50,40 +53,24 @@ public class CommentCollectionJob {
 
         // ① 通知增量：账号级拉取，最快发现新评论（接口未配置时自动跳过）
         if (properties.getXiaohongshu().isNotificationEnabled()) {
-            try {
-                CommentCollector.NotificationCollectionResult notif = collector.collectFromNotifications(
-                        null, null, properties.getXiaohongshu().getNotificationLimit());
-                if ("api".equals(notif.source())) {
-                    int notifCollected = 0, notifInserted = 0;
-                    List<Comment> fresh = new ArrayList<>();
-                    for (Comment c : notif.commentsOrEmpty()) {
-                        notifCollected++;
-                        if (commentRepository.exists(c.getCommentId())) {
-                            continue;
-                        }
-                        commentRepository.insert(c);
-                        if (commentRepository.exists(c.getCommentId())) {
-                            notifInserted++;
-                            fresh.add(c);
-                        }
-                    }
-                    int notifAnalyzed = analyzeFresh(fresh, analyzeBudget);
-                    analyzeBudget -= notifAnalyzed;
-                    collected += notifCollected;
-                    inserted += notifInserted;
-                    analyzed += notifAnalyzed;
-                    detail.append("通知[").append(notif.tab()).append("]: 抓取").append(notifCollected)
-                            .append(" 新增").append(notifInserted)
-                            .append(" 分析").append(notifAnalyzed)
-                            .append(" 新监控").append(notif.createdWatches())
-                            .append(" filtered=").append(notif.filtered()).append("; ");
-                    log.info("[Comment] 通知增量: tab={}, 新增={}, 分析={}, 新监控={}",
-                            notif.tab(), notifInserted, notifAnalyzed, notif.createdWatches());
+            List<PlatformCredential> credentials = credentialService.listEnabledDecrypted("xiaohongshu");
+            if (credentials.isEmpty()) {
+                int[] counts = collectNotificationsOnce(null, null, detail, analyzeBudget);
+                collected += counts[0];
+                inserted += counts[1];
+                analyzed += counts[2];
+                failed += counts[3];
+                analyzeBudget -= counts[2];
+            } else {
+                for (PlatformCredential credential : credentials) {
+                    int[] counts = collectNotificationsOnce(credential.getOwnerId(),
+                            credential.getCredentialId(), detail, analyzeBudget);
+                    collected += counts[0];
+                    inserted += counts[1];
+                    analyzed += counts[2];
+                    failed += counts[3];
+                    analyzeBudget -= counts[2];
                 }
-            } catch (Exception e) {
-                failed++;
-                detail.append("通知采集失败[").append(e.getMessage()).append("]; ");
-                log.warn("[Comment] 通知增量采集失败: {}", e.getMessage());
             }
         }
         for (CommentWatch watch : watches) {
@@ -135,8 +122,8 @@ public class CommentCollectionJob {
         String source = null, fallbackReason = null, error = null;
         List<Comment> fresh = new ArrayList<>();
         try {
-            CommentCollector.CollectionResult result = collector.collect(
-                    watch.getPlatform(), watch.getWorkId(), watch.getOwnerId(), watch.getXsecToken());
+            CommentCollector.CollectionResult result = collector.collect(watch.getPlatform(), watch.getWorkId(),
+                    watch.getOwnerId(), watch.getXsecToken(), watch.getCredentialId());
             source = result.source();
             fallbackReason = result.fallbackReason();
             for (Comment c : result.commentsOrEmpty()) {
@@ -164,6 +151,52 @@ public class CommentCollectionJob {
         }
         return new WatchRunResult(watch.getWatchId(), watch.getWorkId(), source, fallbackReason,
                 collected, inserted, analyzed, error);
+    }
+
+    /**
+     * 拉一次通知增量（某个账号）并入库/分析。
+     *
+     * @return [抓取数, 新增数, 分析数, 失败数]
+     */
+    private int[] collectNotificationsOnce(String ownerId, String credentialId, StringBuilder detail,
+                                           int analyzeBudget) {
+        try {
+            CommentCollector.NotificationCollectionResult notif = collector.collectFromNotifications(
+                    ownerId, null, properties.getXiaohongshu().getNotificationLimit(), credentialId);
+            if (!"api".equals(notif.source())) {
+                return new int[] {0, 0, 0, 0};
+            }
+            int notifCollected = 0;
+            int notifInserted = 0;
+            List<Comment> fresh = new ArrayList<>();
+            for (Comment c : notif.commentsOrEmpty()) {
+                notifCollected++;
+                if (commentRepository.exists(c.getCommentId())) {
+                    continue;
+                }
+                commentRepository.insert(c);
+                if (commentRepository.exists(c.getCommentId())) {
+                    notifInserted++;
+                    fresh.add(c);
+                }
+            }
+            int notifAnalyzed = analyzeFresh(fresh, analyzeBudget);
+            detail.append("通知[").append(notif.tab())
+                    .append(ownerId == null ? "" : "@" + ownerId)
+                    .append("]: 抓取").append(notifCollected)
+                    .append(" 新增").append(notifInserted)
+                    .append(" 分析").append(notifAnalyzed)
+                    .append(" 新监控").append(notif.createdWatches())
+                    .append(" filtered=").append(notif.filtered()).append("; ");
+            log.info("[Comment] 通知增量: owner={}, credential={}, tab={}, 新增={}, 分析={}, 新监控={}",
+                    ownerId, credentialId, notif.tab(), notifInserted, notifAnalyzed, notif.createdWatches());
+            return new int[] {notifCollected, notifInserted, notifAnalyzed, 0};
+        } catch (Exception e) {
+            detail.append("通知采集失败[").append(e.getMessage()).append("]; ");
+            log.warn("[Comment] 通知增量采集失败: owner={}, credential={}, err={}",
+                    ownerId, credentialId, e.getMessage());
+            return new int[] {0, 0, 0, 1};
+        }
     }
 
     /** 对新入库评论做 AI 分析（受预算上限约束，单条失败不影响其它）。 */

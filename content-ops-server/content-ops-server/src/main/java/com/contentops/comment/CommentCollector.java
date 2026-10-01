@@ -2,6 +2,8 @@ package com.contentops.comment;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.contentops.common.credential.CredentialService;
+import com.contentops.common.credential.PlatformCredential;
 import org.springframework.stereotype.Component;
 import org.springframework.util.DigestUtils;
 
@@ -11,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 
@@ -35,6 +38,8 @@ public class CommentCollector {
     private final CommentProperties properties;
     private final XhsCommentApiClient apiClient;
     private final CommentWatchRepository watchRepository;
+    private final CredentialService credentialService;
+    private final XhsClientFactory clientFactory;
 
     /** 采集结果：评论 + 数据源标记 + 回退原因。 */
     public record CollectionResult(String platform, String workId, String source,
@@ -69,6 +74,16 @@ public class CommentCollector {
 
     /** 采集指定平台作品评论（可带 xsec_token）。 */
     public CollectionResult collect(String platform, String workId, String ownerId, String xsecToken) {
+        return collect(platform, workId, ownerId, xsecToken, null);
+    }
+
+    /**
+     * 采集指定平台作品评论（按凭据归属走对应账号）。
+     *
+     * @param credentialId 指定凭据；为空时取该租户在该平台的默认凭据（仍为空则用全局配置）
+     */
+    public CollectionResult collect(String platform, String workId, String ownerId, String xsecToken,
+                                    String credentialId) {
         String p = platform == null || platform.isBlank() ? "xiaohongshu" : platform.trim();
         if (workId == null || workId.isBlank()) {
             throw new CommentSourceException("COMMENT_WORK_ID_REQUIRED", "workId 不能为空");
@@ -77,22 +92,29 @@ public class CommentCollector {
             return mock(p, workId, ownerId, "数据源配置为 mock（contentops.comment.source=mock）");
         }
 
+        Optional<PlatformCredential> credential = credentialService.resolve(ownerId, p, credentialId);
+        XhsCommentApiClient client = credential.map(clientFactory::forCredential).orElse(apiClient);
+        String boundCredentialId = credential.map(PlatformCredential::getCredentialId).orElse(null);
+        if (boundCredentialId != null) {
+            credentialService.markUsed(boundCredentialId, null);
+        }
+
         String source = properties.getSource() == null ? "auto" : properties.getSource().trim().toLowerCase();
-        boolean apiConfigured = apiClient.isConfigured();
+        boolean apiConfigured = client.isConfigured();
 
         // source=api：只走真实接口，未配置或调用失败都直接报错，避免把模拟数据当成真实数据
         if ("api".equals(source)) {
             if (!apiConfigured) {
-                throw new CommentSourceException("COMMENT_SOURCE_NOT_CONFIGURED", apiClient.statusHint());
+                throw new CommentSourceException("COMMENT_SOURCE_NOT_CONFIGURED", client.statusHint());
             }
-            List<Comment> comments = fetchFromApi(p, workId, ownerId, xsecToken);
+            List<Comment> comments = fetchFromApi(client, p, workId, ownerId, xsecToken, boundCredentialId);
             log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
             return new CollectionResult(p, workId, "api", null, comments);
         }
 
         // source=auto：真实接口优先；未配置或失败时按 fallback-to-mock 决定是否回退模拟数据
         if (!apiConfigured) {
-            String reason = apiClient.statusHint();
+            String reason = client.statusHint();
             if (!properties.isFallbackToMock()) {
                 throw new CommentSourceException("COMMENT_SOURCE_NOT_CONFIGURED", reason);
             }
@@ -100,7 +122,7 @@ public class CommentCollector {
         }
 
         try {
-            List<Comment> comments = fetchFromApi(p, workId, ownerId, xsecToken);
+            List<Comment> comments = fetchFromApi(client, p, workId, ownerId, xsecToken, boundCredentialId);
             log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
             return new CollectionResult(p, workId, "api", null, comments);
         } catch (CommentSourceException e) {
@@ -130,8 +152,17 @@ public class CommentCollector {
      * 可用于后续读取/回复；发现新笔记时按配置自动加入监控。
      */
     public NotificationCollectionResult collectFromNotifications(String ownerId, String tab, int limit) {
-        if (!apiClient.isNotificationConfigured()) {
-            String hint = apiClient.notificationStatusHint();
+        return collectFromNotifications(ownerId, tab, limit, null);
+    }
+
+    /** 通知增量采集（按凭据归属：每个账号一份通知流）。 */
+    public NotificationCollectionResult collectFromNotifications(String ownerId, String tab, int limit,
+                                                                String credentialId) {
+        Optional<PlatformCredential> boundCredential = credentialService.resolve(ownerId, "xiaohongshu", credentialId);
+        XhsCommentApiClient client = boundCredential.map(clientFactory::forCredential).orElse(apiClient);
+        String boundId = boundCredential.map(PlatformCredential::getCredentialId).orElse(null);
+        if (!client.isNotificationConfigured()) {
+            String hint = client.notificationStatusHint();
             if (!properties.isFallbackToMock()) {
                 throw new CommentSourceException("COMMENT_NOTIFICATION_NOT_CONFIGURED", hint);
             }
@@ -140,7 +171,7 @@ public class CommentCollector {
         }
 
         int effectiveLimit = limit <= 0 ? properties.getXiaohongshu().getNotificationLimit() : limit;
-        XhsCommentApiClient.NotificationPage page = apiClient.fetchNotifications(tab, effectiveLimit);
+        XhsCommentApiClient.NotificationPage page = client.fetchNotifications(tab, effectiveLimit);
         List<Comment> comments = new ArrayList<>();
         Map<String, String> discoveredNotes = new LinkedHashMap<>();
         LocalDateTime now = LocalDateTime.now();
@@ -165,6 +196,7 @@ public class CommentCollector {
                     .commentId(internalId)
                     .platformCommentId(platformCommentId)
                     .collectedVia("notification")
+                    .credentialId(boundId)
                     .ownerId(ownerId)
                     .platform("xiaohongshu")
                     .workId(isBlank(notification.feedId()) ? "" : notification.feedId().trim())
@@ -184,10 +216,10 @@ public class CommentCollector {
         int createdWatches = 0;
         if (properties.getXiaohongshu().isAutoWatchFromNotifications()) {
             for (Map.Entry<String, String> entry : discoveredNotes.entrySet()) {
-                createdWatches += autoWatch(ownerId, entry.getKey(), entry.getValue());
+                createdWatches += autoWatch(ownerId, entry.getKey(), entry.getValue(), boundId);
             }
         }
-        Map<String, Object> unread = apiClient.fetchUnreadCounts();
+        Map<String, Object> unread = client.fetchUnreadCounts();
         log.info("[Comment] 通知增量采集完成: tab={}, 通知={}, 评论={}, 新建监控={}, filtered={}",
                 page.tab(), page.items().size(), comments.size(), createdWatches, page.filtered());
         return new NotificationCollectionResult("api", null, page.tab(), page.filtered(),
@@ -195,7 +227,7 @@ public class CommentCollector {
     }
 
     /** 通知里发现的新笔记自动加入监控（带上通知自带的 feed_xsec_token）。 */
-    private int autoWatch(String ownerId, String workId, String xsecToken) {
+    private int autoWatch(String ownerId, String workId, String xsecToken, String credentialId) {
         try {
             if (watchRepository.findByWork("xiaohongshu", workId, ownerId).isPresent()) {
                 return 0;
@@ -206,6 +238,7 @@ public class CommentCollector {
                     .platform("xiaohongshu")
                     .workId(workId)
                     .xsecToken(xsecToken)
+                    .credentialId(credentialId)
                     .autoAnalyze(properties.isAutoAnalyze())
                     .enabled(true)
                     .totalCollected(0)
@@ -219,7 +252,8 @@ public class CommentCollector {
         }
     }
     /** 真实接口分页拉取。 */
-    private List<Comment> fetchFromApi(String platform, String workId, String ownerId, String xsecToken) {
+    private List<Comment> fetchFromApi(XhsCommentApiClient client, String platform, String workId,
+                                       String ownerId, String xsecToken, String credentialId) {
         if (!"xiaohongshu".equalsIgnoreCase(platform)) {
             throw new CommentSourceException("COMMENT_PLATFORM_NOT_SUPPORTED",
                     "暂未接入 " + platform + " 的真实评论接口，可配置 contentops.comment.source=mock 使用模拟数据");
@@ -231,12 +265,13 @@ public class CommentCollector {
         int maxPages = Math.max(1, cfg.getMaxPages());
         for (int page = 0; page < maxPages; page++) {
             XhsCommentApiClient.FetchPage fetched =
-                    apiClient.fetchPage(workId, cursor, cfg.getPageSize(), xsecToken);
+                    client.fetchPage(workId, cursor, cfg.getPageSize(), xsecToken);
             for (XhsCommentApiClient.XhsComment item : fetched.comments()) {
                 all.add(Comment.builder()
                         .commentId(resolveCommentId(workId, item))
                         .platformCommentId(item.commentId())
                         .collectedVia("note")
+                        .credentialId(credentialId)
                         .ownerId(ownerId)
                         .platform("xiaohongshu")
                         .workId(workId)

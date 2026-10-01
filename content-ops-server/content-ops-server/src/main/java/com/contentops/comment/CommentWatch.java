@@ -36,6 +36,9 @@ public class CommentWatch {
     @Schema(description = "笔记访问票据 xsec_token（自建桥必填，有有效期需更新）")
     private String xsecToken;
 
+    @Schema(description = "使用的平台凭据 ID（该作品属于哪个账号）")
+    private String credentialId;
+
     @Schema(description = "是否对新评论自动做 AI 分析")
     private boolean autoAnalyze;
 

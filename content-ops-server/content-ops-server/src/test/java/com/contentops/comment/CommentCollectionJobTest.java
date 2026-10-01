@@ -1,5 +1,6 @@
 package com.contentops.comment;
 
+import com.contentops.common.credential.CredentialService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ class CommentCollectionJobTest {
     private CommentJobRunRepository jobRunRepository;
     private CommentAnalysisService analysisService;
     private CommentProperties properties;
+    private CredentialService credentialService;
     private CommentCollectionJob job;
 
     @BeforeEach
@@ -41,11 +43,12 @@ class CommentCollectionJobTest {
         jobRunRepository = mock(CommentJobRunRepository.class);
         analysisService = mock(CommentAnalysisService.class);
         properties = new CommentProperties();
-        when(collector.collectFromNotifications(any(), any(), anyInt())).thenReturn(
+        credentialService = mock(CredentialService.class);
+        when(collector.collectFromNotifications(any(), any(), anyInt(), any())).thenReturn(
                 new CommentCollector.NotificationCollectionResult("none", "未配置", "mentions", 0,
                         List.of(), 0, Map.of()));
         job = new CommentCollectionJob(collector, commentRepository, watchRepository,
-                jobRunRepository, analysisService, properties);
+                jobRunRepository, analysisService, properties, credentialService);
     }
 
     @Test
@@ -55,7 +58,7 @@ class CommentCollectionJobTest {
         properties.setAutoAnalyzeLimit(2);
         CommentWatch watch = watch("w-1", true);
 
-        when(collector.collect("xiaohongshu", "note-1", "owner-1", null)).thenReturn(
+        when(collector.collect("xiaohongshu", "note-1", "owner-1", null, null)).thenReturn(
                 new CommentCollector.CollectionResult("xiaohongshu", "note-1", "api", null,
                         List.of(comment("c-1"), comment("c-2"), comment("c-3"))));
         when(commentRepository.exists("c-1")).thenReturn(true);
@@ -88,7 +91,7 @@ class CommentCollectionJobTest {
     void runForWatch_autoAnalyzeDisabled_skipsModel() {
         properties.setAutoAnalyze(true);
         CommentWatch watch = watch("w-1", false);
-        when(collector.collect(anyString(), anyString(), any(), any())).thenReturn(
+        when(collector.collect(anyString(), anyString(), any(), any(), any())).thenReturn(
                 new CommentCollector.CollectionResult("xiaohongshu", "note-1", "api", null,
                         List.of(comment("c-9"))));
         when(commentRepository.exists("c-9")).thenReturn(false, true);
@@ -104,7 +107,7 @@ class CommentCollectionJobTest {
     @DisplayName("采集异常时记录错误，不影响任务继续")
     void runForWatch_collectError_recordsError() {
         CommentWatch watch = watch("w-2", true);
-        when(collector.collect(anyString(), anyString(), any(), any()))
+        when(collector.collect(anyString(), anyString(), any(), any(), any()))
                 .thenThrow(new CommentSourceException("COMMENT_SOURCE_UNAUTHORIZED", "鉴权失败"));
 
         CommentCollectionJob.WatchRunResult result = job.runForWatch(watch, 5);

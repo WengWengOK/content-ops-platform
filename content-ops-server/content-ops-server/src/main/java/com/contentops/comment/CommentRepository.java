@@ -20,16 +20,16 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class CommentRepository {
 
-    private static final String COLS = "comment_id, platform_comment_id, collected_via, owner_id, platform, "
-            + "work_id, workflow_id, author, content, likes, comment_time, reply_to, intent, sentiment, "
-            + "ai_summary, ai_reply, reply_status, dialog_history, collected_at";
+    private static final String COLS = "comment_id, platform_comment_id, collected_via, credential_id, owner_id, "
+            + "platform, work_id, workflow_id, author, content, likes, comment_time, reply_to, intent, "
+            + "sentiment, ai_summary, ai_reply, reply_status, dialog_history, collected_at";
 
     private static final String SQL_INSERT =
             "INSERT INTO contentops_comment "
-                    + "(comment_id, platform_comment_id, collected_via, owner_id, platform, work_id, "
-                    + " workflow_id, author, content, likes, comment_time, reply_to, intent, sentiment, "
-                    + " ai_summary, ai_reply, reply_status, dialog_history, collected_at) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + "(comment_id, platform_comment_id, collected_via, credential_id, owner_id, platform, "
+                    + " work_id, workflow_id, author, content, likes, comment_time, reply_to, intent, "
+                    + " sentiment, ai_summary, ai_reply, reply_status, dialog_history, collected_at) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment "
                     + "WHERE (? = '' OR owner_id = ?) "
@@ -71,6 +71,7 @@ public class CommentRepository {
             jdbcTemplate.update(SQL_INSERT,
                     c.getCommentId(), c.getPlatformCommentId(),
                     c.getCollectedVia() == null ? "note" : c.getCollectedVia(),
+                    c.getCredentialId(),
                     c.getOwnerId(), c.getPlatform(), c.getWorkId(), c.getWorkflowId(),
                     c.getAuthor(), c.getContent(), c.getLikes(),
                     c.getCommentTime() == null ? null : Timestamp.valueOf(c.getCommentTime()),
@@ -177,6 +178,7 @@ public class CommentRepository {
                 .commentId(rs.getString("comment_id"))
                 .platformCommentId(rs.getString("platform_comment_id"))
                 .collectedVia(rs.getString("collected_via"))
+                .credentialId(rs.getString("credential_id"))
                 .ownerId(rs.getString("owner_id"))
                 .platform(rs.getString("platform"))
                 .workId(rs.getString("work_id"))

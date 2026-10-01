@@ -21,11 +21,11 @@ import java.util.Optional;
 public class CommentWatchRepository {
 
     private static final String COLS = "watch_id, owner_id, platform, work_id, workflow_id, xsec_token, "
-            + "auto_analyze, enabled, last_collected_at, last_new_count, total_collected, last_source, "
-            + "last_error, created_at";
+            + "credential_id, auto_analyze, enabled, last_collected_at, last_new_count, total_collected, "
+            + "last_source, last_error, created_at";
 
     private static final String SQL_INSERT =
-            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment_watch "
                     + "WHERE (? = '' OR owner_id = ?) ORDER BY created_at DESC LIMIT ?";
@@ -52,7 +52,7 @@ public class CommentWatchRepository {
         try {
             jdbcTemplate.update(SQL_INSERT,
                     w.getWatchId(), w.getOwnerId(), w.getPlatform(), w.getWorkId(), w.getWorkflowId(),
-                    w.getXsecToken(), w.isAutoAnalyze(), w.isEnabled(),
+                    w.getXsecToken(), w.getCredentialId(), w.isAutoAnalyze(), w.isEnabled(),
                     w.getLastCollectedAt() == null ? null : Timestamp.valueOf(w.getLastCollectedAt()),
                     w.getLastNewCount(), w.getTotalCollected(), w.getLastSource(), w.getLastError(),
                     Timestamp.valueOf(w.getCreatedAt() == null ? LocalDateTime.now() : w.getCreatedAt()));
@@ -130,6 +130,7 @@ public class CommentWatchRepository {
                 .workId(rs.getString("work_id"))
                 .workflowId(rs.getString("workflow_id"))
                 .xsecToken(rs.getString("xsec_token"))
+                .credentialId(rs.getString("credential_id"))
                 .autoAnalyze(rs.getBoolean("auto_analyze"))
                 .enabled(rs.getBoolean("enabled"))
                 .lastCollectedAt(last == null ? null : last.toLocalDateTime())

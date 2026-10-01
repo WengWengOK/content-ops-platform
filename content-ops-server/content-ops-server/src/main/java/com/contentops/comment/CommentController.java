@@ -1,6 +1,7 @@
 package com.contentops.comment;
 
 import com.contentops.common.audit.AuditService;
+import com.contentops.common.credential.CredentialService;
 import com.contentops.common.dto.AgentResponse;
 import com.contentops.common.exception.BusinessException;
 import com.contentops.common.exception.ErrorCode;
@@ -53,6 +54,7 @@ public class CommentController {
     private final CommentProperties properties;
     private final XhsCommentApiClient apiClient;
     private final AuditService auditService;
+    private final CredentialService credentialService;
 
     /** 开发模式（未开启鉴权）时 ownerId 为 null，SQL 侧自动不过滤，保证联调可用 */
     private String ownerId() {
@@ -71,7 +73,7 @@ public class CommentController {
         CommentCollector.CollectionResult result;
         try {
             result = collector.collect(platform, request.getWorkId().trim(), ownerId(),
-                    request.getXsecToken());
+                    request.getXsecToken(), request.getCredentialId());
         } catch (CommentSourceException e) {
             return AgentResponse.failure("comment", "[" + e.getCode() + "] " + e.getMessage());
         }
@@ -179,6 +181,7 @@ public class CommentController {
                 .workId(request.getWorkId().trim())
                 .workflowId(blank(request.getWorkflowId()))
                 .xsecToken(blank(request.getXsecToken()))
+                .credentialId(resolveWatchCredential(platform, owner, request.getCredentialId()))
                 .autoAnalyze(request.getAutoAnalyze() == null ? properties.isAutoAnalyze() : request.getAutoAnalyze())
                 .enabled(true)
                 .totalCollected(0)
@@ -241,9 +244,10 @@ public class CommentController {
         boolean autoAnalyze = request == null || request.getAutoAnalyze() == null
                 ? properties.isAutoAnalyze() : request.getAutoAnalyze();
 
+        String credentialId = request == null ? null : request.getCredentialId();
         CommentCollector.NotificationCollectionResult result;
         try {
-            result = collector.collectFromNotifications(ownerId(), tab, limit);
+            result = collector.collectFromNotifications(ownerId(), tab, limit, credentialId);
         } catch (CommentSourceException e) {
             return AgentResponse.failure("comment", "[" + e.getCode() + "] " + e.getMessage());
         }
@@ -397,6 +401,16 @@ public class CommentController {
 
     // ──────────────────────── 内部工具 ────────────────────────
 
+    /** 监控项固定绑定一个账号凭据：显式指定优先，否则取该租户默认凭据。 */
+    private String resolveWatchCredential(String platform, String owner, String requested) {
+        if (requested != null && !requested.isBlank()) {
+            return requested.trim();
+        }
+        return credentialService.resolve(owner, platform, null)
+                .map(credential -> credential.getCredentialId())
+                .orElse(null);
+    }
+
     private CommentWatch requireWatch(String watchId) {
         CommentWatch watch = watchRepository.findById(watchId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "监控项不存在: " + watchId));
@@ -418,6 +432,8 @@ public class CommentController {
         private String platform;
         /** 自建桥（xiaohongshu-mcp）必填：笔记访问票据 */
         private String xsecToken;
+        /** 指定平台账号凭据；为空则用该租户默认凭据 */
+        private String credentialId;
     }
 
     @Data
@@ -429,6 +445,8 @@ public class CommentController {
         private Boolean autoAnalyze;
         /** 自建桥（xiaohongshu-mcp）必填：笔记访问票据 */
         private String xsecToken;
+        /** 指定平台账号凭据；为空则用该租户默认凭据 */
+        private String credentialId;
     }
 
     @Data
@@ -461,11 +479,15 @@ public class CommentController {
         private String tab;
         private Integer limit;
         private Boolean autoAnalyze;
+        /** 指定平台账号凭据 */
+        private String credentialId;
     }
 
     @Data
     public static class SendRequest {
         /** 可选：真实发送所需的 xsec_token（不传则取该作品的监控项/全局默认值） */
         private String xsecToken;
+        /** 指定平台账号凭据；为空则用该租户默认凭据 */
+        private String credentialId;
     }
 }

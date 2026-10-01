@@ -1,5 +1,7 @@
 package com.contentops.comment;
 
+import com.contentops.common.credential.CredentialService;
+import com.contentops.common.credential.PlatformCredential;
 import com.contentops.common.exception.BusinessException;
 import com.contentops.common.exception.ErrorCode;
 import com.contentops.common.security.AuthContext;
@@ -31,6 +33,8 @@ public class CommentReplyService {
     private final XhsCommentApiClient apiClient;
     private final CommentWatchRepository watchRepository;
     private final CommentProperties properties;
+    private final CredentialService credentialService;
+    private final XhsClientFactory clientFactory;
 
     private static final String CHAT_PROMPT = """
             你是小红书博主的评论区回复助手，用自然口语化、有小红书风格的中文回复用户。
@@ -119,9 +123,14 @@ public class CommentReplyService {
             throw new BusinessException(ErrorCode.MISSING_REQUIRED_INPUT, "回复内容为空，无法发送");
         }
 
+        // 按评论归属的凭据走对应账号；没有绑定凭据时回退全局配置
+        XhsCommentApiClient client = credentialService
+                .resolve(comment.getOwnerId(), comment.getPlatform(), comment.getCredentialId())
+                .map(clientFactory::forCredential)
+                .orElse(apiClient);
         boolean notificationReplyAvailable = "notification".equalsIgnoreCase(comment.getCollectedVia())
-                && apiClient.isNotificationReplyConfigured();
-        boolean feedReplyAvailable = apiClient.isReplyConfigured();
+                && client.isNotificationReplyConfigured();
+        boolean feedReplyAvailable = client.isReplyConfigured();
         boolean realSendAllowed = properties.getXiaohongshu().isReplyEnabled()
                 && "xiaohongshu".equalsIgnoreCase(comment.getPlatform())
                 && (feedReplyAvailable || notificationReplyAvailable);
@@ -129,7 +138,7 @@ public class CommentReplyService {
             repository.updateReply(commentId, reply, "SENT");
             log.info("[Comment] 回复已发送（模拟，未配置真实回复接口）: id={}", commentId);
             return new SendResult(repository.findById(commentId).orElse(comment), "simulated",
-                    "模拟发送：未配置真实回复接口（" + apiClient.replyStatusHint() + "）");
+                    "模拟发送：未配置真实回复接口（" + client.replyStatusHint() + "）");
         }
 
         String platformCommentId = resolvePlatformCommentId(comment);
@@ -142,7 +151,7 @@ public class CommentReplyService {
         CommentSourceException notificationFailure = null;
         if (notificationReplyAvailable) {
             try {
-                result = apiClient.replyToNotification(platformCommentId, reply);
+                result = client.replyToNotification(platformCommentId, reply);
                 channel = "notification";
             } catch (CommentSourceException e) {
                 notificationFailure = e;
@@ -152,7 +161,7 @@ public class CommentReplyService {
         }
         if (result == null) {
             try {
-                result = apiClient.reply(comment.getWorkId(), xsecToken, platformCommentId, reply);
+                result = client.reply(comment.getWorkId(), xsecToken, platformCommentId, reply);
                 channel = "feed";
             } catch (CommentSourceException e) {
                 CommentSourceException toThrow = notificationFailure != null ? notificationFailure : e;
