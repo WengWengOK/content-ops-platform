@@ -23,10 +23,10 @@ public class CommentWatchRepository {
     private static final String COLS = "watch_id, owner_id, platform, work_id, workflow_id, xsec_token, "
             + "credential_id, auto_analyze, enabled, last_collected_at, last_new_count, total_collected, "
             + "last_source, last_error, token_state, token_checked_at, token_set_at, observed_ttl_days, "
-            + "created_at";
+            + "token_notified_state, token_notified_at, created_at";
 
     private static final String SQL_INSERT =
-            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment_watch "
                     + "WHERE (? = '' OR owner_id = ?) ORDER BY created_at DESC LIMIT ?";
@@ -76,6 +76,8 @@ public class CommentWatchRepository {
                             ? (w.getCreatedAt() == null ? LocalDateTime.now() : w.getCreatedAt())
                             : w.getTokenSetAt()),
                     w.getObservedTtlDays(),
+                    w.getTokenNotifiedState(),
+                    w.getTokenNotifiedAt() == null ? null : Timestamp.valueOf(w.getTokenNotifiedAt()),
                     Timestamp.valueOf(w.getCreatedAt() == null ? LocalDateTime.now() : w.getCreatedAt()));
         } catch (Exception e) {
             log.error("[Comment] 新增监控项失败: workId={}, err={}", w.getWorkId(), e.getMessage());
@@ -142,6 +144,31 @@ public class CommentWatchRepository {
         }
     }
 
+    /** 记录「已就某个预警状态通知过」，用于去重与重复提醒间隔。 */
+    private static final String SQL_MARK_NOTIFIED =
+            "UPDATE contentops_comment_watch SET token_notified_state = ?, token_notified_at = ? "
+                    + "WHERE watch_id = ?";
+    private static final String SQL_RESET_NOTIFIED =
+            "UPDATE contentops_comment_watch SET token_notified_state = NULL WHERE watch_id = ?";
+
+    /** 记录预警已通知。 */
+    public void markTokenNotified(String watchId, String state) {
+        try {
+            jdbcTemplate.update(SQL_MARK_NOTIFIED, state, Timestamp.valueOf(LocalDateTime.now()), watchId);
+        } catch (Exception e) {
+            log.warn("[Comment] 记录预警通知失败: watchId={}, err={}", watchId, e.getMessage());
+        }
+    }
+
+    /** 用户更新票据后清除预警通知记录（下次预警可立即再提醒）。 */
+    public void resetTokenNotified(String watchId) {
+        try {
+            jdbcTemplate.update(SQL_RESET_NOTIFIED, watchId);
+        } catch (Exception e) {
+            log.debug("[Comment] 重置预警通知失败: {}", e.getMessage());
+        }
+    }
+
     /** 标记票据健康状态（EXPIRED / ERROR），用于前端过期提醒。 */
     public void updateTokenState(String watchId, String tokenState, String error) {
         try {
@@ -156,6 +183,7 @@ public class CommentWatchRepository {
     public void updateXsecToken(String watchId, String xsecToken) {
         Timestamp now = Timestamp.valueOf(LocalDateTime.now());
         jdbcTemplate.update(SQL_UPDATE_TOKEN, xsecToken, now, now, watchId);
+        resetTokenNotified(watchId);
     }
 
     /** 票据被判定过期：记录过期时刻并沉淀观测有效期（用于后续提前预警）。 */
@@ -194,6 +222,9 @@ public class CommentWatchRepository {
                         ? null : rs.getTimestamp("token_set_at").toLocalDateTime())
                 .observedTtlDays(rs.getObject("observed_ttl_days") == null
                         ? null : rs.getInt("observed_ttl_days"))
+                .tokenNotifiedState(rs.getString("token_notified_state"))
+                .tokenNotifiedAt(rs.getTimestamp("token_notified_at") == null
+                        ? null : rs.getTimestamp("token_notified_at").toLocalDateTime())
                 .createdAt(created == null ? null : created.toLocalDateTime())
                 .build();
     }

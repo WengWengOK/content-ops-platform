@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -33,6 +34,7 @@ class CommentCollectionJobTest {
     private CommentAnalysisService analysisService;
     private CommentProperties properties;
     private CredentialService credentialService;
+    private TokenWarningNotifier tokenWarningNotifier;
     private CommentCollectionJob job;
 
     @BeforeEach
@@ -44,11 +46,14 @@ class CommentCollectionJobTest {
         analysisService = mock(CommentAnalysisService.class);
         properties = new CommentProperties();
         credentialService = mock(CredentialService.class);
+        tokenWarningNotifier = mock(TokenWarningNotifier.class);
+        when(tokenWarningNotifier.notifyIfNeeded(any(), anyBoolean())).thenReturn(
+                new TokenWarningNotifier.NotifyResult(0, 0, 0, List.of(), Map.of()));
         when(collector.collectFromNotifications(any(), any(), anyInt(), any())).thenReturn(
                 new CommentCollector.NotificationCollectionResult("none", "未配置", "mentions", 0,
                         List.of(), 0, Map.of()));
         job = new CommentCollectionJob(collector, commentRepository, watchRepository,
-                jobRunRepository, analysisService, properties, credentialService);
+                jobRunRepository, analysisService, properties, credentialService, tokenWarningNotifier);
     }
 
     @Test

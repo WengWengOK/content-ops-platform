@@ -253,3 +253,20 @@ export async function getCommentOpsOverview(): Promise<OpsOverview> {
   const { data } = await apiClient.get<AgentResponse<OpsOverview>>('/comments/ops-overview')
   return unwrap(data)
 }
+/** POST /comments/token-warnings/notify — 立即推送票据预警到飞书/企微（force=忽略去重） */
+export async function notifyTokenWarnings(force = false): Promise<{
+  candidates: number
+  notified: number
+  skipped: number
+  items: string[]
+  channels: Record<string, unknown>
+}> {
+  const { data } = await apiClient.post<AgentResponse<{
+    candidates: number
+    notified: number
+    skipped: number
+    items: string[]
+    channels: Record<string, unknown>
+  }>>('/comments/token-warnings/notify', { force })
+  return unwrap(data)
+}

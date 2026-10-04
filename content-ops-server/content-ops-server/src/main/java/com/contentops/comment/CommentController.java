@@ -55,6 +55,8 @@ public class CommentController {
     private final XhsCommentApiClient apiClient;
     private final AuditService auditService;
     private final CredentialService credentialService;
+    private final WatchTokenHealthService watchTokenHealthService;
+    private final TokenWarningNotifier tokenWarningNotifier;
 
     /** 开发模式（未开启鉴权）时 ownerId 为 null，SQL 侧自动不过滤，保证联调可用 */
     private String ownerId() {
@@ -159,7 +161,7 @@ public class CommentController {
     @Operation(summary = "我的评论监控作品列表（含票据年龄与即将过期预警）")
     public AgentResponse<List<CommentWatch>> watches() {
         List<CommentWatch> watches = watchRepository.list(ownerId(), 100);
-        watches.forEach(this::annotateTokenHealth);
+        watchTokenHealthService.annotateAll(watches);
         return AgentResponse.success("comment", watches);
     }
 
@@ -176,7 +178,7 @@ public class CommentController {
         data.put("credentials", credentialService.healthList(owner));
 
         List<CommentWatch> watches = watchRepository.list(owner, 500);
-        watches.forEach(this::annotateTokenHealth);
+        watchTokenHealthService.annotateAll(watches);
         int expired = 0;
         int expiring = 0;
         int enabled = 0;
@@ -224,27 +226,12 @@ public class CommentController {
         return AgentResponse.success("comment", data);
     }
 
-    /** 计算票据年龄与预警状态（不落库，仅用于响应展示）。 */
-    private void annotateTokenHealth(CommentWatch watch) {
-        LocalDateTime base = watch.getTokenSetAt() != null ? watch.getTokenSetAt()
-                : (watch.getCreatedAt() != null ? watch.getCreatedAt() : null);
-        Integer ageDays = base == null ? null
-                : (int) java.time.Duration.between(base, LocalDateTime.now()).toDays();
-        watch.setTokenAgeDays(ageDays);
-
-        int warnDays = Math.max(1, properties.getXiaohongshu().getTokenWarnDays());
-        Integer observed = watch.getObservedTtlDays();
-        int effectiveWarnDays = observed != null && observed > 0
-                ? Math.max(1, Math.min(warnDays, (int) Math.round(observed * 0.8)))
-                : warnDays;
-
-        if ("EXPIRED".equals(watch.getTokenState())) {
-            watch.setTokenWarning("EXPIRED");
-        } else if (ageDays != null && ageDays >= effectiveWarnDays) {
-            watch.setTokenWarning("EXPIRING");
-        } else {
-            watch.setTokenWarning(null);
-        }
+    @PostMapping("/token-warnings/notify")
+    @Operation(summary = "立即推送票据预警到飞书/企微（force=true 忽略去重，用于验证）")
+    public AgentResponse<TokenWarningNotifier.NotifyResult> notifyTokenWarnings(
+            @RequestBody(required = false) NotifyRequest request) {
+        boolean force = request != null && Boolean.TRUE.equals(request.getForce());
+        return AgentResponse.success("comment", tokenWarningNotifier.notifyIfNeeded(ownerId(), force));
     }
 
     private String accountNameOf(String owner, String credentialId) {
@@ -599,6 +586,12 @@ public class CommentController {
     public static class UpdateTokenRequest {
         /** 新的笔记票据（xsec_token） */
         private String xsecToken;
+    }
+
+    @Data
+    public static class NotifyRequest {
+        /** true=忽略去重立即推送（验证用） */
+        private Boolean force;
     }
 
     @Data

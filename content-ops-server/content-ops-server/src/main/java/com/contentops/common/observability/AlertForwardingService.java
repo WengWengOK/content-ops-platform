@@ -90,6 +90,66 @@ public class AlertForwardingService {
     }
 
     /**
+     * 发送一条业务通知（飞书 text + 企微 markdown），同步返回各渠道结果。
+     *
+     * <p>与 {@link #forward(Map)} 的区别：forward 面向 Grafana 告警结构且异步；
+     * 本方法面向业务事件（如票据即将过期），同步返回发送结果，便于接口/任务记录与排查。
+     */
+    public Map<String, Object> sendBusinessNotification(String title, List<String> lines) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        StringBuilder text = new StringBuilder(title);
+        for (String line : lines) {
+            text.append('\n').append(line);
+        }
+        String message = text.toString();
+
+        result.put("feishu", sendSync("feishu", properties.getFeishuWebhook(),
+                Map.of("msg_type", "text", "content", Map.of("text", message))));
+        result.put("wecom", sendSync("wecom", properties.getWecomWebhook(),
+                Map.of("msgtype", "markdown", "markdown", Map.of("content", toWecomMarkdown(title, lines)))));
+        return result;
+    }
+
+    private String toWecomMarkdown(String title, List<String> lines) {
+        StringBuilder sb = new StringBuilder("**").append(title).append("**");
+        for (String line : lines) {
+            sb.append("\\n> ").append(line);
+        }
+        return sb.toString();
+    }
+
+    /** 同步发送到单个渠道；未配置则返回 configured=false。 */
+    public Map<String, Object> sendSync(String channel, String url, Map<String, Object> body) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("channel", channel);
+        if (url == null || url.isBlank()) {
+            result.put("configured", false);
+            result.put("success", false);
+            result.put("message", "未配置 Webhook");
+            return result;
+        }
+        result.put("configured", true);
+        try {
+            String json = objectMapper.writeValueAsString(body);
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(8))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json, java.nio.charset.StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            result.put("httpStatus", response.statusCode());
+            result.put("response", response.body() == null ? "" : response.body());
+            result.put("success", response.statusCode() == 200);
+            log.info("[Notify] 业务通知发送: channel={}, http={}", channel, response.statusCode());
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "发送失败: " + e.getMessage());
+            log.warn("[Notify] 业务通知发送失败: channel={}, err={}", channel, e.getMessage());
+        }
+        return result;
+    }
+
+    /**
      * 发送一条测试消息到指定渠道（同步，返回是否成功），用于配置后一键验证。
      */
     public Map<String, Object> sendTest(String channel) {

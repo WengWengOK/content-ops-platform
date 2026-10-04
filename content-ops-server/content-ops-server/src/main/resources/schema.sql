@@ -327,3 +327,7 @@ ALTER TABLE contentops_platform_credential ADD COLUMN IF NOT EXISTS token_state 
 -- 存量库迁移：票据「首次使用时间 / 观测到的有效期」，用于到期前预警（幂等）
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_set_at TIMESTAMP;
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS observed_ttl_days INT;
+
+-- 存量库迁移：票据预警「已通知状态 / 通知时间」，用于去重与重复提醒间隔（幂等）
+ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_notified_state VARCHAR(16);
+ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_notified_at TIMESTAMP;

@@ -38,6 +38,7 @@ public class CommentCollectionJob {
     private final CommentAnalysisService analysisService;
     private final CommentProperties properties;
     private final CredentialService credentialService;
+    private final TokenWarningNotifier tokenWarningNotifier;
 
     /** 单个监控项的采集结果。 */
     public record WatchRunResult(String watchId, String workId, String source, String fallbackReason,
@@ -148,6 +149,17 @@ public class CommentCollectionJob {
         jobRunRepository.insert(run);
         log.info("[Comment] 采集任务完成: trigger={}, 作品={}, 抓取={}, 新增={}, 分析={}, 失败={}",
                 triggerType, scanned, collected, inserted, analyzed, failed);
+
+        // 票据预警通知（失败不影响采集结果）
+        try {
+            TokenWarningNotifier.NotifyResult notifyResult = tokenWarningNotifier.notifyIfNeeded(null, false);
+            if (notifyResult.notified() > 0) {
+                log.info("[Comment] 本轮已推送票据预警: 通知={}, 跳过={}",
+                        notifyResult.notified(), notifyResult.skipped());
+            }
+        } catch (Exception e) {
+            log.warn("[Comment] 票据预警推送异常（忽略）: {}", e.getMessage());
+        }
         return run;
     }
 

@@ -78,6 +78,12 @@ public class CommentWatch {
     @Schema(description = "票据预警：EXPIRING（即将过期）/ EXPIRED（已过期）/ null（正常）")
     private String tokenWarning;
 
+    @Schema(description = "最近一次已通知的预警状态（去重）")
+    private String tokenNotifiedState;
+
+    @Schema(description = "最近一次预警通知时间")
+    private LocalDateTime tokenNotifiedAt;
+
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 }

@@ -10,6 +10,7 @@ import {
   collectComments,
   getCommentOpsOverview,
   getCommentScheduler,
+  notifyTokenWarnings,
   getCommentSourceStatus,
   getCommentStats,
   listComments,
@@ -115,6 +116,7 @@ export function CommentsPage() {
   const [tokenEdits, setTokenEdits] = useState<Record<string, string>>({})
   const [ops, setOps] = useState<OpsOverview | null>(null)
   const [opsBusy, setOpsBusy] = useState(false)
+  const [notifyBusy, setNotifyBusy] = useState(false)
 
   const showToast = (msg: string, color = '#165DFF') => {
     setToast({ msg, color })
@@ -317,6 +319,27 @@ export function CommentsPage() {
     void loadCredentials()
     void loadOps()
   }, [loadWatches, loadScheduler, loadSourceStatus, loadCredentials, loadOps])
+
+  const handleNotifyTokenWarnings = async () => {
+    setNotifyBusy(true)
+    try {
+      const res = await notifyTokenWarnings(true)
+      const channels = Object.entries(res.channels || {})
+        .map(([name, value]: [string, any]) => `${name}:${value?.success ? '成功' : value?.configured === false ? '未配置' : '失败'}`)
+        .join(' / ')
+      showToast(
+        res.notified > 0
+          ? `预警已推送：${res.notified} 条（${channels}）`
+          : `没有需要推送的预警（候选 ${res.candidates} 条，已去重 ${res.skipped} 条）`,
+        res.notified > 0 ? '#00B42A' : '#165DFF'
+      )
+      await loadOps()
+    } catch (err: any) {
+      showToast(err?.message || '推送失败', '#F53F3F')
+    } finally {
+      setNotifyBusy(false)
+    }
+  }
 
   const handleRotateKeys = async () => {
     setOpsBusy(true)
@@ -643,6 +666,14 @@ export function CommentsPage() {
               style={{ borderColor: '#E5E6EB', color: '#4E5969' }}
             >
               刷新
+            </button>
+            <button
+              onClick={() => void handleNotifyTokenWarnings()}
+              disabled={notifyBusy}
+              className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+              style={{ borderColor: '#E5E6EB', color: '#722ED1' }}
+            >
+              {notifyBusy ? '推送中…' : '🔔 立即推送预警'}
             </button>
             <button
               onClick={() => void handleRotateKeys()}

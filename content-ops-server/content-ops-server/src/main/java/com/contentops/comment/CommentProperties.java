@@ -41,6 +41,9 @@ public class CommentProperties {
     /** 是否启用定时采集（关闭后仅支持手动触发） */
     private boolean scheduled = true;
 
+    /** 票据预警通知（复用飞书\\u002f企微机器人） */
+    private TokenNotifyProperties tokenNotify = new TokenNotifyProperties();
+
     /** 小红书评论数据源配置 */
     private XiaohongshuProperties xiaohongshu = new XiaohongshuProperties();
 
@@ -65,6 +68,20 @@ public class CommentProperties {
      *       {@code app-id}/{@code app-secret}，鉴权 {@code ark-sign}（appId+timestamp+secret 签名）。</li>
      * </ol>
      */
+    /** 票据预警通知配置。 */
+    @Data
+    public static class TokenNotifyProperties {
+
+        /** 是否启用票据预警通知 */
+        private boolean enabled = true;
+
+        /** 同一监控项的同一预警状态最短重复提醒间隔（小时） */
+        private int remindHours = 24;
+
+        /** 单条消息最多列出的问题条数 */
+        private int maxItems = 10;
+    }
+
     @Data
     public static class XiaohongshuProperties {
 
@@ -174,6 +191,7 @@ public class CommentProperties {
 
         /** 票据提前预警天数：票据使用超过该天数即提示「即将过期，建议更新」（默认 7 天） */
         private int tokenWarnDays = 7;
+
 
         /** 通知增量并发账号数（每个账号一个桥实例调用，账号多时可并行） */
         private int notificationParallelism = 3;
