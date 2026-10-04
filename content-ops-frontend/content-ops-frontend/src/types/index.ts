@@ -611,6 +611,7 @@ export interface CommentWatch {
   workId: string
   workflowId?: string
   xsecToken?: string
+  credentialId?: string
   autoAnalyze: boolean
   enabled: boolean
   lastCollectedAt?: string
@@ -657,4 +658,33 @@ export interface CommentSourceStatus {
   fallbackToMock: boolean
   hint: string
   platformNote: string
+}
+// ═══════════════════════════════════════════════════════════════
+//  平台账号凭据（多账号/多租户归属）
+// ═══════════════════════════════════════════════════════════════
+
+export interface PlatformCredential {
+  credentialId: string
+  ownerId?: string
+  platform: string
+  accountName: string
+  accountRef?: string
+  preset?: string
+  baseUrl: string
+  accessTokenMasked: string
+  enabled: boolean
+  defaultCredential: boolean
+  lastUsedAt?: string
+  lastError?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface CredentialProbeResult {
+  reachable: boolean
+  authenticated: boolean
+  baseUrl: string
+  healthDetail?: string
+  loginDetail?: string
+  hint: string
 }

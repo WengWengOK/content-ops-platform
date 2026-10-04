@@ -20,7 +20,8 @@ function unwrap<T>(resp: AgentResponse<T>): T {
 /** POST /comments/collect — 采集评论（后端按配置走真实接口或模拟数据源） */
 export async function collectComments(
   workId: string,
-  platform = 'xiaohongshu'
+  platform = 'xiaohongshu',
+  credentialId?: string
 ): Promise<{
   collected: number
   inserted: number
@@ -34,7 +35,7 @@ export async function collectComments(
     source: string
     fallbackReason?: string
     comments: PlatformComment[]
-  }>>('/comments/collect', { workId, platform })
+  }>>('/comments/collect', { workId, platform, credentialId })
   return unwrap(data)
 }
 
@@ -144,6 +145,7 @@ export async function addCommentWatch(body: {
   workflowId?: string
   autoAnalyze?: boolean
   xsecToken?: string
+  credentialId?: string
 }): Promise<CommentWatch> {
   const { data } = await apiClient.post<AgentResponse<CommentWatch>>('/comments/watches', body)
   return unwrap(data)
@@ -209,6 +211,7 @@ export async function collectCommentNotifications(body?: {
   tab?: string
   limit?: number
   autoAnalyze?: boolean
+  credentialId?: string
 }): Promise<{
   tab: string
   source: string

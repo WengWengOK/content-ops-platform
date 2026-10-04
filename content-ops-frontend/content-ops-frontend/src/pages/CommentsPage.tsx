@@ -20,12 +20,21 @@ import {
   setCommentWatchEnabled,
   updateCommentReply,
 } from '@/api/comments'
+import {
+  createCredential,
+  deleteCredential,
+  listCredentials,
+  probeCredential,
+  updateCredential,
+} from '@/api/credentials'
 import type {
   CommentSchedulerStatus,
   CommentSourceStatus,
   CommentStats,
   CommentWatch,
+  CredentialProbeResult,
   PlatformComment,
+  PlatformCredential,
 } from '@/types'
 
 const INTENTS = ['咨询', '求教程', '售后', '吐槽', '表扬', '推广', '潜在客户', '反馈', '无关']
@@ -90,6 +99,16 @@ export function CommentsPage() {
   const [unread, setUnread] = useState<Record<string, number>>({})
   const [notifBusy, setNotifBusy] = useState(false)
 
+  // 平台账号凭据（多账号归属）
+  const [credentials, setCredentials] = useState<PlatformCredential[]>([])
+  const [selectedCredential, setSelectedCredential] = useState('')
+  const [credName, setCredName] = useState('')
+  const [credBaseUrl, setCredBaseUrl] = useState('')
+  const [credToken, setCredToken] = useState('')
+  const [credDefault, setCredDefault] = useState(false)
+  const [credBusy, setCredBusy] = useState(false)
+  const [probes, setProbes] = useState<Record<string, CredentialProbeResult>>({})
+
   const showToast = (msg: string, color = '#165DFF') => {
     setToast({ msg, color })
     setTimeout(() => setToast(null), 2600)
@@ -134,7 +153,7 @@ export function CommentsPage() {
       return
     }
     try {
-      const res = await collectComments(workId.trim(), platform || 'xiaohongshu')
+      const res = await collectComments(workId.trim(), platform || 'xiaohongshu', selectedCredential || undefined)
       const srcLabel = res.source === 'api' ? '真实接口' : '模拟数据'
       showToast(`采集完成（${srcLabel}）：新增 ${res.inserted}/${res.collected} 条评论`, '#00B42A')
       await loadComments()
@@ -268,11 +287,92 @@ export function CommentsPage() {
     }
   }, [])
 
+  const loadCredentials = useCallback(async () => {
+    try {
+      setCredentials(await listCredentials(true))
+    } catch {
+      setCredentials([])
+    }
+  }, [])
+
   useEffect(() => {
     void loadWatches()
     void loadScheduler()
     void loadSourceStatus()
-  }, [loadWatches, loadScheduler, loadSourceStatus])
+    void loadCredentials()
+  }, [loadWatches, loadScheduler, loadSourceStatus, loadCredentials])
+
+  const credentialName = (credentialId?: string) => {
+    if (!credentialId) return '全局配置'
+    return credentials.find((c) => c.credentialId === credentialId)?.accountName ?? credentialId.slice(0, 8)
+  }
+
+  const handleCreateCredential = async () => {
+    if (!credBaseUrl.trim()) {
+      showToast('请先填写桥地址（baseUrl）', '#F53F3F')
+      return
+    }
+    setCredBusy(true)
+    try {
+      await createCredential({
+        accountName: credName.trim() || '未命名账号',
+        baseUrl: credBaseUrl.trim(),
+        accessToken: credToken.trim() || undefined,
+        defaultCredential: credDefault,
+      })
+      setCredName('')
+      setCredBaseUrl('')
+      setCredToken('')
+      setCredDefault(false)
+      await loadCredentials()
+      showToast('账号凭据已添加（令牌已加密存储）', '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '添加账号失败', '#F53F3F')
+    } finally {
+      setCredBusy(false)
+    }
+  }
+
+  const handleProbeCredential = async (credentialId: string) => {
+    try {
+      const result = await probeCredential(credentialId)
+      setProbes((prev) => ({ ...prev, [credentialId]: result }))
+      showToast(result.hint, result.authenticated ? '#00B42A' : '#FF7D00')
+    } catch (err: any) {
+      showToast(err?.message || '测试连接失败', '#F53F3F')
+    }
+  }
+
+  const handleSetDefaultCredential = async (credentialId: string) => {
+    try {
+      await updateCredential(credentialId, { defaultCredential: true, enabled: true })
+      await loadCredentials()
+      showToast('已设为默认账号', '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '设置失败', '#F53F3F')
+    }
+  }
+
+  const handleToggleCredential = async (credential: PlatformCredential) => {
+    try {
+      await updateCredential(credential.credentialId, { enabled: !credential.enabled })
+      await loadCredentials()
+      showToast(credential.enabled ? '已停用该账号' : '已启用该账号', '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '操作失败', '#F53F3F')
+    }
+  }
+
+  const handleDeleteCredential = async (credentialId: string) => {
+    try {
+      await deleteCredential(credentialId)
+      if (selectedCredential === credentialId) setSelectedCredential('')
+      await loadCredentials()
+      showToast('账号凭据已删除', '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '删除失败', '#F53F3F')
+    }
+  }
 
   const handleAddWatch = async () => {
     const id = watchInput.trim()
@@ -286,6 +386,7 @@ export function CommentsPage() {
         platform: platform || 'xiaohongshu',
         autoAnalyze: watchAutoAnalyze,
         xsecToken: watchXsecToken.trim() || undefined,
+        credentialId: selectedCredential || undefined,
       })
       setWatchInput('')
       setWatchXsecToken('')
@@ -471,6 +572,119 @@ export function CommentsPage() {
         )}
       </div>
 
+      {/* 平台账号凭据（多账号归属） */}
+      <div className="mb-4 rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
+        <div className="mb-3 text-sm font-medium" style={{ color: '#1D2129' }}>
+          🔑 平台账号凭据
+          <span className="ml-2 text-xs font-normal" style={{ color: '#86909C' }}>
+            共 {credentials.length} 个账号 · 采集/回复/通知按账号归属，令牌加密存储且只显示掩码
+          </span>
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          <input
+            value={credName}
+            onChange={(e) => setCredName(e.target.value)}
+            placeholder="账号名，如 主号·小红"
+            className="w-40 rounded-lg border px-3 py-2 text-sm outline-none"
+            style={{ borderColor: '#E5E6EB' }}
+          />
+          <input
+            value={credBaseUrl}
+            onChange={(e) => setCredBaseUrl(e.target.value)}
+            placeholder="桥地址，如 http://127.0.0.1:18060"
+            className="w-72 rounded-lg border px-3 py-2 text-sm outline-none"
+            style={{ borderColor: '#E5E6EB' }}
+          />
+          <input
+            value={credToken}
+            onChange={(e) => setCredToken(e.target.value)}
+            type="password"
+            placeholder="桥的 AUTH_TOKEN"
+            className="w-56 rounded-lg border px-3 py-2 text-sm outline-none"
+            style={{ borderColor: '#E5E6EB' }}
+          />
+          <label className="flex items-center gap-2 pb-2 text-xs" style={{ color: '#4E5969' }}>
+            <input type="checkbox" checked={credDefault} onChange={(e) => setCredDefault(e.target.checked)} />
+            设为默认账号
+          </label>
+          <button
+            onClick={() => void handleCreateCredential()}
+            disabled={credBusy}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            style={{ background: '#165DFF' }}
+          >
+            {credBusy ? '添加中…' : '＋ 添加账号'}
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {credentials.length === 0 && (
+            <div className="text-xs" style={{ color: '#86909C' }}>
+              还没有账号凭据。添加后「加入监控」可选择该作品属于哪个账号；未配置时回退全局配置。
+            </div>
+          )}
+          {credentials.map((c) => (
+            <div
+              key={c.credentialId}
+              className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs"
+              style={{ borderColor: '#F2F3F5' }}
+            >
+              <span className="font-medium" style={{ color: '#1D2129' }}>{c.accountName}</span>
+              {c.defaultCredential && (
+                <span className="rounded px-2 py-0.5" style={{ background: '#E8F3FF', color: '#165DFF' }}>默认</span>
+              )}
+              <span
+                className="rounded px-2 py-0.5"
+                style={{ background: c.enabled ? '#E8FFEA' : '#F2F3F5', color: c.enabled ? '#00782C' : '#86909C' }}
+              >
+                {c.enabled ? '启用' : '停用'}
+              </span>
+              <span style={{ color: '#86909C' }}>
+                {c.baseUrl} · token {c.accessTokenMasked || '（未设置）'}
+              </span>
+              {probes[c.credentialId] && (
+                <span style={{ color: probes[c.credentialId].authenticated ? '#00782C' : '#9C5B00' }}>
+                  {probes[c.credentialId].hint}
+                </span>
+              )}
+              {c.lastError && <span style={{ color: '#F53F3F' }}>⚠️ {c.lastError}</span>}
+              <span className="ml-auto flex gap-2">
+                <button
+                  onClick={() => void handleProbeCredential(c.credentialId)}
+                  className="rounded-lg border px-2 py-1"
+                  style={{ borderColor: '#E5E6EB', color: '#0FC6C2' }}
+                >
+                  测试连接
+                </button>
+                <button
+                  onClick={() => void handleSetDefaultCredential(c.credentialId)}
+                  disabled={c.defaultCredential}
+                  className="rounded-lg border px-2 py-1 disabled:opacity-40"
+                  style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
+                >
+                  设为默认
+                </button>
+                <button
+                  onClick={() => void handleToggleCredential(c)}
+                  className="rounded-lg border px-2 py-1"
+                  style={{ borderColor: '#E5E6EB', color: '#FF7D00' }}
+                >
+                  {c.enabled ? '停用' : '启用'}
+                </button>
+                <button
+                  onClick={() => void handleDeleteCredential(c.credentialId)}
+                  className="rounded-lg border px-2 py-1"
+                  style={{ borderColor: '#E5E6EB', color: '#F53F3F' }}
+                >
+                  删除
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* 自动采集监控 */}
       <div className="mb-4 rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -519,6 +733,22 @@ export function CommentsPage() {
               className="w-64 rounded-lg border px-3 py-2 text-sm outline-none"
               style={{ borderColor: '#E5E6EB' }}
             />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: '#86909C' }}>归属账号</span>
+            <select
+              value={selectedCredential}
+              onChange={(e) => setSelectedCredential(e.target.value)}
+              className="w-44 rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: '#E5E6EB' }}
+            >
+              <option value="">全局配置 / 默认账号</option>
+              {credentials.map((c) => (
+                <option key={c.credentialId} value={c.credentialId}>
+                  {c.accountName}{c.defaultCredential ? '（默认）' : ''}{c.enabled ? '' : '（停用）'}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-xs" style={{ color: '#86909C' }}>
@@ -613,6 +843,9 @@ export function CommentsPage() {
                   上次源 {w.lastSource}
                 </span>
               )}
+              <span className="rounded px-2 py-0.5" style={{ background: '#FFF7E8', color: '#9C5B00' }}>
+                账号 {credentialName(w.credentialId)}
+              </span>
               <span style={{ color: '#86909C' }}>
                 累计 {w.totalCollected} 条 · 上次新增 {w.lastNewCount} ·{' '}
                 {w.lastCollectedAt ? timeStr(w.lastCollectedAt) : '尚未采集'}
