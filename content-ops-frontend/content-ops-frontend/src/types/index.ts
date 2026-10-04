@@ -104,6 +104,8 @@ export interface TaskContext {
   currentSubStage?: string
   accountProfile: AccountProfile
   inputs: Record<string, unknown>
+  /** 平台字节序号：0=未知,1=小红书,2=公众号,3=抖音,4=B站,5=快手（前端按序号解码展示） */
+  platformCode?: number
   outputs: Record<string, unknown>
   accumulatedArtifacts: Record<string, unknown>
   status: WorkflowStatus

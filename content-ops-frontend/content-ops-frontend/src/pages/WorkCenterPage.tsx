@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { LoadingView } from '@/components/common/StateViews'
 import { listWorkflows } from '@/api/workflow'
+import { PLATFORM_BY_CODE, PLATFORM_COLOR, platformLabel } from '@/components/comments/constants'
 import type { TaskContext } from '@/types'
 
 /* ────────────────────────────── Types & 真实数据映射 ────────────────────────────── */
@@ -16,6 +17,7 @@ interface Work {
   status: WorkStatus
   gradient: string
   hasCover: boolean
+  platformCode?: number
   date: string
   desc: string
 }
@@ -73,6 +75,7 @@ function toWork(ctx: TaskContext): Work {
     status: STATUS_FROM_TASK[ctx.status] ?? 'generating',
     gradient: gradientFor(ctx.workflowId),
     hasCover: !!topicPlan || !!artifacts['image-design'],
+    platformCode: ctx.platformCode,
     date: (ctx.updatedAt || ctx.createdAt || '').slice(0, 10),
     desc: ctx.errorMessage || `${stageLabel} · ${ctx.status}`,
   }
@@ -361,7 +364,15 @@ export function WorkCenterPage() {
                       className="tabular-nums"
                       style={{ fontSize: 12, color: '#C9CDD4', marginLeft: 'auto' }}
                     >
-                      {work.date}
+                      <span className="platform-badge" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
+                borderRadius: 999, fontSize: 11, fontWeight: 600,
+                background: '#F7F8FA',
+                color: PLATFORM_COLOR[work.platformCode ?? 0] ?? '#4E5969',
+              }}>
+                {platformLabel(work.platformCode)}
+              </span>
+              {work.date}
                     </span>
                   </div>
                 </div>

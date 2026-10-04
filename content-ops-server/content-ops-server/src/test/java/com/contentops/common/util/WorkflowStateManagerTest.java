@@ -67,6 +67,7 @@ class WorkflowStateManagerTest {
                     workflow_id  VARCHAR(64)      PRIMARY KEY,
                     context_json VARCHAR(1000000) NOT NULL,
                     owner_id     VARCHAR(64),
+                    platform_code SMALLINT,
                     created_at   TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at   TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )

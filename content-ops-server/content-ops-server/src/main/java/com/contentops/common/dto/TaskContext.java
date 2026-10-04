@@ -39,6 +39,12 @@ public class TaskContext {
     @Schema(description = "当前阶段的输入参数，键值对形式")
     private Map<String, Object> inputs;
 
+    /**
+     * 作品所属平台的字节序号（见 {@link com.contentops.common.enums.PlatformCode}）。
+     * 只存序号，展示名由前端按序号解码，节省存储与传输。
+     */
+    private Integer platformCode;
+
     @Schema(description = "当前阶段的输出产物，键值对形式")
     private Map<String, Object> outputs;
 

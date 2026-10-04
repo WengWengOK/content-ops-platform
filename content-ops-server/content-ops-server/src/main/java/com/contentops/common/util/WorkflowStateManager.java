@@ -1,6 +1,7 @@
 package com.contentops.common.util;
 
 import com.contentops.common.dto.TaskContext;
+import com.contentops.common.enums.PlatformCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
@@ -66,19 +67,21 @@ public class WorkflowStateManager {
 
     private static final String SQL_UPDATE = """
             UPDATE contentops_workflow
-               SET context_json = ?, owner_id = ?, updated_at = ?
+               SET context_json = ?, owner_id = ?, platform_code = ?, updated_at = ?
              WHERE workflow_id = ?
             """;
     private static final String SQL_INSERT = """
-            INSERT INTO contentops_workflow (workflow_id, context_json, owner_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO contentops_workflow
+                (workflow_id, context_json, owner_id, platform_code, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """;
     private static final String SQL_SELECT_BY_ID =
             "SELECT context_json FROM contentops_workflow WHERE workflow_id = ?";
     private static final String SQL_LIST =
-            "SELECT context_json FROM contentops_workflow ORDER BY updated_at DESC";
+            "SELECT context_json, platform_code FROM contentops_workflow ORDER BY updated_at DESC";
     private static final String SQL_LIST_BY_OWNER =
-            "SELECT context_json FROM contentops_workflow WHERE owner_id = ? ORDER BY updated_at DESC";
+            "SELECT context_json, platform_code FROM contentops_workflow "
+                    + "WHERE owner_id = ? ORDER BY updated_at DESC";
     private static final String SQL_DELETE =
             "DELETE FROM contentops_workflow WHERE workflow_id = ?";
 
@@ -100,9 +103,16 @@ public class WorkflowStateManager {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime createdAt = context.getCreatedAt() != null ? context.getCreatedAt() : now;
             LocalDateTime updatedAt = context.getUpdatedAt() != null ? context.getUpdatedAt() : now;
-            int updated = jdbcTemplate.update(SQL_UPDATE, json, context.getOwnerId(), updatedAt, workflowId);
+            // 平台字节序号：优先取 context 已有值，否则从 inputs 推断（1 字节，供索引与前端解码展示）
+            int platformCode = context.getPlatformCode() != null
+                    ? context.getPlatformCode()
+                    : PlatformCode.codeOfInputs(context.getInputs());
+            context.setPlatformCode(platformCode);
+            int updated = jdbcTemplate.update(SQL_UPDATE, json, context.getOwnerId(), platformCode,
+                    updatedAt, workflowId);
             if (updated == 0) {
-                jdbcTemplate.update(SQL_INSERT, workflowId, json, context.getOwnerId(), createdAt, updatedAt);
+                jdbcTemplate.update(SQL_INSERT, workflowId, json, context.getOwnerId(), platformCode,
+                        createdAt, updatedAt);
             }
             log.debug("Saved workflow state (db) for: {}", workflowId);
         } catch (Exception e) {
@@ -159,7 +169,14 @@ public class WorkflowStateManager {
             // 回调内只处理当前行，勿再调用 rs.next()。
             jdbcTemplate.query(sql, rs -> {
                 try {
-                    result.add(objectMapper.readValue(rs.getString(1), TaskContext.class));
+                    TaskContext loaded = objectMapper.readValue(rs.getString(1), TaskContext.class);
+                    if (loaded.getPlatformCode() == null) {
+                        Object code = rs.getObject(2);
+                        loaded.setPlatformCode(code == null
+                                ? PlatformCode.codeOfInputs(loaded.getInputs())
+                                : ((Number) code).intValue());
+                    }
+                    result.add(loaded);
                 } catch (Exception e) {
                     log.warn("Failed to deserialize workflow context", e);
                 }

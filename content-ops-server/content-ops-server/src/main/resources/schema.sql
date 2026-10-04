@@ -15,6 +15,20 @@ CREATE TABLE IF NOT EXISTS contentops_workflow (
 CREATE INDEX IF NOT EXISTS idx_workflow_owner_updated
     ON contentops_workflow (owner_id, updated_at DESC);
 
+-- 作品平台标签：用 1 字节序号代替平台字符串（0=未知,1=小红书,2=公众号,3=抖音,4=B站,5=快手）
+ALTER TABLE contentops_workflow ADD COLUMN IF NOT EXISTS platform_code SMALLINT;
+-- 历史数据回填（幂等）：按 context_json 里出现的平台标识补平台序号，仅填 NULL 行
+UPDATE contentops_workflow SET platform_code = CASE
+    WHEN context_json LIKE '%"xiaohongshu"%' THEN 1
+    WHEN context_json LIKE '%"wechat"%'      THEN 2
+    WHEN context_json LIKE '%"douyin"%'      THEN 3
+    WHEN context_json LIKE '%"bilibili"%'    THEN 4
+    WHEN context_json LIKE '%"kuaishou"%'    THEN 5
+    ELSE 0 END
+WHERE platform_code IS NULL;
+CREATE INDEX IF NOT EXISTS idx_workflow_platform
+    ON contentops_workflow (platform_code, updated_at DESC);
+
 -- Agent 平台事件 Outbox（大厂多 Agent 架构）：阶段/Agent 产生的领域事件持久化，
 -- 供审计、回放与后续 Kafka 迁移；drainer 消费后标记 PUBLISHED。
 CREATE TABLE IF NOT EXISTS contentops_agent_event (

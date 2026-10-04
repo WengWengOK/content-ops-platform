@@ -29,6 +29,31 @@ export const STATUS_CN: Record<string, string> = {
   SENT: '已发送',
 }
 
+/** 平台字节序号 → 展示名（与后端 PlatformCode 枚举严格对应，编号不可改） */
+export const PLATFORM_BY_CODE: Record<number, string> = {
+  0: '未知平台',
+  1: '小红书',
+  2: '微信公众号',
+  3: '抖音',
+  4: '哔哩哔哩',
+  5: '快手',
+}
+
+/** 二维码色系（用于徽标） */
+export const PLATFORM_COLOR: Record<number, string> = {
+  1: '#FF2D5E',
+  2: '#07C160',
+  3: '#161823',
+  4: '#FB7299',
+  5: '#FF5000',
+}
+
+/** 按序号解码平台名；未知序号回退到字符串平台名（兼容历史数据）。 */
+export function platformLabel(code?: number, fallback?: string): string {
+  if (code != null && PLATFORM_BY_CODE[code]) return PLATFORM_BY_CODE[code]
+  return fallback && fallback.trim() ? fallback : '未知平台'
+}
+
 export const RELATION_LABEL: Record<string, string> = {
   FAN: '粉丝',
   FOLLOWING: '关注',
