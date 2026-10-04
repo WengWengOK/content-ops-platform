@@ -66,6 +66,18 @@ public class CommentWatch {
     @Schema(description = "票据状态最近检查时间")
     private LocalDateTime tokenCheckedAt;
 
+    @Schema(description = "当前票据的写入（首次使用）时间")
+    private LocalDateTime tokenSetAt;
+
+    @Schema(description = "观测到的票据有效期（天）：从写入到被判定过期")
+    private Integer observedTtlDays;
+
+    @Schema(description = "票据已使用天数（响应时计算）")
+    private Integer tokenAgeDays;
+
+    @Schema(description = "票据预警：EXPIRING（即将过期）/ EXPIRED（已过期）/ null（正常）")
+    private String tokenWarning;
+
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 }

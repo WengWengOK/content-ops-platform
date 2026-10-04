@@ -177,7 +177,7 @@ public class CommentCollectionJob {
             }
             watchRepository.updateAfterRun(watch.getWatchId(), inserted, inserted, source, null);
             if (CommentTokenHealth.isNoteTokenExpired(result.fallbackReason())) {
-                watchRepository.updateTokenState(watch.getWatchId(), "EXPIRED", result.fallbackReason());
+                watchRepository.markTokenExpired(watch.getWatchId(), result.fallbackReason());
             }
             log.info("[Comment] 监控项采集完成: watchId={}, workId={}, source={}, 新增={}, 分析={}",
                     watch.getWatchId(), watch.getWorkId(), source, inserted, analyzed);
@@ -185,7 +185,7 @@ public class CommentCollectionJob {
             error = e.getMessage();
             watchRepository.updateAfterRun(watch.getWatchId(), 0, 0, source, error);
             if (CommentTokenHealth.isNoteTokenExpired(error)) {
-                watchRepository.updateTokenState(watch.getWatchId(), "EXPIRED", error);
+                watchRepository.markTokenExpired(watch.getWatchId(), error);
             }
             log.warn("[Comment] 监控项采集失败: watchId={}, workId={}, err={}",
                     watch.getWatchId(), watch.getWorkId(), e.getMessage());

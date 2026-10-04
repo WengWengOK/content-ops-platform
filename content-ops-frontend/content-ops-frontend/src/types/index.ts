@@ -614,6 +614,10 @@ export interface CommentWatch {
   credentialId?: string
   tokenState?: string
   tokenCheckedAt?: string
+  tokenSetAt?: string
+  observedTtlDays?: number
+  tokenAgeDays?: number
+  tokenWarning?: string | null
   autoAnalyze: boolean
   enabled: boolean
   lastCollectedAt?: string
@@ -690,4 +694,75 @@ export interface CredentialProbeResult {
   healthDetail?: string
   loginDetail?: string
   hint: string
+}
+export interface CredentialHealth {
+  credentialId: string
+  ownerId?: string
+  platform: string
+  accountName: string
+  baseUrl: string
+  preset?: string
+  enabled: boolean
+  defaultCredential: boolean
+  accessTokenMasked: string
+  needsRotation: boolean
+  tokenState?: string
+  lastUsedAt?: string
+  lastError?: string
+}
+
+export interface RotationStatus {
+  encryptionEnabled: boolean
+  keyId: string
+  pendingRotation: number
+  oldKeysConfigured: number
+  hint: string
+}
+
+export interface RotationReport {
+  keyId: string
+  total: number
+  rotated: number
+  skipped: number
+  failed: number
+  failures: string[]
+}
+
+export interface WatchTokenProblem {
+  watchId: string
+  workId: string
+  accountName: string
+  tokenState?: string
+  tokenAgeDays?: number
+  observedTtlDays?: number
+  lastError?: string
+  warning?: string | null
+}
+
+export interface OpsOverview {
+  rotation: RotationStatus
+  credentials: CredentialHealth[]
+  watchHealth: {
+    total: number
+    enabled: number
+    expired: number
+    expiringSoon: number
+    warnDays: number
+    problems: WatchTokenProblem[]
+  }
+  scheduler: {
+    enabled: boolean
+    scheduled: boolean
+    collectMs: number
+    autoAnalyze: boolean
+    notificationParallelism: number
+    lastRun?: {
+      triggerType?: string
+      startedAt?: string
+      commentsNew?: number
+      analyzed?: number
+      failed?: number
+    } | null
+  }
+  timestamp?: string
 }

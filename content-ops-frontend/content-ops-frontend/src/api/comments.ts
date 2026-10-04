@@ -9,6 +9,7 @@ import type {
   CommentSourceStatus,
   CommentStats,
   CommentWatch,
+  OpsOverview,
   PlatformComment,
 } from '@/types'
 
@@ -245,5 +246,10 @@ export async function updateCommentWatchToken(
     `/comments/watches/${watchId}/token`,
     { xsecToken }
   )
+  return unwrap(data)
+}
+/** GET /comments/ops-overview — 运维总览（轮换状态/账号健康/票据预警/最近任务） */
+export async function getCommentOpsOverview(): Promise<OpsOverview> {
+  const { data } = await apiClient.get<AgentResponse<OpsOverview>>('/comments/ops-overview')
   return unwrap(data)
 }

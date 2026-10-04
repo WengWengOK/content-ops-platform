@@ -156,9 +156,106 @@ public class CommentController {
     // ──────────────────────── 自动采集监控 ────────────────────────
 
     @GetMapping("/watches")
-    @Operation(summary = "我的评论监控作品列表")
+    @Operation(summary = "我的评论监控作品列表（含票据年龄与即将过期预警）")
     public AgentResponse<List<CommentWatch>> watches() {
-        return AgentResponse.success("comment", watchRepository.list(ownerId(), 100));
+        List<CommentWatch> watches = watchRepository.list(ownerId(), 100);
+        watches.forEach(this::annotateTokenHealth);
+        return AgentResponse.success("comment", watches);
+    }
+
+    /**
+     * 运维总览（一屏可见）：密钥轮换状态 + 账号健康 + 票据健康 + 最近一次采集任务。
+     */
+    @GetMapping("/ops-overview")
+    @Operation(summary = "运维总览：轮换状态/账号健康/票据预警/最近任务")
+    public AgentResponse<Map<String, Object>> opsOverview() {
+        String owner = ownerId();
+        Map<String, Object> data = new LinkedHashMap<>();
+
+        data.put("rotation", credentialService.rotationStatus(owner));
+        data.put("credentials", credentialService.healthList(owner));
+
+        List<CommentWatch> watches = watchRepository.list(owner, 500);
+        watches.forEach(this::annotateTokenHealth);
+        int expired = 0;
+        int expiring = 0;
+        int enabled = 0;
+        List<Map<String, Object>> problems = new ArrayList<>();
+        for (CommentWatch watch : watches) {
+            if (watch.isEnabled()) {
+                enabled++;
+            }
+            if ("EXPIRED".equals(watch.getTokenWarning())) {
+                expired++;
+            } else if ("EXPIRING".equals(watch.getTokenWarning())) {
+                expiring++;
+            }
+            if (watch.getTokenWarning() != null && problems.size() < 20) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("watchId", watch.getWatchId());
+                item.put("workId", watch.getWorkId());
+                item.put("accountName", accountNameOf(owner, watch.getCredentialId()));
+                item.put("tokenState", watch.getTokenState());
+                item.put("tokenAgeDays", watch.getTokenAgeDays());
+                item.put("observedTtlDays", watch.getObservedTtlDays());
+                item.put("lastError", watch.getLastError());
+                item.put("warning", watch.getTokenWarning());
+                problems.add(item);
+            }
+        }
+        Map<String, Object> watchHealth = new LinkedHashMap<>();
+        watchHealth.put("total", watches.size());
+        watchHealth.put("enabled", enabled);
+        watchHealth.put("expired", expired);
+        watchHealth.put("expiringSoon", expiring);
+        watchHealth.put("warnDays", properties.getXiaohongshu().getTokenWarnDays());
+        watchHealth.put("problems", problems);
+        data.put("watchHealth", watchHealth);
+
+        Map<String, Object> scheduler = new LinkedHashMap<>();
+        scheduler.put("enabled", properties.isEnabled());
+        scheduler.put("scheduled", properties.isScheduled());
+        scheduler.put("collectMs", properties.getCollectMs());
+        scheduler.put("autoAnalyze", properties.isAutoAnalyze());
+        scheduler.put("notificationParallelism", properties.getXiaohongshu().getNotificationParallelism());
+        scheduler.put("lastRun", jobRunRepository.latest().orElse(null));
+        data.put("scheduler", scheduler);
+        data.put("timestamp", LocalDateTime.now());
+        return AgentResponse.success("comment", data);
+    }
+
+    /** 计算票据年龄与预警状态（不落库，仅用于响应展示）。 */
+    private void annotateTokenHealth(CommentWatch watch) {
+        LocalDateTime base = watch.getTokenSetAt() != null ? watch.getTokenSetAt()
+                : (watch.getCreatedAt() != null ? watch.getCreatedAt() : null);
+        Integer ageDays = base == null ? null
+                : (int) java.time.Duration.between(base, LocalDateTime.now()).toDays();
+        watch.setTokenAgeDays(ageDays);
+
+        int warnDays = Math.max(1, properties.getXiaohongshu().getTokenWarnDays());
+        Integer observed = watch.getObservedTtlDays();
+        int effectiveWarnDays = observed != null && observed > 0
+                ? Math.max(1, Math.min(warnDays, (int) Math.round(observed * 0.8)))
+                : warnDays;
+
+        if ("EXPIRED".equals(watch.getTokenState())) {
+            watch.setTokenWarning("EXPIRED");
+        } else if (ageDays != null && ageDays >= effectiveWarnDays) {
+            watch.setTokenWarning("EXPIRING");
+        } else {
+            watch.setTokenWarning(null);
+        }
+    }
+
+    private String accountNameOf(String owner, String credentialId) {
+        if (credentialId == null || credentialId.isBlank()) {
+            return "全局配置";
+        }
+        return credentialService.healthList(owner).stream()
+                .filter(health -> credentialId.equals(health.credentialId()))
+                .map(CredentialService.CredentialHealth::accountName)
+                .findFirst()
+                .orElse(credentialId.substring(0, Math.min(8, credentialId.length())));
     }
 
     @PostMapping("/watches")

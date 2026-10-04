@@ -90,6 +90,11 @@ public class CredentialCipher {
         return keyId;
     }
 
+    /** 已注册密钥总数（含当前与历史） */
+    public int registeredKeyCount() {
+        return keys.size();
+    }
+
     /** 该值是否需要轮换（密文且不是当前 keyId / 还是 v1 格式）。 */
     public boolean needsRotation(String stored) {
         if (stored == null || !isEncrypted(stored)) {

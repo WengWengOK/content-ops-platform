@@ -239,6 +239,7 @@ public class CommentCollector {
                     .workId(workId)
                     .xsecToken(xsecToken)
                     .credentialId(credentialId)
+                    .tokenSetAt(LocalDateTime.now())
                     .autoAnalyze(properties.isAutoAnalyze())
                     .enabled(true)
                     .totalCollected(0)

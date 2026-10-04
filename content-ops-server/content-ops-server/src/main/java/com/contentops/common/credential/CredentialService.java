@@ -368,6 +368,55 @@ public class CredentialService {
                                  List<String> failures) {
     }
 
+    /** 账号健康视图（含是否需要密钥轮换、令牌状态）。 */
+    public record CredentialHealth(String credentialId, String ownerId, String platform, String accountName,
+                                   String baseUrl, String preset, boolean enabled, boolean defaultCredential,
+                                   String accessTokenMasked, boolean needsRotation, String tokenState,
+                                   LocalDateTime lastUsedAt, String lastError) {
+    }
+
+    /** 轮换状态总览。 */
+    public record RotationStatus(boolean encryptionEnabled, String keyId, int pendingRotation,
+                                 int oldKeysConfigured, String hint) {
+    }
+
+    /** 账号健康列表：令牌只给掩码；needsRotation 靠密文头部判断，不解密。 */
+    public List<CredentialHealth> healthList(String ownerId) {
+        List<CredentialHealth> list = new ArrayList<>();
+        for (PlatformCredential credential : repository.list(ownerId, 200)) {
+            list.add(new CredentialHealth(credential.getCredentialId(), credential.getOwnerId(),
+                    credential.getPlatform(), credential.getAccountName(), credential.getBaseUrl(),
+                    credential.getPreset(), credential.isEnabled(), credential.isDefaultCredential(),
+                    cipher.mask(credential.getAccessToken()),
+                    cipher.needsRotation(credential.getAccessToken()),
+                    credential.getTokenState(), credential.getLastUsedAt(), credential.getLastError()));
+        }
+        return list;
+    }
+
+    /** 轮换状态：待轮换条数 + 是否已配置旧密钥。 */
+    public RotationStatus rotationStatus(String ownerId) {
+        int pending = 0;
+        for (PlatformCredential credential : repository.list(ownerId, 500)) {
+            if (cipher.needsRotation(credential.getAccessToken())) {
+                pending++;
+            }
+        }
+        int oldKeys = Math.max(0, cipher.registeredKeyCount() - 1);
+        String hint;
+        if (!cipher.isEncryptionEnabled()) {
+            hint = "未配置 contentops.security.credential-key，凭据以明文落库（仅建议本地开发）";
+        } else if (pending == 0) {
+            hint = "全部凭据均已使用当前密钥（" + cipher.currentKeyId() + "）";
+        } else if (oldKeys == 0) {
+            hint = "有 " + pending + " 条凭据仍为旧密钥密文，且未配置 credential-keys-old，轮换会失败；"
+                    + "请先配置旧密钥再轮换";
+        } else {
+            hint = "有 " + pending + " 条凭据待轮换，可直接执行轮换";
+        }
+        return new RotationStatus(cipher.isEncryptionEnabled(), cipher.currentKeyId(), pending, oldKeys, hint);
+    }
+
     private CredentialView toView(PlatformCredential credential) {
         return new CredentialView(credential.getCredentialId(), credential.getOwnerId(), credential.getPlatform(),
                 credential.getAccountName(), credential.getAccountRef(), credential.getPreset(),

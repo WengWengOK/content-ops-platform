@@ -68,3 +68,22 @@ export async function probeCredential(credentialId: string): Promise<CredentialP
   )
   return unwrap(data)
 }
+/** POST /platform-credentials/rotate — 密钥轮换（仅管理员） */
+export async function rotateCredentials(): Promise<{
+  keyId: string
+  total: number
+  rotated: number
+  skipped: number
+  failed: number
+  failures: string[]
+}> {
+  const { data } = await apiClient.post<AgentResponse<{
+    keyId: string
+    total: number
+    rotated: number
+    skipped: number
+    failed: number
+    failures: string[]
+  }>>('/platform-credentials/rotate')
+  return unwrap(data)
+}

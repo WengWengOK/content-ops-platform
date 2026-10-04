@@ -22,10 +22,11 @@ public class CommentWatchRepository {
 
     private static final String COLS = "watch_id, owner_id, platform, work_id, workflow_id, xsec_token, "
             + "credential_id, auto_analyze, enabled, last_collected_at, last_new_count, total_collected, "
-            + "last_source, last_error, token_state, token_checked_at, created_at";
+            + "last_source, last_error, token_state, token_checked_at, token_set_at, observed_ttl_days, "
+            + "created_at";
 
     private static final String SQL_INSERT =
-            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment_watch "
                     + "WHERE (? = '' OR owner_id = ?) ORDER BY created_at DESC LIMIT ?";
@@ -51,8 +52,14 @@ public class CommentWatchRepository {
             "UPDATE contentops_comment_watch SET token_state = ?, token_checked_at = ?, last_error = ? "
                     + "WHERE watch_id = ?";
     private static final String SQL_UPDATE_TOKEN =
-            "UPDATE contentops_comment_watch SET xsec_token = ?, token_state = 'OK', token_checked_at = ? "
-                    + "WHERE watch_id = ?";
+            "UPDATE contentops_comment_watch SET xsec_token = ?, token_state = 'OK', token_checked_at = ?, "
+                    + "token_set_at = ? WHERE watch_id = ?";
+    /** 判定过期时：记录过期时刻，并把「从写入到过期」的天数沉淀为观测有效期。 */
+    private static final String SQL_MARK_EXPIRED =
+            "UPDATE contentops_comment_watch SET token_state = 'EXPIRED', token_checked_at = ?, "
+                    + "last_error = ?, observed_ttl_days = COALESCE("
+                    + "  CAST(EXTRACT(EPOCH FROM (? - COALESCE(token_set_at, created_at))) / 86400 AS INT), "
+                    + "  observed_ttl_days) WHERE watch_id = ?";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -65,6 +72,10 @@ public class CommentWatchRepository {
                     w.getLastNewCount(), w.getTotalCollected(), w.getLastSource(), w.getLastError(),
                     w.getTokenState() == null ? "UNKNOWN" : w.getTokenState(),
                     w.getTokenCheckedAt() == null ? null : Timestamp.valueOf(w.getTokenCheckedAt()),
+                    Timestamp.valueOf(w.getTokenSetAt() == null
+                            ? (w.getCreatedAt() == null ? LocalDateTime.now() : w.getCreatedAt())
+                            : w.getTokenSetAt()),
+                    w.getObservedTtlDays(),
                     Timestamp.valueOf(w.getCreatedAt() == null ? LocalDateTime.now() : w.getCreatedAt()));
         } catch (Exception e) {
             log.error("[Comment] 新增监控项失败: workId={}, err={}", w.getWorkId(), e.getMessage());
@@ -141,9 +152,21 @@ public class CommentWatchRepository {
         }
     }
 
-    /** 用户更新 xsec_token 后重置为健康。 */
+    /** 用户更新 xsec_token 后重置为健康，并把「首次使用时间」重置为现在。 */
     public void updateXsecToken(String watchId, String xsecToken) {
-        jdbcTemplate.update(SQL_UPDATE_TOKEN, xsecToken, Timestamp.valueOf(LocalDateTime.now()), watchId);
+        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+        jdbcTemplate.update(SQL_UPDATE_TOKEN, xsecToken, now, now, watchId);
+    }
+
+    /** 票据被判定过期：记录过期时刻并沉淀观测有效期（用于后续提前预警）。 */
+    public void markTokenExpired(String watchId, String error) {
+        try {
+            Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+            jdbcTemplate.update(SQL_MARK_EXPIRED, now, truncate(error, 900), now, watchId);
+        } catch (Exception e) {
+            log.warn("[Comment] 标记票据过期失败: watchId={}, err={}", watchId, e.getMessage());
+            updateTokenState(watchId, "EXPIRED", error);
+        }
     }
 
     private CommentWatch mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -167,6 +190,10 @@ public class CommentWatchRepository {
                 .tokenState(rs.getString("token_state"))
                 .tokenCheckedAt(rs.getTimestamp("token_checked_at") == null
                         ? null : rs.getTimestamp("token_checked_at").toLocalDateTime())
+                .tokenSetAt(rs.getTimestamp("token_set_at") == null
+                        ? null : rs.getTimestamp("token_set_at").toLocalDateTime())
+                .observedTtlDays(rs.getObject("observed_ttl_days") == null
+                        ? null : rs.getInt("observed_ttl_days"))
                 .createdAt(created == null ? null : created.toLocalDateTime())
                 .build();
     }
