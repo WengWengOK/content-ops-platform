@@ -199,6 +199,13 @@ public class CredentialService {
         }
     }
 
+    /** 记录账号令牌预警已通知（去重）。 */
+    public void markTokenNotified(String credentialId, String state) {
+        if (!isBlank(credentialId)) {
+            repository.markTokenNotified(credentialId, state);
+        }
+    }
+
     // ──────────────────────── 探测 ────────────────────────
 
     /** 探测凭据可用性：/health 判断可达，/api/v1/login/status 判断账号是否已登录。 */
@@ -372,7 +379,8 @@ public class CredentialService {
     public record CredentialHealth(String credentialId, String ownerId, String platform, String accountName,
                                    String baseUrl, String preset, boolean enabled, boolean defaultCredential,
                                    String accessTokenMasked, boolean needsRotation, String tokenState,
-                                   LocalDateTime lastUsedAt, String lastError) {
+                                   LocalDateTime lastUsedAt, String lastError, String tokenNotifiedState,
+                                   LocalDateTime tokenNotifiedAt) {
     }
 
     /** 轮换状态总览。 */
@@ -389,7 +397,8 @@ public class CredentialService {
                     credential.getPreset(), credential.isEnabled(), credential.isDefaultCredential(),
                     cipher.mask(credential.getAccessToken()),
                     cipher.needsRotation(credential.getAccessToken()),
-                    credential.getTokenState(), credential.getLastUsedAt(), credential.getLastError()));
+                    credential.getTokenState(), credential.getLastUsedAt(), credential.getLastError(),
+                    credential.getTokenNotifiedState(), credential.getTokenNotifiedAt()));
         }
         return list;
     }

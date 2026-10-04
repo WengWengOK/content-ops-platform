@@ -62,6 +62,12 @@ public class PlatformCredential {
     @Schema(description = "账号令牌健康状态：OK / AUTH_INVALID / ERROR")
     private String tokenState;
 
+    @Schema(description = "最近一次已通知的令牌预警状态（去重）")
+    private String tokenNotifiedState;
+
+    @Schema(description = "最近一次令牌预警通知时间")
+    private LocalDateTime tokenNotifiedAt;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

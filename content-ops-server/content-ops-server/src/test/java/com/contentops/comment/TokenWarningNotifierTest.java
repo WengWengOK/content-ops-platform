@@ -44,7 +44,7 @@ class TokenWarningNotifierTest {
         WatchTokenHealthService healthService = new WatchTokenHealthService(properties);
         notifier = new TokenWarningNotifier(watchRepository, healthService, properties,
                 alertForwardingService, credentialService);
-        when(alertForwardingService.sendBusinessNotification(anyString(), anyList()))
+        when(alertForwardingService.sendBusinessCard(anyString(), anyList(), any(), any()))
                 .thenReturn(Map.of("feishu", Map.of("configured", true, "success", true, "httpStatus", 200)));
         when(credentialService.healthList(any())).thenReturn(List.of());
     }
@@ -58,8 +58,11 @@ class TokenWarningNotifierTest {
 
         assertThat(result.candidates()).isEqualTo(1);
         assertThat(result.notified()).isEqualTo(1);
-        assertThat(result.items().get(0)).contains("票据已失效").contains("观测有效期 5 天");
-        verify(alertForwardingService).sendBusinessNotification(anyString(), anyList());
+        assertThat(String.join("\n", result.items()))
+                .contains("【笔记票据 xsec_token】")
+                .contains("票据已失效")
+                .contains("观测有效期 5 天");
+        verify(alertForwardingService).sendBusinessCard(anyString(), anyList(), any(), any());
         verify(watchRepository).markTokenNotified("w1", "EXPIRED");
     }
 
@@ -76,7 +79,7 @@ class TokenWarningNotifierTest {
         assertThat(result.candidates()).isEqualTo(1);
         assertThat(result.notified()).isZero();
         assertThat(result.skipped()).isEqualTo(1);
-        verify(alertForwardingService, never()).sendBusinessNotification(anyString(), anyList());
+        verify(alertForwardingService, never()).sendBusinessCard(anyString(), anyList(), any(), any());
     }
 
     @Test
@@ -103,7 +106,7 @@ class TokenWarningNotifierTest {
         TokenWarningNotifier.NotifyResult result = notifier.notifyIfNeeded(null, true);
 
         assertThat(result.notified()).isEqualTo(1);
-        verify(alertForwardingService).sendBusinessNotification(anyString(), anyList());
+        verify(alertForwardingService).sendBusinessCard(anyString(), anyList(), any(), any());
     }
 
     @Test
@@ -117,7 +120,7 @@ class TokenWarningNotifierTest {
 
         assertThat(result.candidates()).isZero();
         assertThat(result.notified()).isZero();
-        verify(alertForwardingService, never()).sendBusinessNotification(anyString(), anyList());
+        verify(alertForwardingService, never()).sendBusinessCard(anyString(), anyList(), any(), any());
     }
 
     @Test
@@ -129,11 +132,47 @@ class TokenWarningNotifierTest {
 
         ArgumentCaptor<String> title = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<List<String>> body = ArgumentCaptor.forClass(List.class);
-        verify(alertForwardingService, times(1)).sendBusinessNotification(title.capture(), body.capture());
-        assertThat(title.getValue()).contains("票据预警");
+        verify(alertForwardingService, times(1)).sendBusinessCard(title.capture(), body.capture(), any(), any());
+        assertThat(title.getValue()).contains("预警").contains("待处理");
         assertThat(String.join("\n", body.getValue())).contains("建议尽快更新").contains("处理入口");
     }
 
+    @Test
+    @DisplayName("账号级令牌失效并入同一条预警，并带「操作直达」链接")
+    void includesAccountLevelFailureAndActionLink() {
+        when(watchRepository.list(any(), anyInt())).thenReturn(List.of());
+        when(credentialService.healthList(any())).thenReturn(List.of(
+                new CredentialService.CredentialHealth("cred-1", "owner-1", "xiaohongshu", "主号A",
+                        "http://127.0.0.1:18060", "xhs-mcp", true, true, "****en-A", false,
+                        "AUTH_INVALID", LocalDateTime.now(), "未授权", null, null)));
+
+        TokenWarningNotifier.NotifyResult result = notifier.notifyIfNeeded(null, false);
+
+        assertThat(result.candidates()).isEqualTo(1);
+        assertThat(result.notified()).isEqualTo(1);
+        assertThat(String.join("\n", result.items()))
+                .contains("账号令牌 AUTH_TOKEN")
+                .contains("主号A")
+                .contains("重新扫码登录");
+        verify(alertForwardingService).sendBusinessCard(anyString(), anyList(), any(), any());
+        verify(credentialService).markTokenNotified("cred-1", "AUTH_INVALID");
+    }
+
+    @Test
+    @DisplayName("账号级预警去重：同状态在提醒窗口内不重复推送")
+    void dedupesAccountLevelWarning() {
+        when(watchRepository.list(any(), anyInt())).thenReturn(List.of());
+        when(credentialService.healthList(any())).thenReturn(List.of(
+                new CredentialService.CredentialHealth("cred-1", "owner-1", "xiaohongshu", "主号A",
+                        "http://127.0.0.1:18060", "xhs-mcp", true, true, "****en-A", false,
+                        "AUTH_INVALID", LocalDateTime.now(), "未授权", "AUTH_INVALID",
+                        LocalDateTime.now().minusMinutes(10))));
+
+        TokenWarningNotifier.NotifyResult result = notifier.notifyIfNeeded(null, false);
+
+        assertThat(result.notified()).isZero();
+        verify(alertForwardingService, never()).sendBusinessCard(anyString(), anyList(), any(), any());
+    }
     private CommentWatch watch(String watchId, String warning) {
         CommentWatch watch = CommentWatch.builder()
                 .watchId(watchId)

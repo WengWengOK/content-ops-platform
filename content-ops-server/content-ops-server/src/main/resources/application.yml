@@ -66,6 +66,9 @@ logging:
 contentops:
   # 支持 CONTENTOPS_MODE=mock 启动（无需 LLM API Key 的前端联调模式，见 LocalAgentGateway / MockAgentGateway）
   mode: ${CONTENTOPS_MODE:monolithic}
+  # 前端基础地址：用于在飞书/企微预警消息里生成「操作直达」链接
+  web:
+    base-url: ${CONTENTOPS_WEB_BASE_URL:http://localhost:5173}
   orchestrator:
     engine: ${CONTENTOPS_ENGINE:legacy}
   # 模型路由（P2：创意类 gpt-4o/0.8，格式化类 gpt-4o-mini/0.3）——

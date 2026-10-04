@@ -90,6 +90,61 @@ public class AlertForwardingService {
     }
 
     /**
+     * 发送一条带「操作直达」按钮的业务通知：飞书用交互卡片（按钮可点），企微用 markdown 链接。
+     *
+     * @param title      标题
+     * @param lines      正文行
+     * @param actionUrl  按钮跳转地址（为空则退化为纯文本通知）
+     * @param actionText 按钮文案
+     */
+    public Map<String, Object> sendBusinessCard(String title, List<String> lines,
+                                               String actionUrl, String actionText) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        String feishuText = title + "\\n" + String.join("\\n", lines);
+        result.put("feishu", sendSync("feishu", properties.getFeishuWebhook(),
+                isBlank(actionUrl)
+                        ? Map.of("msg_type", "text", "content", Map.of("text", feishuText))
+                        : buildFeishuCard(title, lines, actionUrl, actionText)));
+        StringBuilder wecom = new StringBuilder("**").append(title).append("**");
+        for (String line : lines) {
+            wecom.append("\\n> ").append(line);
+        }
+        if (!isBlank(actionUrl)) {
+            wecom.append("\\n> [").append(isBlank(actionText) ? "打开处理页面" : actionText)
+                    .append("](").append(actionUrl).append(")");
+        }
+        result.put("wecom", sendSync("wecom", properties.getWecomWebhook(),
+                Map.of("msgtype", "markdown", "markdown", Map.of("content", wecom.toString()))));
+        return result;
+    }
+
+    /** 飞书交互卡片：标题 + 正文 + 一个跳转按钮。 */
+    private Map<String, Object> buildFeishuCard(String title, List<String> lines,
+                                                String actionUrl, String actionText) {
+        Map<String, Object> header = Map.of(
+                "template", "orange",
+                "title", Map.of("tag", "plain_text", "content", title));
+        Map<String, Object> body = Map.of(
+                "tag", "div",
+                "text", Map.of("tag", "lark_md", "content", String.join("\\n", lines)));
+        Map<String, Object> button = Map.of(
+                "tag", "button",
+                "text", Map.of("tag", "plain_text", "content", isBlank(actionText) ? "打开处理页面" : actionText),
+                "type", "primary",
+                "url", actionUrl);
+        Map<String, Object> action = Map.of("tag", "action", "actions", List.of(button));
+        Map<String, Object> card = Map.of(
+                "config", Map.of("wide_screen_mode", true),
+                "header", header,
+                "elements", List.of(body, action));
+        return Map.of("msg_type", "interactive", "card", card);
+    }
+
+    private boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /**
      * 发送一条业务通知（飞书 text + 企微 markdown），同步返回各渠道结果。
      *
      * <p>与 {@link #forward(Map)} 的区别：forward 面向 Grafana 告警结构且异步；

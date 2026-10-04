@@ -22,10 +22,10 @@ public class PlatformCredentialRepository {
 
     private static final String COLS = "credential_id, owner_id, platform, account_name, account_ref, preset, "
             + "base_url, access_token, enabled, is_default, last_used_at, last_error, token_state, "
-            + "created_at, updated_at";
+            + "token_notified_state, token_notified_at, created_at, updated_at";
 
     private static final String SQL_INSERT = "INSERT INTO contentops_platform_credential (" + COLS
-            + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     private static final String SQL_LIST = "SELECT " + COLS + " FROM contentops_platform_credential "
             + "WHERE (? = '' OR owner_id = ?) ORDER BY is_default DESC, created_at DESC LIMIT ?";
     private static final String SQL_BY_ID = "SELECT " + COLS
@@ -44,7 +44,11 @@ public class PlatformCredentialRepository {
     private static final String SQL_MARK_USED = "UPDATE contentops_platform_credential SET last_used_at = ?, "
             + "last_error = ? WHERE credential_id = ?";
     private static final String SQL_TOKEN_STATE = "UPDATE contentops_platform_credential SET token_state = ?, "
-            + "last_error = ?, last_used_at = ? WHERE credential_id = ?";
+            + "last_error = ?, last_used_at = ?, "
+            + "token_notified_state = CASE WHEN ? = 'OK' THEN NULL ELSE token_notified_state END "
+            + "WHERE credential_id = ?";
+    private static final String SQL_MARK_NOTIFIED = "UPDATE contentops_platform_credential SET "
+            + "token_notified_state = ?, token_notified_at = ? WHERE credential_id = ?";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -55,6 +59,8 @@ public class PlatformCredentialRepository {
                 c.getLastUsedAt() == null ? null : Timestamp.valueOf(c.getLastUsedAt()),
                 c.getLastError(),
                 c.getTokenState() == null ? "UNKNOWN" : c.getTokenState(),
+                c.getTokenNotifiedState(),
+                c.getTokenNotifiedAt() == null ? null : Timestamp.valueOf(c.getTokenNotifiedAt()),
                 Timestamp.valueOf(c.getCreatedAt() == null ? LocalDateTime.now() : c.getCreatedAt()),
                 Timestamp.valueOf(c.getUpdatedAt() == null ? LocalDateTime.now() : c.getUpdatedAt()));
     }
@@ -128,9 +134,18 @@ public class PlatformCredentialRepository {
         try {
             jdbcTemplate.update(SQL_TOKEN_STATE, tokenState,
                     error == null ? null : error.substring(0, Math.min(error.length(), 900)),
-                    Timestamp.valueOf(LocalDateTime.now()), credentialId);
+                    Timestamp.valueOf(LocalDateTime.now()), tokenState, credentialId);
         } catch (Exception e) {
             log.warn("[Credential] 更新令牌状态失败: id={}, err={}", credentialId, e.getMessage());
+        }
+    }
+
+    /** 记录「已就某状态通知过」用于去重。 */
+    public void markTokenNotified(String credentialId, String state) {
+        try {
+            jdbcTemplate.update(SQL_MARK_NOTIFIED, state, Timestamp.valueOf(LocalDateTime.now()), credentialId);
+        } catch (Exception e) {
+            log.warn("[Credential] 记录令牌预警通知失败: id={}, err={}", credentialId, e.getMessage());
         }
     }
 
@@ -152,6 +167,9 @@ public class PlatformCredentialRepository {
                 .lastUsedAt(lastUsed == null ? null : lastUsed.toLocalDateTime())
                 .lastError(rs.getString("last_error"))
                 .tokenState(rs.getString("token_state"))
+                .tokenNotifiedState(rs.getString("token_notified_state"))
+                .tokenNotifiedAt(rs.getTimestamp("token_notified_at") == null
+                        ? null : rs.getTimestamp("token_notified_at").toLocalDateTime())
                 .createdAt(created == null ? null : created.toLocalDateTime())
                 .updatedAt(updated == null ? null : updated.toLocalDateTime())
                 .build();
