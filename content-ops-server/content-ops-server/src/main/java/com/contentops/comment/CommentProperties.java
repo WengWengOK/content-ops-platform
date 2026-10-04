@@ -44,6 +44,12 @@ public class CommentProperties {
     /** 票据预警通知（复用飞书\\u002f企微机器人） */
     private TokenNotifyProperties tokenNotify = new TokenNotifyProperties();
 
+    /** 意图语料库 RAG 前置匹配（阈值命中直接返回标准术语） */
+    private IntentRagProperties intentRag = new IntentRagProperties();
+
+    /** 评论者关系标签（粉丝/关注/好友/常客/路人） */
+    private RelationProperties relation = new RelationProperties();
+
     /** 小红书评论数据源配置 */
     private XiaohongshuProperties xiaohongshu = new XiaohongshuProperties();
 
@@ -68,6 +74,34 @@ public class CommentProperties {
      *       {@code app-id}/{@code app-secret}，鉴权 {@code ark-sign}（appId+timestamp+secret 签名）。</li>
      * </ol>
      */
+    /** 评论者关系标签配置。 */
+    @Data
+    public static class RelationProperties {
+
+        /** 是否启用关系标签（关闭后采集不再写入标签） */
+        private boolean enabled = true;
+
+        /** 常客判定阈值：同一用户评论次数 ≥ 该值即标记 REGULAR */
+        private int regularThreshold = 3;
+
+        /** 是否在定时任务里同步「新增关注」通知以维护粉丝标签 */
+        private boolean syncFollowers = true;
+    }
+
+    /** 意图语料库 RAG 前置匹配配置。 */
+    @Data
+    public static class IntentRagProperties {
+
+        /** 是否启用语料库前置匹配 */
+        private boolean enabled = true;
+
+        /** 相似度阈值：≥ 该值直接采用语料库标准术语（默认 0.95） */
+        private double threshold = 0.95;
+
+        /** 预览返回的候选条数 */
+        private int previewTopK = 5;
+    }
+
     /** 票据预警通知配置。 */
     @Data
     public static class TokenNotifyProperties {

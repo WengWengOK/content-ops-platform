@@ -42,6 +42,12 @@ public class Comment {
     @Schema(description = "评论人")
     private String author;
 
+    @Schema(description = "评论人平台用户 ID（关系标签判定用）")
+    private String authorUserId;
+
+    @Schema(description = "关系标签：FAN(粉丝)/FOLLOWING(关注)/FRIEND(好友)/REGULAR(常客)/SELF/STRANGER(路人)")
+    private String relation;
+
     @Schema(description = "评论内容")
     private String content;
 
@@ -59,6 +65,12 @@ public class Comment {
 
     @Schema(description = "情感：POSITIVE/NEGATIVE/NEUTRAL")
     private String sentiment;
+
+    @Schema(description = "意图判定来源：corpus（语料库命中）/ llm / heuristic")
+    private String intentSource;
+
+    @Schema(description = "语料库匹配相似度（仅 intentSource=corpus 时有值）")
+    private Double intentScore;
 
     @Schema(description = "AI 摘要")
     private String aiSummary;

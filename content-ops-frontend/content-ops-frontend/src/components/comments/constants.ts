@@ -29,6 +29,24 @@ export const STATUS_CN: Record<string, string> = {
   SENT: '已发送',
 }
 
+export const RELATION_LABEL: Record<string, string> = {
+  FAN: '粉丝',
+  FOLLOWING: '关注',
+  FRIEND: '好友',
+  REGULAR: '常客',
+  SELF: '自己',
+  STRANGER: '路人',
+}
+
+export const RELATION_COLOR: Record<string, string> = {
+  FAN: '#FF2D5E',
+  FOLLOWING: '#165DFF',
+  FRIEND: '#722ED1',
+  REGULAR: '#FF7D00',
+  SELF: '#00B42A',
+  STRANGER: '#86909C',
+}
+
 export interface DialogTurn {
   role: 'user' | 'assistant'
   content: string

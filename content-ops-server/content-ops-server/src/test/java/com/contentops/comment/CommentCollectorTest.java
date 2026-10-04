@@ -30,8 +30,10 @@ class CommentCollectorTest {
     private final CommentWatchRepository watchRepository = mock(CommentWatchRepository.class);
     private final CredentialService credentialService = mock(CredentialService.class);
     private final XhsClientFactory clientFactory = mock(XhsClientFactory.class);
+    private final CommentRelationService relationService = mock(CommentRelationService.class);
     private final CommentCollector collector =
-            new CommentCollector(properties, apiClient, watchRepository, credentialService, clientFactory);
+            new CommentCollector(properties, apiClient, watchRepository, credentialService, clientFactory,
+                    relationService);
 
     @Test
     @DisplayName("通知增量：评论类通知映射为 Comment（内部 ID 复用评论 ID），含 filtered 与新笔记纳管")
@@ -152,7 +154,7 @@ class CommentCollectorTest {
         when(apiClient.fetchPage(anyString(), any(), anyInt(), any())).thenReturn(
                 new XhsCommentApiClient.FetchPage(List.of(
                         new XhsCommentApiClient.XhsComment("c-1", "小红", "求教程", 5,
-                                LocalDateTime.of(2025, 1, 1, 12, 0), null)), null, false));
+                                LocalDateTime.of(2025, 1, 1, 12, 0), null, "u-1")), null, false));
 
         CommentCollector.CollectionResult result = collector.collect("note-1", "owner-1");
 

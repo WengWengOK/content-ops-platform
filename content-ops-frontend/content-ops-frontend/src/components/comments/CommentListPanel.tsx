@@ -8,7 +8,7 @@ import type {
   PlatformComment,
   PlatformCredential,
 } from '@/types'
-import { INTENT_COLORS, INTENTS, SENTIMENT_COLORS, SENTIMENTS, STATUS_CN, type DialogTurn } from './constants'
+import { INTENT_COLORS, INTENTS, RELATION_COLOR, RELATION_LABEL, SENTIMENT_COLORS, SENTIMENTS, STATUS_CN, type DialogTurn } from './constants'
 
 /** CommentListPanel：由 CommentsPage 拆分出的独立模块，数据与操作通过 props 注入。 */
 export interface CommentListPanelProps {
@@ -50,6 +50,19 @@ export function CommentListPanel({
             <div key={c.commentId} className="rounded-xl border p-4" style={{ borderColor: '#E5E6EB' }}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium" style={{ color: '#1D2129' }}>{c.author || '匿名用户'}</span>
+                {c.relation && c.relation !== 'STRANGER' && (
+                  <span className="rounded px-2 py-0.5 text-xs font-medium"
+                    style={{ background: '#F7F8FA', color: RELATION_COLOR[c.relation] ?? '#4E5969' }}>
+                    {RELATION_LABEL[c.relation] ?? c.relation}
+                  </span>
+                )}
+                {c.intentSource === 'corpus' && (
+                  <span className="rounded px-2 py-0.5 text-xs"
+                    style={{ background: '#E8FFEA', color: '#00782C' }}
+                    title={`语料库命中，相似度 ${c.intentScore ?? 1}`}>
+                    语料命中
+                  </span>
+                )}
                 {c.intent && (
                   <span className="rounded px-2 py-0.5 text-xs font-medium"
                     style={{ background: '#FFF0F5', color: INTENT_COLORS[c.intent] ?? '#C40E3A' }}>

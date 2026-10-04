@@ -328,6 +328,56 @@ ALTER TABLE contentops_platform_credential ADD COLUMN IF NOT EXISTS token_state 
 ALTER TABLE contentops_platform_credential ADD COLUMN IF NOT EXISTS token_notified_state VARCHAR(16);
 ALTER TABLE contentops_platform_credential ADD COLUMN IF NOT EXISTS token_notified_at TIMESTAMP;
 
+-- 意图语料库（RAG 向量匹配）：命中阈值以上直接返回标准术语，未命中再走模型
+CREATE TABLE IF NOT EXISTS contentops_intent_corpus (
+    corpus_id   VARCHAR(64)   PRIMARY KEY,
+    owner_id    VARCHAR(64),
+    intent      VARCHAR(32)   NOT NULL,
+    phrase      VARCHAR(512)  NOT NULL,
+    source      VARCHAR(16)   DEFAULT 'USER',
+    enabled     BOOLEAN       DEFAULT TRUE,
+    hit_count   INT           DEFAULT 0,
+    created_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_intent_corpus_intent
+    ON contentops_intent_corpus (intent, enabled);
+CREATE INDEX IF NOT EXISTS idx_intent_corpus_owner
+    ON contentops_intent_corpus (owner_id);
+
+-- 存量库迁移：评论补「意图来源/匹配分」（用于观察语料库命中率，幂等）
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS intent_source VARCHAR(16);
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS intent_score DOUBLE PRECISION;
+
+-- 存量库迁移：评论补「评论者身份/关系标签」字段（幂等）
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS author_user_id VARCHAR(64);
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS relation VARCHAR(16);
+
+-- 评论用户关系库：粉丝（connections 通知）/关注/好友（手工或外部关系源）/常客等标签
+CREATE TABLE IF NOT EXISTS contentops_comment_user (
+    user_key       VARCHAR(160) PRIMARY KEY,
+    owner_id       VARCHAR(64),
+    platform       VARCHAR(32)  NOT NULL,
+    user_id        VARCHAR(64)  NOT NULL,
+    nickname       VARCHAR(128),
+    relation       VARCHAR(16)  DEFAULT 'STRANGER',
+    relation_source VARCHAR(16) DEFAULT 'DERIVED',
+    comment_count  INT          DEFAULT 0,
+    note           VARCHAR(255),
+    first_seen_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_comment_user_owner_relation
+    ON contentops_comment_user (owner_id, relation);
+CREATE INDEX IF NOT EXISTS idx_comment_user_user_id
+    ON contentops_comment_user (user_id);
+
+-- 存量库迁移：评论关系筛选索引（幂等）
+CREATE INDEX IF NOT EXISTS idx_comment_relation
+    ON contentops_comment (relation, collected_at DESC);
+
 -- 存量库迁移：票据「首次使用时间 / 观测到的有效期」，用于到期前预警（幂等）
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_set_at TIMESTAMP;
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS observed_ttl_days INT;

@@ -57,6 +57,7 @@ public class CommentController {
     private final CredentialService credentialService;
     private final WatchTokenHealthService watchTokenHealthService;
     private final TokenWarningNotifier tokenWarningNotifier;
+    private final CommentRelationService relationService;
 
     /** 开发模式（未开启鉴权）时 ownerId 为 null，SQL 侧自动不过滤，保证联调可用 */
     private String ownerId() {
@@ -134,14 +135,50 @@ public class CommentController {
             @RequestParam(required = false) String workId,
             @RequestParam(required = false) String intent,
             @RequestParam(required = false) String sentiment,
+            @RequestParam(required = false) String relation,
             @RequestParam(required = false, defaultValue = "50") Integer limit) {
         List<Comment> comments = repository.list(
                 ownerId(), blank(platform), blank(workId), blank(intent), blank(sentiment),
-                Math.min(limit == null ? 50 : limit, 200));
+                blank(relation), Math.min(limit == null ? 50 : limit, 200));
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("total", comments.size());
         data.put("comments", comments);
         return AgentResponse.success("comment", data);
+    }
+
+    @GetMapping("/relations")
+    @Operation(summary = "评论者关系分布（粉丝/关注/好友/常客/路人/自己）与用户列表")
+    public AgentResponse<Map<String, Object>> relations(
+            @RequestParam(required = false) String relation,
+            @RequestParam(required = false, defaultValue = "50") Integer limit) {
+        return AgentResponse.success("comment",
+                relationService.overview(ownerId(), blank(relation), Math.min(limit == null ? 50 : limit, 200)));
+    }
+
+    @PutMapping("/relations/{userKey}")
+    @Operation(summary = "设置评论者关系标签（关注/好友等需外部关系源或人工维护）")
+    public AgentResponse<Map<String, Object>> setRelation(@PathVariable String userKey,
+                                                          @RequestBody SetRelationRequest request) {
+        String key = userKey.replace("%3A", ":").replace("%3a", ":");
+        int sep = key.indexOf(':');
+        if (sep <= 0) {
+            return AgentResponse.failure("comment", "userKey 格式应为 platform:userId");
+        }
+        String platform = key.substring(0, sep);
+        String userId = key.substring(sep + 1);
+        boolean ok = relationService.setRelation(ownerId(), platform, userId,
+                request.getRelation(), request.getNote());
+        return ok
+                ? AgentResponse.success("comment", Map.of("userKey", key,
+                        "relation", request.getRelation().toUpperCase()))
+                : AgentResponse.failure("comment", "设置关系标签失败");
+    }
+
+    @PostMapping("/relations/sync-followers")
+    @Operation(summary = "同步「新增关注」通知，自动维护粉丝(FAN)标签")
+    public AgentResponse<Map<String, Object>> syncFollowers() {
+        int marked = collector.syncFollowers(ownerId(), null);
+        return AgentResponse.success("comment", Map.of("marked", marked));
     }
 
     @GetMapping("/stats")
@@ -222,6 +259,7 @@ public class CommentController {
         scheduler.put("notificationParallelism", properties.getXiaohongshu().getNotificationParallelism());
         scheduler.put("lastRun", jobRunRepository.latest().orElse(null));
         data.put("scheduler", scheduler);
+        data.put("relations", relationService.overview(owner, null, 0).get("byRelation"));
         data.put("timestamp", LocalDateTime.now());
         return AgentResponse.success("comment", data);
     }
@@ -373,7 +411,7 @@ public class CommentController {
                 Comment analyzedComment = analysisService.analyze(c);
                 repository.updateAnalysisAndStatus(c.getCommentId(), analyzedComment.getIntent(),
                         analyzedComment.getSentiment(), analyzedComment.getAiSummary(),
-                        analyzedComment.getAiReply());
+                        analyzedComment.getAiReply(), analyzedComment.getIntentSource(), analyzedComment.getIntentScore());
                 analyzed++;
             }
         }
@@ -429,7 +467,7 @@ public class CommentController {
             if (c.getIntent() == null || c.getIntent().isBlank()) {
                 Comment analyzed = analysisService.analyze(c);
                 repository.updateAnalysisAndStatus(c.getCommentId(), analyzed.getIntent(),
-                        analyzed.getSentiment(), analyzed.getAiSummary(), analyzed.getAiReply());
+                        analyzed.getSentiment(), analyzed.getAiSummary(), analyzed.getAiReply(), analyzed.getIntentSource(), analyzed.getIntentScore());
                 updated.add(analyzed);
             }
         }
@@ -448,7 +486,7 @@ public class CommentController {
         }
         Comment analyzed = analysisService.analyze(comment);
         repository.updateAnalysisAndStatus(commentId, analyzed.getIntent(), analyzed.getSentiment(),
-                analyzed.getAiSummary(), analyzed.getAiReply());
+                analyzed.getAiSummary(), analyzed.getAiReply(), analyzed.getIntentSource(), analyzed.getIntentScore());
         return AgentResponse.success("comment", analyzed);
     }
 
@@ -586,6 +624,13 @@ public class CommentController {
     public static class UpdateTokenRequest {
         /** 新的笔记票据（xsec_token） */
         private String xsecToken;
+    }
+
+    @Data
+    public static class SetRelationRequest {
+        /** FAN / FOLLOWING / FRIEND / REGULAR / STRANGER / SELF */
+        private String relation;
+        private String note;
     }
 
     @Data

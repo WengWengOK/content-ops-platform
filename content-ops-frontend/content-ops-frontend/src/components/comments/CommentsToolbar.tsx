@@ -20,6 +20,8 @@ export interface CommentsToolbarProps {
   setIntent: (v: string) => void
   sentiment: string
   setSentiment: (v: string) => void
+  relation: string
+  setRelation: (v: string) => void
   error: string
   handleCollect: () => void
   handleAnalyzeAll: () => void
@@ -36,6 +38,8 @@ export function CommentsToolbar({
   setIntent,
   sentiment,
   setSentiment,
+  relation,
+  setRelation,
   error,
   handleCollect,
   handleAnalyzeAll,
@@ -70,6 +74,23 @@ export function CommentsToolbar({
               <option value="douyin">抖音</option>
               <option value="wechat">微信</option>
               <option value="kuaishou">快手</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: '#86909C' }}>关系</span>
+            <select
+              value={relation}
+              onChange={(e) => setRelation(e.target.value)}
+              className="w-28 rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: '#E5E6EB' }}
+            >
+              <option value="">全部</option>
+              <option value="FAN">粉丝</option>
+              <option value="FOLLOWING">关注</option>
+              <option value="FRIEND">好友</option>
+              <option value="REGULAR">常客</option>
+              <option value="SELF">自己</option>
+              <option value="STRANGER">路人</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">

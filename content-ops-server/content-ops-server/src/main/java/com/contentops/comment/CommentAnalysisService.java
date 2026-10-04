@@ -21,6 +21,7 @@ public class CommentAnalysisService {
 
     private final @Qualifier("formattingChatModel") ChatModel chatModel;
     private final ObjectMapper objectMapper;
+    private final IntentCorpusService intentCorpusService;
 
     private static final String ANALYSIS_PROMPT = """
             你是小红书博主的评论区运营助手。请分析下面这条用户评论，输出严格 JSON（不要输出任何多余文字）：
@@ -41,11 +42,25 @@ public class CommentAnalysisService {
         if (comment == null || comment.getContent() == null || comment.getContent().isBlank()) {
             return comment;
         }
+        // 语料库前置匹配：命中（精确匹配或相似度 ≥ 阈值）直接采用标准术语
+        IntentCorpusService.MatchResult corpusMatch =
+                intentCorpusService.match(comment.getContent(), comment.getOwnerId());
+        if (corpusMatch.matched()) {
+            comment.setIntent(corpusMatch.intent());
+            comment.setIntentSource("corpus");
+            comment.setIntentScore(corpusMatch.score());
+            log.info("[Comment] 意图语料库命中: id={}, intent={}, score={}, by={}",
+                    comment.getCommentId(), corpusMatch.intent(), corpusMatch.score(), corpusMatch.matchedBy());
+        }
+
         try {
             String raw = chatModel.chat(ANALYSIS_PROMPT.formatted(truncate(comment.getContent(), 500)));
             JsonNode node = extractJson(raw);
             if (node != null) {
-                comment.setIntent(text(node, "intent"));
+                if (!corpusMatch.matched()) {
+                    comment.setIntent(text(node, "intent"));
+                    comment.setIntentSource("llm");
+                }
                 comment.setSentiment(text(node, "sentiment").toUpperCase());
                 comment.setAiSummary(text(node, "summary"));
                 comment.setAiReply(text(node, "reply"));
@@ -91,7 +106,10 @@ public class CommentAnalysisService {
             intent = "潜在客户";
         }
 
-        comment.setIntent(intent);
+        if (comment.getIntent() == null || comment.getIntent().isBlank()) {
+            comment.setIntent(intent);
+            comment.setIntentSource("heuristic");
+        }
         comment.setSentiment(sentiment);
         comment.setAiSummary(content.length() > 30 ? content.substring(0, 30) + "…" : content);
         comment.setAiReply("谢谢你的评论呀～已收到你的反馈，我会继续优化内容，有问题随时留言哦！");

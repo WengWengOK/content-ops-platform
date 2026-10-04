@@ -585,6 +585,10 @@ export interface PlatformComment {
   commentTime?: string
   replyTo?: string
   intent?: string
+  intentSource?: string
+  intentScore?: number
+  relation?: string
+  authorUserId?: string
   sentiment?: string
   aiSummary?: string
   aiReply?: string
@@ -595,6 +599,10 @@ export interface PlatformComment {
 
 export interface CommentStatsItem {
   intent?: string
+  intentSource?: string
+  intentScore?: number
+  relation?: string
+  authorUserId?: string
   sentiment?: string
   cnt: number
 }
@@ -765,4 +773,49 @@ export interface OpsOverview {
     } | null
   }
   timestamp?: string
+}
+export type CommentRelation = 'FAN' | 'FOLLOWING' | 'FRIEND' | 'REGULAR' | 'SELF' | 'STRANGER'
+
+export interface CommentRelationOverview {
+  enabled: boolean
+  regularThreshold: number
+  byRelation: { relation?: string; cnt: number; comments?: number }[]
+  users: {
+    user_key: string
+    nickname?: string
+    relation?: string
+    relation_source?: string
+    comment_count?: number
+    note?: string
+  }[]
+}
+
+export interface IntentCorpusEntry {
+  corpusId: string
+  ownerId?: string
+  intent: string
+  phrase: string
+  source?: string
+  enabled: boolean
+  hitCount: number
+}
+
+export interface IntentCorpusStats {
+  enabled: boolean
+  threshold: number
+  cacheSize: number
+  cacheVersion: number
+  embeddingReady: boolean
+  totalInDb: number
+  byIntent: Record<string, number>
+  commentSources?: { source: string; cnt: number }[]
+}
+
+export interface IntentMatchPreview {
+  matched: boolean
+  intent?: string
+  phrase?: string
+  score: number
+  matchedBy: string
+  candidates: { intent: string; phrase: string; score: number; matchedBy: string }[]
 }

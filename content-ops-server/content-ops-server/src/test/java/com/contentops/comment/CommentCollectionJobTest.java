@@ -87,7 +87,7 @@ class CommentCollectionJobTest {
         assertThat(result.error()).isNull();
         verify(commentRepository, times(2)).insert(any(Comment.class));
         verify(commentRepository, times(2)).updateAnalysisAndStatus(anyString(), eq("咨询"),
-                eq("NEUTRAL"), eq("摘要"), eq("回复草稿"));
+                eq("NEUTRAL"), eq("摘要"), eq("回复草稿"), any(), any());
         verify(watchRepository).updateAfterRun("w-1", 2, 2, "api", null);
     }
 

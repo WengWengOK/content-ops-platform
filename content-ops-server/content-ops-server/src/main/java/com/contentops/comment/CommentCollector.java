@@ -40,6 +40,7 @@ public class CommentCollector {
     private final CommentWatchRepository watchRepository;
     private final CredentialService credentialService;
     private final XhsClientFactory clientFactory;
+    private final CommentRelationService relationService;
 
     /** 采集结果：评论 + 数据源标记 + 回退原因。 */
     public record CollectionResult(String platform, String workId, String source,
@@ -107,7 +108,8 @@ public class CommentCollector {
             if (!apiConfigured) {
                 throw new CommentSourceException("COMMENT_SOURCE_NOT_CONFIGURED", client.statusHint());
             }
-            List<Comment> comments = fetchFromApi(client, p, workId, ownerId, xsecToken, boundCredentialId);
+            List<Comment> comments = fetchFromApi(client, p, workId, ownerId, xsecToken, boundCredentialId,
+                    credential.map(PlatformCredential::getAccountName).orElse(null));
             log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
             return new CollectionResult(p, workId, "api", null, comments);
         }
@@ -122,7 +124,8 @@ public class CommentCollector {
         }
 
         try {
-            List<Comment> comments = fetchFromApi(client, p, workId, ownerId, xsecToken, boundCredentialId);
+            List<Comment> comments = fetchFromApi(client, p, workId, ownerId, xsecToken, boundCredentialId,
+                    credential.map(PlatformCredential::getAccountName).orElse(null));
             log.info("[Comment] 真实接口采集完成: platform={}, workId={}, 条数={}", p, workId, comments.size());
             return new CollectionResult(p, workId, "api", null, comments);
         } catch (CommentSourceException e) {
@@ -201,6 +204,13 @@ public class CommentCollector {
                     .platform("xiaohongshu")
                     .workId(isBlank(notification.feedId()) ? "" : notification.feedId().trim())
                     .author(isBlank(notification.nickname()) ? "匿名用户" : notification.nickname())
+                    .authorUserId(notification.userId())
+                    .relation(properties.getRelation().isEnabled()
+                            ? relationService.touchAndResolve(ownerId, "xiaohongshu",
+                                    notification.userId(),
+                                    isBlank(notification.nickname()) ? "匿名用户" : notification.nickname(),
+                                    false)
+                            : null)
                     .content(content)
                     .likes(0)
                     .commentTime(notification.time() == null ? now : notification.time())
@@ -224,6 +234,37 @@ public class CommentCollector {
                 page.tab(), page.items().size(), comments.size(), createdWatches, page.filtered());
         return new NotificationCollectionResult("api", null, page.tab(), page.filtered(),
                 comments, createdWatches, unread);
+    }
+
+    /** 同步「新增关注」通知，维护粉丝标签（connections 分区）。 */
+    public int syncFollowers(String ownerId, String credentialId) {
+        if (!properties.getRelation().isEnabled() || !properties.getRelation().isSyncFollowers()) {
+            return 0;
+        }
+        Optional<PlatformCredential> bound = credentialService.resolve(ownerId, "xiaohongshu", credentialId);
+        XhsCommentApiClient client = bound.map(clientFactory::forCredential).orElse(apiClient);
+        if (!client.isNotificationConfigured()) {
+            return 0;
+        }
+        try {
+            XhsCommentApiClient.NotificationPage page = client.fetchNotifications("connections",
+                    properties.getXiaohongshu().getNotificationLimit());
+            int marked = 0;
+            for (XhsCommentApiClient.XhsNotification notification : page.items()) {
+                if (relationService.markFollower(ownerId, "xiaohongshu",
+                        notification.userId(), notification.nickname())) {
+                    marked++;
+                }
+            }
+            if (marked > 0) {
+                log.info("[Comment] 粉丝标签已同步: owner={}, credential={}, 新增/更新={}",
+                        ownerId, credentialId, marked);
+            }
+            return marked;
+        } catch (Exception e) {
+            log.warn("[Comment] 粉丝同步失败: owner={}, err={}", ownerId, e.getMessage());
+            return 0;
+        }
     }
 
     /** 通知里发现的新笔记自动加入监控（带上通知自带的 feed_xsec_token）。 */
@@ -254,7 +295,8 @@ public class CommentCollector {
     }
     /** 真实接口分页拉取。 */
     private List<Comment> fetchFromApi(XhsCommentApiClient client, String platform, String workId,
-                                       String ownerId, String xsecToken, String credentialId) {
+                                       String ownerId, String xsecToken, String credentialId,
+                                       String selfAccountName) {
         if (!"xiaohongshu".equalsIgnoreCase(platform)) {
             throw new CommentSourceException("COMMENT_PLATFORM_NOT_SUPPORTED",
                     "暂未接入 " + platform + " 的真实评论接口，可配置 contentops.comment.source=mock 使用模拟数据");
@@ -268,6 +310,8 @@ public class CommentCollector {
             XhsCommentApiClient.FetchPage fetched =
                     client.fetchPage(workId, cursor, cfg.getPageSize(), xsecToken);
             for (XhsCommentApiClient.XhsComment item : fetched.comments()) {
+                String author = item.author() == null ? "匿名用户" : item.author();
+                boolean self = selfAccountName != null && selfAccountName.equals(author);
                 all.add(Comment.builder()
                         .commentId(resolveCommentId(workId, item))
                         .platformCommentId(item.commentId())
@@ -276,7 +320,12 @@ public class CommentCollector {
                         .ownerId(ownerId)
                         .platform("xiaohongshu")
                         .workId(workId)
-                        .author(item.author() == null ? "匿名用户" : item.author())
+                        .author(author)
+                        .authorUserId(item.authorUserId())
+                        .relation(properties.getRelation().isEnabled()
+                                ? relationService.touchAndResolve(ownerId, "xiaohongshu",
+                                        item.authorUserId(), author, self)
+                                : null)
                         .content(item.content())
                         .likes(item.likes())
                         .commentTime(item.commentTime() == null ? now : item.commentTime())

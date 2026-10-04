@@ -21,15 +21,17 @@ import java.util.Optional;
 public class CommentRepository {
 
     private static final String COLS = "comment_id, platform_comment_id, collected_via, credential_id, owner_id, "
-            + "platform, work_id, workflow_id, author, content, likes, comment_time, reply_to, intent, "
-            + "sentiment, ai_summary, ai_reply, reply_status, dialog_history, collected_at";
+            + "platform, work_id, workflow_id, author, author_user_id, relation, content, likes, "
+            + "comment_time, reply_to, intent, intent_source, intent_score, sentiment, ai_summary, ai_reply, "
+            + "reply_status, dialog_history, collected_at";
 
     private static final String SQL_INSERT =
             "INSERT INTO contentops_comment "
                     + "(comment_id, platform_comment_id, collected_via, credential_id, owner_id, platform, "
-                    + " work_id, workflow_id, author, content, likes, comment_time, reply_to, intent, "
-                    + " sentiment, ai_summary, ai_reply, reply_status, dialog_history, collected_at) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + " work_id, workflow_id, author, author_user_id, relation, content, likes, "
+                    + " comment_time, reply_to, intent, intent_source, intent_score, sentiment, ai_summary, "
+                    + " ai_reply, reply_status, dialog_history, collected_at) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment "
                     + "WHERE (? = '' OR owner_id = ?) "
@@ -37,16 +39,18 @@ public class CommentRepository {
                     + "  AND (? IS NULL OR ? = '' OR work_id = ?) "
                     + "  AND (? IS NULL OR ? = '' OR intent = ?) "
                     + "  AND (? IS NULL OR ? = '' OR sentiment = ?) "
+                    + "  AND (? IS NULL OR ? = '' OR relation = ?) "
                     + "ORDER BY collected_at DESC LIMIT ?";
     private static final String SQL_BY_ID =
             "SELECT " + COLS + " FROM contentops_comment WHERE comment_id = ?";
     private static final String SQL_EXISTS =
             "SELECT COUNT(1) FROM contentops_comment WHERE comment_id = ?";
     private static final String SQL_UPDATE_ANALYSIS =
-            "UPDATE contentops_comment SET intent = ?, sentiment = ?, ai_summary = ?, ai_reply = ? "
-                    + "WHERE comment_id = ?";
+            "UPDATE contentops_comment SET intent = ?, intent_source = ?, intent_score = ?, sentiment = ?, "
+                    + "ai_summary = ?, ai_reply = ? WHERE comment_id = ?";
     private static final String SQL_UPDATE_ANALYSIS_DRAFT =
-            "UPDATE contentops_comment SET intent = ?, sentiment = ?, ai_summary = ?, ai_reply = ?, "
+            "UPDATE contentops_comment SET intent = ?, intent_source = ?, intent_score = ?, sentiment = ?, "
+                    + "ai_summary = ?, ai_reply = ?, "
                     + "reply_status = CASE WHEN reply_status = 'NONE' THEN 'DRAFT' ELSE reply_status END "
                     + "WHERE comment_id = ?";
     private static final String SQL_UPDATE_REPLY =
@@ -73,9 +77,10 @@ public class CommentRepository {
                     c.getCollectedVia() == null ? "note" : c.getCollectedVia(),
                     c.getCredentialId(),
                     c.getOwnerId(), c.getPlatform(), c.getWorkId(), c.getWorkflowId(),
-                    c.getAuthor(), c.getContent(), c.getLikes(),
+                    c.getAuthor(), c.getAuthorUserId(), c.getRelation(), c.getContent(), c.getLikes(),
                     c.getCommentTime() == null ? null : Timestamp.valueOf(c.getCommentTime()),
-                    c.getReplyTo(), c.getIntent(), c.getSentiment(), c.getAiSummary(), c.getAiReply(),
+                    c.getReplyTo(), c.getIntent(), c.getIntentSource(), c.getIntentScore(),
+                    c.getSentiment(), c.getAiSummary(), c.getAiReply(),
                     c.getReplyStatus() == null ? "NONE" : c.getReplyStatus(),
                     c.getDialogHistory(), Timestamp.valueOf(java.time.LocalDateTime.now()));
         } catch (Exception e) {
@@ -99,14 +104,21 @@ public class CommentRepository {
 
     public List<Comment> list(String ownerId, String platform, String workId,
                               String intent, String sentiment, int limit) {
+        return list(ownerId, platform, workId, intent, sentiment, "", limit);
+    }
+
+    /** 列表查询（支持按关系标签筛选，如 FAN/FOLLOWING/FRIEND）。 */
+    public List<Comment> list(String ownerId, String platform, String workId,
+                              String intent, String sentiment, String relation, int limit) {
         String o = ownerId == null ? "" : ownerId;
         String p = platform == null ? "" : platform;
         String w = workId == null ? "" : workId;
         String i = intent == null ? "" : intent;
         String s = sentiment == null ? "" : sentiment;
+        String r = relation == null ? "" : relation;
         try {
             return jdbcTemplate.query(SQL_LIST, this::mapRow,
-                    o, o, p, p, p, w, w, w, i, i, i, s, s, s, limit);
+                    o, o, p, p, p, w, w, w, i, i, i, s, s, s, r, r, r, limit);
         } catch (Exception e) {
             log.error("[Comment] 查询失败", e);
             return List.of();
@@ -122,20 +134,22 @@ public class CommentRepository {
         }
     }
 
-    public void updateAnalysis(String commentId, String intent, String sentiment,
-                               String summary, String reply) {
+    public void updateAnalysis(String commentId, String intent, String sentiment, String summary,
+                               String reply, String intentSource, Double intentScore) {
         try {
-            jdbcTemplate.update(SQL_UPDATE_ANALYSIS, intent, sentiment, summary, reply, commentId);
+            jdbcTemplate.update(SQL_UPDATE_ANALYSIS, intent, intentSource, intentScore, sentiment,
+                    summary, reply, commentId);
         } catch (Exception e) {
             log.warn("[Comment] 更新分析失败: id={}", commentId);
         }
     }
 
     /** 更新分析结果，并把尚未处理的评论置为「草稿」状态（有待发回复）。 */
-    public void updateAnalysisAndStatus(String commentId, String intent, String sentiment,
-                                        String summary, String reply) {
+    public void updateAnalysisAndStatus(String commentId, String intent, String sentiment, String summary,
+                                        String reply, String intentSource, Double intentScore) {
         try {
-            jdbcTemplate.update(SQL_UPDATE_ANALYSIS_DRAFT, intent, sentiment, summary, reply, commentId);
+            jdbcTemplate.update(SQL_UPDATE_ANALYSIS_DRAFT, intent, intentSource, intentScore, sentiment,
+                    summary, reply, commentId);
         } catch (Exception e) {
             log.warn("[Comment] 更新分析(含状态)失败: id={}, err={}", commentId, e.getMessage());
         }
@@ -164,6 +178,23 @@ public class CommentRepository {
         return jdbcTemplate.queryForList(SQL_STATS, o, o, p, p, p, w, w, w);
     }
 
+    /** 意图判定来源分布：corpus / llm / heuristic / 未分析，用于观察语料库命中率。 */
+    public List<Map<String, Object>> statsIntentSource(String ownerId, String platform, String workId) {
+        String o = ownerId == null ? "" : ownerId;
+        String p = platform == null ? "" : platform;
+        String w = workId == null ? "" : workId;
+        String sql = "SELECT COALESCE(intent_source, 'unanalyzed') AS source, COUNT(*) AS cnt "
+                + "FROM contentops_comment WHERE (? = '' OR owner_id = ?) "
+                + "AND (? IS NULL OR ? = '' OR platform = ?) AND (? IS NULL OR ? = '' OR work_id = ?) "
+                + "GROUP BY source ORDER BY cnt DESC";
+        try {
+            return jdbcTemplate.queryForList(sql, o, o, p, p, p, w, w, w);
+        } catch (Exception e) {
+            log.warn("[Comment] 意图来源统计失败: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     public List<Map<String, Object>> statsSentiment(String ownerId, String platform, String workId) {
         String o = ownerId == null ? "" : ownerId;
         String p = platform == null ? "" : platform;
@@ -184,11 +215,15 @@ public class CommentRepository {
                 .workId(rs.getString("work_id"))
                 .workflowId(rs.getString("workflow_id"))
                 .author(rs.getString("author"))
+                .authorUserId(rs.getString("author_user_id"))
+                .relation(rs.getString("relation"))
                 .content(rs.getString("content"))
                 .likes(rs.getInt("likes"))
                 .commentTime(commentTime == null ? null : commentTime.toLocalDateTime())
                 .replyTo(rs.getString("reply_to"))
                 .intent(rs.getString("intent"))
+                .intentSource(rs.getString("intent_source"))
+                .intentScore(rs.getObject("intent_score") == null ? null : rs.getDouble("intent_score"))
                 .sentiment(rs.getString("sentiment"))
                 .aiSummary(rs.getString("ai_summary"))
                 .aiReply(rs.getString("ai_reply"))

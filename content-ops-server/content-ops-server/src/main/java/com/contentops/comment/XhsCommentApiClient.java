@@ -335,7 +335,9 @@ public class XhsCommentApiClient {
         if (isBlank(replyTo)) {
             replyTo = parentId;
         }
-        return new XhsComment(id, author, content, likes == null ? 0 : likes, time, replyTo);
+        String authorUserId = textOf(node, List.of("userInfo.userId", "user.userId", "user_id",
+                "userId", "from.user_id"));
+        return new XhsComment(id, author, content, likes == null ? 0 : likes, time, replyTo, authorUserId);
     }
 
     private JsonNode firstArrayField(JsonNode node, List<String> fields) {
@@ -1178,6 +1180,6 @@ public class XhsCommentApiClient {
 
     /** 单条评论（数据源无关的中间结构）。 */
     public record XhsComment(String commentId, String author, String content, int likes,
-                             LocalDateTime commentTime, String replyTo) {
+                             LocalDateTime commentTime, String replyTo, String authorUserId) {
     }
 }

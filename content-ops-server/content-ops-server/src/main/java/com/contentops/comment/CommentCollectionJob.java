@@ -109,6 +109,23 @@ public class CommentCollectionJob {
             }
             analyzeBudget = budget.get();
         }
+
+        // ② 粉丝标签：同步「新增关注」通知（真实信号，用于 FAN 标签）
+        if (properties.getRelation().isEnabled() && properties.getRelation().isSyncFollowers()) {
+            int markedFollowers = 0;
+            List<PlatformCredential> credentials = credentialService.listEnabledDecrypted("xiaohongshu");
+            if (credentials.isEmpty()) {
+                markedFollowers = collector.syncFollowers(null, null);
+            } else {
+                for (PlatformCredential credential : credentials) {
+                    markedFollowers += collector.syncFollowers(credential.getOwnerId(),
+                            credential.getCredentialId());
+                }
+            }
+            if (markedFollowers > 0) {
+                detail.append("粉丝标签同步: ").append(markedFollowers).append(" 人; ");
+            }
+        }
         for (CommentWatch watch : watches) {
             scanned++;
             WatchRunResult result = runForWatch(watch, analyzeBudget);
@@ -276,7 +293,7 @@ public class CommentCollectionJob {
                 Comment analyzedComment = analysisService.analyze(comment);
                 commentRepository.updateAnalysisAndStatus(comment.getCommentId(),
                         analyzedComment.getIntent(), analyzedComment.getSentiment(),
-                        analyzedComment.getAiSummary(), analyzedComment.getAiReply());
+                        analyzedComment.getAiSummary(), analyzedComment.getAiReply(), analyzedComment.getIntentSource(), analyzedComment.getIntentScore());
                 analyzed++;
             } catch (Exception e) {
                 budget.incrementAndGet();
@@ -301,7 +318,7 @@ public class CommentCollectionJob {
                 Comment analyzedComment = analysisService.analyze(comment);
                 commentRepository.updateAnalysisAndStatus(comment.getCommentId(),
                         analyzedComment.getIntent(), analyzedComment.getSentiment(),
-                        analyzedComment.getAiSummary(), analyzedComment.getAiReply());
+                        analyzedComment.getAiSummary(), analyzedComment.getAiReply(), analyzedComment.getIntentSource(), analyzedComment.getIntentScore());
                 analyzed++;
             } catch (Exception e) {
                 log.warn("[Comment] 自动分析失败: commentId={}, err={}",

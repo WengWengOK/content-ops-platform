@@ -75,7 +75,9 @@ import { CommentChatPanel } from '@/components/comments/CommentChatPanel'
 import { CommentListPanel } from '@/components/comments/CommentListPanel'
 import { CommentStatsCards } from '@/components/comments/CommentStatsCards'
 import { CommentsToolbar } from '@/components/comments/CommentsToolbar'
+import { CommentRelationsCard } from '@/components/comments/CommentRelationsCard'
 import { CredentialManagerCard } from '@/components/comments/CredentialManagerCard'
+import { IntentCorpusCard } from '@/components/comments/IntentCorpusCard'
 import { OpsOverviewCard } from '@/components/comments/OpsOverviewCard'
 import { WatchMonitorCard } from '@/components/comments/WatchMonitorCard'
 import { type DialogTurn } from '@/components/comments/constants'
@@ -85,6 +87,7 @@ export function CommentsPage() {
   const [workId, setWorkId] = useState('')
   const [intent, setIntent] = useState('')
   const [sentiment, setSentiment] = useState('')
+  const [relation, setRelation] = useState('')
   const [comments, setComments] = useState<PlatformComment[]>([])
   const [stats, setStats] = useState<CommentStats>({ intent: [], sentiment: [] })
   const [loading, setLoading] = useState(false)
@@ -137,6 +140,7 @@ export function CommentsPage() {
         workId: workId || undefined,
         intent: intent || undefined,
         sentiment: sentiment || undefined,
+        relation: relation || undefined,
         limit: 100,
       })
       setComments(res.comments ?? [])
@@ -146,7 +150,7 @@ export function CommentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [platform, workId, intent, sentiment])
+  }, [platform, workId, intent, sentiment, relation])
 
   const loadStats = useCallback(async () => {
     try {
@@ -580,6 +584,7 @@ export function CommentsPage() {
     { key: 'workspace', label: '评论工作台' },
     { key: 'automation', label: '自动采集', badge: watches.length || undefined },
     { key: 'accounts', label: '账号凭据', badge: credentials.length || undefined },
+    { key: 'quality', label: '意图与关系' },
     {
       key: 'ops',
       label: '运维总览',
@@ -643,6 +648,8 @@ export function CommentsPage() {
             setIntent={setIntent}
             sentiment={sentiment}
             setSentiment={setSentiment}
+            relation={relation}
+            setRelation={setRelation}
             error={error}
             handleCollect={handleCollect}
             handleAnalyzeAll={handleAnalyzeAll}
@@ -729,6 +736,13 @@ export function CommentsPage() {
         />
       )}
 
+      {activeTab === 'quality' && (
+        <div className="space-y-4">
+          <IntentCorpusCard />
+          <CommentRelationsCard onChanged={() => void loadComments()} />
+        </div>
+      )}
+
       {activeTab === 'ops' && (
         <OpsOverviewCard
           ops={ops}
@@ -746,9 +760,9 @@ export function CommentsPage() {
   )
 }
 
-type TabKey = 'workspace' | 'automation' | 'accounts' | 'ops'
+type TabKey = 'workspace' | 'automation' | 'accounts' | 'quality' | 'ops'
 
-const TAB_KEYS: TabKey[] = ['workspace', 'automation', 'accounts', 'ops']
+const TAB_KEYS: TabKey[] = ['workspace', 'automation', 'accounts', 'quality', 'ops']
 
 /** 从 URL 读取初始模块（?tab=ops），非法值回落到评论工作台。 */
 function initialTab(): TabKey {

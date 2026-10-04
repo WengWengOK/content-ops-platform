@@ -8,7 +8,11 @@ import type {
   CommentSchedulerStatus,
   CommentSourceStatus,
   CommentStats,
+  CommentRelationOverview,
   CommentWatch,
+  IntentCorpusEntry,
+  IntentCorpusStats,
+  IntentMatchPreview,
   OpsOverview,
   PlatformComment,
 } from '@/types'
@@ -46,6 +50,7 @@ export async function listComments(params: {
   workId?: string
   intent?: string
   sentiment?: string
+  relation?: string
   limit?: number
 }): Promise<{ total: number; comments: PlatformComment[] }> {
   const { data } = await apiClient.get<AgentResponse<{ total: number; comments: PlatformComment[] }>>(
@@ -268,5 +273,82 @@ export async function notifyTokenWarnings(force = false): Promise<{
     items: string[]
     channels: Record<string, unknown>
   }>>('/comments/token-warnings/notify', { force })
+  return unwrap(data)
+}
+// ═══════════════════════════════════════════════════════════════
+//  评论者关系标签 + 意图语料库
+// ═══════════════════════════════════════════════════════════════
+
+/** GET /comments/relations — 关系分布与用户列表 */
+export async function getCommentRelations(
+  relation?: string,
+  limit = 50
+): Promise<CommentRelationOverview> {
+  const { data } = await apiClient.get<AgentResponse<CommentRelationOverview>>('/comments/relations', {
+    params: { relation, limit },
+  })
+  return unwrap(data)
+}
+
+/** PUT /comments/relations/{userKey} — 设置关系标签（关注/好友需人工或外部关系源） */
+export async function setCommentUserRelation(
+  userKey: string,
+  relation: string,
+  note?: string
+): Promise<void> {
+  await apiClient.put(`/comments/relations/${encodeURIComponent(userKey)}`, { relation, note })
+}
+
+/** POST /comments/relations/sync-followers — 同步「新增关注」维护粉丝标签 */
+export async function syncCommentFollowers(): Promise<number> {
+  const { data } = await apiClient.post<AgentResponse<{ marked: number }>>(
+    '/comments/relations/sync-followers'
+  )
+  return unwrap(data).marked ?? 0
+}
+
+/** GET /comments/intent-corpus — 语料库列表与概览 */
+export async function getIntentCorpus(): Promise<{
+  stats: IntentCorpusStats
+  entries: IntentCorpusEntry[]
+}> {
+  const { data } = await apiClient.get<
+    AgentResponse<{ stats: IntentCorpusStats; entries: IntentCorpusEntry[] }>
+  >('/comments/intent-corpus')
+  return unwrap(data)
+}
+
+/** POST /comments/intent-corpus — 新增语料 */
+export async function addIntentCorpusEntry(intent: string, phrase: string): Promise<IntentCorpusEntry> {
+  const { data } = await apiClient.post<AgentResponse<IntentCorpusEntry>>('/comments/intent-corpus', {
+    intent,
+    phrase,
+  })
+  return unwrap(data)
+}
+
+/** DELETE /comments/intent-corpus/{id} */
+export async function deleteIntentCorpusEntry(corpusId: string): Promise<void> {
+  await apiClient.delete(`/comments/intent-corpus/${corpusId}`)
+}
+
+/** POST /comments/intent-corpus/rebuild — 重建向量缓存 */
+export async function rebuildIntentCorpus(): Promise<number> {
+  const { data } = await apiClient.post<AgentResponse<{ cacheSize: number }>>(
+    '/comments/intent-corpus/rebuild'
+  )
+  return unwrap(data).cacheSize ?? 0
+}
+
+/** POST /comments/intent-corpus/match — 匹配预览（阈值调优） */
+export async function previewIntentMatch(
+  text: string,
+  threshold?: number,
+  topK = 5
+): Promise<IntentMatchPreview> {
+  const { data } = await apiClient.post<AgentResponse<IntentMatchPreview>>(
+    '/comments/intent-corpus/match',
+    { text, threshold, topK }
+  )
   return unwrap(data)
 }
