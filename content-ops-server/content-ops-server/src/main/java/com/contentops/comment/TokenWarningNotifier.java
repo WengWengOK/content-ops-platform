@@ -39,7 +39,7 @@ public class TokenWarningNotifier {
     /** 通知结果渠道与链接。 */
     public String actionUrl() {
         String base = webBaseUrl == null || webBaseUrl.isBlank() ? "http://localhost:5173" : webBaseUrl.trim();
-        return (base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + "/comments";
+        return (base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + "/comments?tab=ops";
     }
 
     /** 通知结果：候选数、实际通知数、因去重跳过数、消息内容、各渠道发送结果。 */

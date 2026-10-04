@@ -70,10 +70,15 @@ const STATUS_CN: Record<string, string> = {
   SENT: '已发送',
 }
 
-interface DialogTurn {
-  role: 'user' | 'assistant'
-  content: string
-}
+import { AppToast } from '@/components/comments/AppToast'
+import { CommentChatPanel } from '@/components/comments/CommentChatPanel'
+import { CommentListPanel } from '@/components/comments/CommentListPanel'
+import { CommentStatsCards } from '@/components/comments/CommentStatsCards'
+import { CommentsToolbar } from '@/components/comments/CommentsToolbar'
+import { CredentialManagerCard } from '@/components/comments/CredentialManagerCard'
+import { OpsOverviewCard } from '@/components/comments/OpsOverviewCard'
+import { WatchMonitorCard } from '@/components/comments/WatchMonitorCard'
+import { type DialogTurn } from '@/components/comments/constants'
 
 export function CommentsPage() {
   const [platform, setPlatform] = useState('xiaohongshu')
@@ -558,776 +563,216 @@ export function CommentsPage() {
     return new Date(t).toLocaleString('zh-CN', { hour12: false })
   }
 
+  const [activeTab, setActiveTabState] = useState<TabKey>(initialTab())
+  /** 切换模块并把当前模块写进 URL，方便深链（如飞书预警按钮直达运维总览） */
+  const setActiveTab = (key: TabKey) => {
+    setActiveTabState(key)
+    window.history.replaceState(null, '', `${window.location.pathname}?tab=${key}`)
+  }
+
+  const pendingTokenIssues =
+    (ops?.watchHealth.expired ?? 0) + (ops?.watchHealth.expiringSoon ?? 0)
+  const abnormalAccounts =
+    ops?.credentials.filter((c) => c.tokenState === 'AUTH_INVALID' || c.tokenState === 'ERROR').length ?? 0
+  const pendingRotation = ops?.rotation.pendingRotation ?? 0
+
+  const tabs: { key: TabKey; label: string; badge?: number }[] = [
+    { key: 'workspace', label: '评论工作台' },
+    { key: 'automation', label: '自动采集', badge: watches.length || undefined },
+    { key: 'accounts', label: '账号凭据', badge: credentials.length || undefined },
+    {
+      key: 'ops',
+      label: '运维总览',
+      badge: pendingTokenIssues + abnormalAccounts + pendingRotation || undefined,
+    },
+  ]
+
   return (
     <Layout pageTitle="评论区 AI 助手" breadcrumbs={[{ label: '评论区 AI 助手' }]} activeNav="comments">
-      {/* 控制区 */}
-      <div className="mb-4 rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs" style={{ color: '#86909C' }}>作品 ID（workId）</span>
-            <input
-              value={workId}
-              onChange={(e) => setWorkId(e.target.value)}
-              placeholder="如 9f2c…，留空查看全部"
-              className="w-56 rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#FF2D5E]"
-              style={{ borderColor: '#E5E6EB' }}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs" style={{ color: '#86909C' }}>平台</span>
-            <select
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              className="w-36 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            >
-              <option value="">全部</option>
-              <option value="xiaohongshu">小红书</option>
-              <option value="douyin">抖音</option>
-              <option value="wechat">微信</option>
-              <option value="kuaishou">快手</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs" style={{ color: '#86909C' }}>意图</span>
-            <select
-              value={intent}
-              onChange={(e) => setIntent(e.target.value)}
-              className="w-32 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            >
-              <option value="">全部</option>
-              {INTENTS.map((i) => (
-                <option key={i} value={i}>{i}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs" style={{ color: '#86909C' }}>情感</span>
-            <select
-              value={sentiment}
-              onChange={(e) => setSentiment(e.target.value)}
-              className="w-32 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            >
-              <option value="">全部</option>
-              {SENTIMENTS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <button
-            onClick={handleCollect}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-white"
-            style={{ background: '#FF2D5E' }}
-          >
-            📥 采集评论
-          </button>
-          <button
-            onClick={handleAnalyzeAll}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-white"
-            style={{ background: '#165DFF' }}
-          >
-            ✨ AI 批量分析
-          </button>
-          <button
-            onClick={() => { void loadComments(); void loadStats() }}
-            className="rounded-lg border px-4 py-2 text-sm font-medium"
-            style={{ borderColor: '#E5E6EB', color: '#4E5969' }}
-          >
-            刷新
-          </button>
-        </div>
-        {error && (
-          <div className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ background: '#FFF0F0', color: '#F53F3F' }}>
-            {error}
-          </div>
-        )}
-      </div>
-
-      {/* 运维总览：密钥轮换 / 账号健康 / 票据预警 */}
-      <div className="mb-4 rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-medium" style={{ color: '#1D2129' }}>
-            🩺 运维总览
-            {ops && (
-              <span className="ml-2 text-xs font-normal" style={{ color: '#86909C' }}>
-                密钥 {ops.rotation.encryptionEnabled ? ops.rotation.keyId : '未启用加密'} · 待轮换 {ops.rotation.pendingRotation}
-                {' · '}监控 {ops.watchHealth.enabled}/{ops.watchHealth.total} 启用
-                {' · '}票据过期 {ops.watchHealth.expired} · 即将过期 {ops.watchHealth.expiringSoon}
-                （阈值 {ops.watchHealth.warnDays} 天）
-              </span>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => void loadOps()}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium"
-              style={{ borderColor: '#E5E6EB', color: '#4E5969' }}
-            >
-              刷新
-            </button>
-            <button
-              onClick={() => void handleNotifyTokenWarnings()}
-              disabled={notifyBusy}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-              style={{ borderColor: '#E5E6EB', color: '#722ED1' }}
-            >
-              {notifyBusy ? '推送中…' : '🔔 立即推送预警'}
-            </button>
-            <button
-              onClick={() => void handleRotateKeys()}
-              disabled={opsBusy || !ops || ops.rotation.pendingRotation === 0}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-              style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
-            >
-              {opsBusy ? '轮换中…' : `🔐 执行密钥轮换（${ops?.rotation.pendingRotation ?? 0}）`}
-            </button>
-          </div>
-        </div>
-
-        {ops?.rotation.hint && (
-          <div className="mb-3 rounded-lg px-3 py-2 text-xs" style={{ background: '#F7F8FA', color: '#4E5969' }}>
-            轮换状态：{ops.rotation.hint}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div>
-            <div className="mb-2 text-xs font-medium" style={{ color: '#1D2129' }}>账号健康</div>
-            <div className="space-y-1">
-              {(!ops || ops.credentials.length === 0) && (
-                <div className="text-xs" style={{ color: '#86909C' }}>暂无账号凭据</div>
-              )}
-              {ops?.credentials.map((c) => (
-                <div
-                  key={c.credentialId}
-                  className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-                  style={{ borderColor: '#F2F3F5' }}
-                >
-                  <span className="font-medium" style={{ color: '#1D2129' }}>{c.accountName}</span>
-                  {c.needsRotation && (
-                    <span className="rounded px-2 py-0.5" style={{ background: '#FFF7E8', color: '#9C5B00' }}>待轮换</span>
-                  )}
-                  {(c.tokenState === 'AUTH_INVALID' || c.tokenState === 'ERROR') && (
-                    <span className="rounded px-2 py-0.5" style={{ background: '#FFECE8', color: '#F53F3F' }}>需更新令牌</span>
-                  )}
-                  {c.tokenState === 'OK' && (
-                    <span className="rounded px-2 py-0.5" style={{ background: '#E8FFEA', color: '#00782C' }}>已登录</span>
-                  )}
-                  <span style={{ color: '#86909C' }}>{c.baseUrl} · token {c.accessTokenMasked || '（未设置）'}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 text-xs font-medium" style={{ color: '#1D2129' }}>票据预警（需要更新的监控作品）</div>
-            <div className="space-y-1">
-              {(!ops || ops.watchHealth.problems.length === 0) && (
-                <div className="text-xs" style={{ color: '#86909C' }}>没有需要处理的票据</div>
-              )}
-              {ops?.watchHealth.problems.slice(0, 6).map((w) => (
-                <div
-                  key={w.watchId}
-                  className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-                  style={{ borderColor: '#F2F3F5' }}
-                >
-                  <span className="font-medium" style={{ color: '#1D2129' }}>{w.workId}</span>
-                  <span className="rounded px-2 py-0.5" style={{ background: '#FFF7E8', color: '#9C5B00' }}>{w.accountName}</span>
-                  <span
-                    className="rounded px-2 py-0.5"
-                    style={w.warning === 'EXPIRED'
-                      ? { background: '#FFECE8', color: '#F53F3F' }
-                      : { background: '#FFF7E8', color: '#9C5B00' }}
-                  >
-                    {w.warning === 'EXPIRED' ? '已过期' : `即将过期（已用 ${w.tokenAgeDays ?? '?'} 天）`}
-                  </span>
-                  {w.observedTtlDays ? (
-                    <span style={{ color: '#86909C' }}>观测有效期 {w.observedTtlDays} 天</span>
-                  ) : null}
-                </div>
-              ))}
-              {ops && ops.watchHealth.problems.length > 6 && (
-                <div className="text-xs" style={{ color: '#86909C' }}>
-                  还有 {ops.watchHealth.problems.length - 6} 条，见下方监控列表
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 平台账号凭据（多账号归属） */}
-      <div className="mb-4 rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
-        <div className="mb-3 text-sm font-medium" style={{ color: '#1D2129' }}>
-          🔑 平台账号凭据
-          <span className="ml-2 text-xs font-normal" style={{ color: '#86909C' }}>
-            共 {credentials.length} 个账号 · 采集/回复/通知按账号归属，令牌加密存储且只显示掩码
+      {/* 顶部状态条：不进子页面也能看到关键健康度 */}
+      <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-[#E5E6EB] bg-white px-4 py-3 shadow-sm">
+        <StatusPill label="账号" value={credentials.length} tone="ok" />
+        <StatusPill label="监控作品" value={watches.length} tone="ok" />
+        <StatusPill label="票据待处理" value={pendingTokenIssues} tone={pendingTokenIssues > 0 ? 'warn' : 'ok'} />
+        <StatusPill label="账号异常" value={abnormalAccounts} tone={abnormalAccounts > 0 ? 'danger' : 'ok'} />
+        <StatusPill label="待轮换密钥" value={pendingRotation} tone={pendingRotation > 0 ? 'warn' : 'ok'} />
+        {scheduler?.lastRun?.startedAt && (
+          <span className="ml-auto text-xs" style={{ color: '#86909C' }}>
+            最近采集：{timeStr(scheduler.lastRun.startedAt)}
           </span>
-        </div>
-
-        <div className="mb-3 flex flex-wrap items-end gap-3">
-          <input
-            value={credName}
-            onChange={(e) => setCredName(e.target.value)}
-            placeholder="账号名，如 主号·小红"
-            className="w-40 rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: '#E5E6EB' }}
-          />
-          <input
-            value={credBaseUrl}
-            onChange={(e) => setCredBaseUrl(e.target.value)}
-            placeholder="桥地址，如 http://127.0.0.1:18060"
-            className="w-72 rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: '#E5E6EB' }}
-          />
-          <input
-            value={credToken}
-            onChange={(e) => setCredToken(e.target.value)}
-            type="password"
-            placeholder="桥的 AUTH_TOKEN"
-            className="w-56 rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ borderColor: '#E5E6EB' }}
-          />
-          <label className="flex items-center gap-2 pb-2 text-xs" style={{ color: '#4E5969' }}>
-            <input type="checkbox" checked={credDefault} onChange={(e) => setCredDefault(e.target.checked)} />
-            设为默认账号
-          </label>
-          <button
-            onClick={() => void handleCreateCredential()}
-            disabled={credBusy}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            style={{ background: '#165DFF' }}
-          >
-            {credBusy ? '添加中…' : '＋ 添加账号'}
-          </button>
-        </div>
-
-        <div className="space-y-2">
-          {credentials.length === 0 && (
-            <div className="text-xs" style={{ color: '#86909C' }}>
-              还没有账号凭据。添加后「加入监控」可选择该作品属于哪个账号；未配置时回退全局配置。
-            </div>
-          )}
-          {credentials.map((c) => (
-            <div
-              key={c.credentialId}
-              className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs"
-              style={{ borderColor: '#F2F3F5' }}
-            >
-              <span className="font-medium" style={{ color: '#1D2129' }}>{c.accountName}</span>
-              {c.defaultCredential && (
-                <span className="rounded px-2 py-0.5" style={{ background: '#E8F3FF', color: '#165DFF' }}>默认</span>
-              )}
-              <span
-                className="rounded px-2 py-0.5"
-                style={{ background: c.enabled ? '#E8FFEA' : '#F2F3F5', color: c.enabled ? '#00782C' : '#86909C' }}
-              >
-                {c.enabled ? '启用' : '停用'}
-              </span>
-              <span style={{ color: '#86909C' }}>
-                {c.baseUrl} · token {c.accessTokenMasked || '（未设置）'}
-              </span>
-              {probes[c.credentialId] && (
-                <span style={{ color: probes[c.credentialId].authenticated ? '#00782C' : '#9C5B00' }}>
-                  {probes[c.credentialId].hint}
-                </span>
-              )}
-              {(c.tokenState === 'AUTH_INVALID' || c.tokenState === 'ERROR') && (
-                <span className="rounded px-2 py-0.5" style={{ background: '#FFECE8', color: '#F53F3F' }}>
-                  ⚠️ 需更新令牌（AUTH_TOKEN 失效或服务不可达）
-                </span>
-              )}
-              {c.lastError && <span style={{ color: '#F53F3F' }}>⚠️ {c.lastError}</span>}
-              <span className="ml-auto flex gap-2">
-                <button
-                  onClick={() => void handleProbeCredential(c.credentialId)}
-                  className="rounded-lg border px-2 py-1"
-                  style={{ borderColor: '#E5E6EB', color: '#0FC6C2' }}
-                >
-                  测试连接
-                </button>
-                <button
-                  onClick={() => void handleSetDefaultCredential(c.credentialId)}
-                  disabled={c.defaultCredential}
-                  className="rounded-lg border px-2 py-1 disabled:opacity-40"
-                  style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
-                >
-                  设为默认
-                </button>
-                <button
-                  onClick={() => void handleToggleCredential(c)}
-                  className="rounded-lg border px-2 py-1"
-                  style={{ borderColor: '#E5E6EB', color: '#FF7D00' }}
-                >
-                  {c.enabled ? '停用' : '启用'}
-                </button>
-                <button
-                  onClick={() => void handleDeleteCredential(c.credentialId)}
-                  className="rounded-lg border px-2 py-1"
-                  style={{ borderColor: '#E5E6EB', color: '#F53F3F' }}
-                >
-                  删除
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 自动采集监控 */}
-      <div className="mb-4 rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-medium" style={{ color: '#1D2129' }}>
-            ⏱️ 自动采集监控
-            {scheduler && (
-              <span className="ml-2 text-xs font-normal" style={{ color: '#86909C' }}>
-                {scheduler.scheduled ? `每 ${Math.max(1, Math.round(scheduler.collectMs / 60000))} 分钟自动采集` : '定时任务已关闭'}
-                {' · '}监控 {scheduler.watchCount} 个作品
-                {' · '}自动分析 {scheduler.autoAnalyze ? `开（单轮≤${scheduler.autoAnalyzeLimit}条）` : '关'}
-                {' · '}单作品最小间隔 {scheduler.minIntervalSeconds}s
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {Object.keys(unread).length > 0 && (
-              <span className="text-xs" style={{ color: '#86909C' }}>
-                未读 评论/@{unread.mentions ?? 0} · 赞{unread.likes ?? 0} · 关注{unread.connections ?? 0}
-              </span>
-            )}
-            <button
-              onClick={() => void handleCollectNotifications()}
-              disabled={notifBusy}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-              style={{ borderColor: '#E5E6EB', color: '#722ED1' }}
-            >
-              {notifBusy ? '拉取中…' : '📥 拉取评论通知'}
-            </button>
-            <button
-              onClick={() => void handleRunAll()}
-              className="rounded-lg border px-3 py-1.5 text-xs font-medium"
-              style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
-            >
-              ▶ 立即执行一轮
-            </button>
-          </div>
-        </div>
-
-        <div className="mb-3 flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs" style={{ color: '#86909C' }}>作品 ID</span>
-            <input
-              value={watchInput}
-              onChange={(e) => setWatchInput(e.target.value)}
-              placeholder="填入要长期监控的作品 ID"
-              className="w-64 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs" style={{ color: '#86909C' }}>归属账号</span>
-            <select
-              value={selectedCredential}
-              onChange={(e) => setSelectedCredential(e.target.value)}
-              className="w-44 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            >
-              <option value="">全局配置 / 默认账号</option>
-              {credentials.map((c) => (
-                <option key={c.credentialId} value={c.credentialId}>
-                  {c.accountName}{c.defaultCredential ? '（默认）' : ''}{c.enabled ? '' : '（停用）'}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs" style={{ color: '#86909C' }}>
-              xsec_token（自建桥必填，会过期）
-            </span>
-            <input
-              value={watchXsecToken}
-              onChange={(e) => setWatchXsecToken(e.target.value)}
-              placeholder="形如 AB1cD…；用第三方数据服务可留空"
-              className="w-72 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            />
-          </div>
-          <label className="flex items-center gap-2 pb-2 text-xs" style={{ color: '#4E5969' }}>
-            <input
-              type="checkbox"
-              checked={watchAutoAnalyze}
-              onChange={(e) => setWatchAutoAnalyze(e.target.checked)}
-            />
-            新评论自动 AI 分析
-          </label>
-          <button
-            onClick={() => void handleAddWatch()}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-white"
-            style={{ background: '#722ED1' }}
-          >
-            ＋ 加入监控
-          </button>
-        </div>
-
-        {sourceStatus && (
-          <div
-            className="mb-3 rounded-lg px-3 py-2 text-xs"
-            style={{
-              background: sourceStatus.xiaohongshuConfigured ? '#E8FFEA' : '#FFF7E8',
-              color: sourceStatus.xiaohongshuConfigured ? '#00782C' : '#9C5B00',
-            }}
-          >
-            数据源：
-            {sourceStatus.configuredSource === 'auto'
-              ? '真实接口优先（不可用时回退模拟）'
-              : sourceStatus.configuredSource === 'api'
-                ? '仅真实接口（失败即报错）'
-                : '仅模拟数据'}
-            {sourceStatus.xiaohongshuConfigured
-              ? ` · 小红书真实接口已配置（${sourceStatus.xiaohongshuAuthMode}）`
-              : ` · 小红书真实接口未配置：${sourceStatus.hint}`}
-          </div>
         )}
-
-        {scheduler?.lastRun && (
-          <div className="mb-3 text-xs" style={{ color: '#86909C' }}>
-            上次运行：{timeStr(scheduler.lastRun.startedAt)}（{scheduler.lastRun.triggerType === 'schedule' ? '定时' : '手动'}）
-            {' · '}作品 {scheduler.lastRun.worksScanned}
-            {' · '}抓取 {scheduler.lastRun.commentsCollected}
-            {' · '}新增 {scheduler.lastRun.commentsNew}
-            {' · '}分析 {scheduler.lastRun.analyzed}
-            {scheduler.lastRun.failed > 0 ? ` · 失败 ${scheduler.lastRun.failed}` : ''}
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {watches.length === 0 && (
-            <div className="text-xs" style={{ color: '#86909C' }}>
-              还没有监控作品。把作品 ID 加入监控后，定时任务会持续抓取新评论并（可选）自动分析。
-            </div>
-          )}
-          {watches.map((w) => (
-            <div
-              key={w.watchId}
-              className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs"
-              style={{ borderColor: '#F2F3F5' }}
-            >
-              <span className="font-medium" style={{ color: '#1D2129' }}>{w.workId}</span>
-              <span className="rounded px-2 py-0.5" style={{ background: '#F2F3F5', color: '#4E5969' }}>{w.platform}</span>
-              <span
-                className="rounded px-2 py-0.5"
-                style={{
-                  background: w.enabled ? '#E8FFEA' : '#F2F3F5',
-                  color: w.enabled ? '#00782C' : '#86909C',
-                }}
-              >
-                {w.enabled ? '监控中' : '已暂停'}
-              </span>
-              {w.autoAnalyze && (
-                <span className="rounded px-2 py-0.5" style={{ background: '#F5E8FF', color: '#722ED1' }}>
-                  自动分析
-                </span>
-              )}
-              {w.lastSource && (
-                <span className="rounded px-2 py-0.5" style={{ background: '#F2F3F5', color: '#4E5969' }}>
-                  上次源 {w.lastSource}
-                </span>
-              )}
-              <span className="rounded px-2 py-0.5" style={{ background: '#FFF7E8', color: '#9C5B00' }}>
-                账号 {credentialName(w.credentialId)}
-              </span>
-              {w.tokenState === 'EXPIRED' && (
-                <span className="rounded px-2 py-0.5" style={{ background: '#FFECE8', color: '#F53F3F' }}>
-                  ⚠️ 需更新票据（xsec_token 已失效{w.observedTtlDays ? `，观测有效期 ${w.observedTtlDays} 天` : ''}）
-                </span>
-              )}
-              {w.tokenState !== 'EXPIRED' && w.tokenWarning === 'EXPIRING' && (
-                <span className="rounded px-2 py-0.5" style={{ background: '#FFF7E8', color: '#9C5B00' }}>
-                  ⏳ 票据即将过期（已用 {w.tokenAgeDays ?? '?'} 天，建议更新）
-                </span>
-              )}
-              <span style={{ color: '#86909C' }}>
-                累计 {w.totalCollected} 条 · 上次新增 {w.lastNewCount} ·{' '}
-                {w.lastCollectedAt ? timeStr(w.lastCollectedAt) : '尚未采集'}
-              </span>
-              {w.lastError && <span style={{ color: '#F53F3F' }}>⚠️ {w.lastError}</span>}
-              <span className="ml-auto flex gap-2">
-                {(w.tokenState === 'EXPIRED' || w.tokenWarning === 'EXPIRING') && (
-                  <>
-                    <input
-                      value={tokenEdits[w.watchId] ?? ''}
-                      onChange={(e) => setTokenEdits((prev) => ({ ...prev, [w.watchId]: e.target.value }))}
-                      placeholder="粘贴新的 xsec_token"
-                      className="w-52 rounded-lg border px-2 py-1 outline-none"
-                      style={{ borderColor: '#F53F3F' }}
-                    />
-                    <button
-                      onClick={() => void handleUpdateWatchToken(w)}
-                      className="rounded-lg border px-2 py-1"
-                      style={{ borderColor: '#F53F3F', color: '#F53F3F' }}
-                    >
-                      更新票据
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => void handleRunWatch(w.watchId)}
-                  disabled={watchBusy === w.watchId}
-                  className="rounded-lg border px-2 py-1 disabled:opacity-40"
-                  style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
-                >
-                  {watchBusy === w.watchId ? '采集中…' : '立即采集'}
-                </button>
-                <button
-                  onClick={() => void handleToggleWatch(w)}
-                  className="rounded-lg border px-2 py-1"
-                  style={{ borderColor: '#E5E6EB', color: '#FF7D00' }}
-                >
-                  {w.enabled ? '暂停' : '启用'}
-                </button>
-                <button
-                  onClick={() => void handleRemoveWatch(w.watchId)}
-                  className="rounded-lg border px-2 py-1"
-                  style={{ borderColor: '#E5E6EB', color: '#F53F3F' }}
-                >
-                  移除
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
       </div>
 
-      {/* 统计区 */}
-      <div className="mb-4 grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
-          <div className="mb-2 text-sm font-medium" style={{ color: '#1D2129' }}>意图分布</div>
-          <div className="flex flex-wrap gap-2">
-            {stats.intent.length === 0 && <span className="text-xs" style={{ color: '#86909C' }}>暂无数据，先采集评论</span>}
-            {stats.intent.map((s) => (
-              <span
-                key={s.intent}
-                className="rounded-full px-3 py-1 text-xs font-medium"
-                style={{ background: '#F2F3F5', color: INTENT_COLORS[s.intent ?? ''] ?? '#4E5969' }}
-              >
-                {s.intent ?? '未识别'} · {s.cnt}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
-          <div className="mb-2 text-sm font-medium" style={{ color: '#1D2129' }}>情感分布</div>
-          <div className="flex flex-wrap gap-2">
-            {stats.sentiment.length === 0 && <span className="text-xs" style={{ color: '#86909C' }}>暂无数据，先采集评论</span>}
-            {stats.sentiment.map((s) => (
-              <span
-                key={s.sentiment}
-                className="rounded-full px-3 py-1 text-xs font-medium"
-                style={{ background: '#F2F3F5', color: SENTIMENT_COLORS[s.sentiment ?? ''] ?? '#4E5969' }}
-              >
-                {s.sentiment ?? 'UNKNOWN'} · {s.cnt}
-              </span>
-            ))}
-          </div>
-        </div>
+      {/* 模块切换（分段控件） */}
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-xl border border-[#E5E6EB] bg-white p-1 shadow-sm">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+              style={
+                active
+                  ? { background: '#FF2D5E', color: '#fff' }
+                  : { background: 'transparent', color: '#4E5969' }
+              }
+            >
+              {tab.label}
+              {tab.badge ? (
+                <span
+                  className="ml-2 rounded-full px-1.5 py-0.5 text-[10px]"
+                  style={active ? { background: 'rgba(255,255,255,0.25)' } : { background: '#F2F3F5' }}
+                >
+                  {tab.badge}
+                </span>
+              ) : null}
+            </button>
+          )
+        })}
       </div>
 
-      {/* 评论列表 */}
-      <div className="rounded-xl border border-[#E5E6EB] bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-sm font-medium" style={{ color: '#1D2129' }}>
-            评论列表（{comments.length}）
-          </div>
-        </div>
-        {loading && <div className="py-8 text-center text-sm" style={{ color: '#86909C' }}>加载中…</div>}
-        {!loading && comments.length === 0 && (
-          <div className="py-8 text-center text-sm" style={{ color: '#86909C' }}>
-            暂无评论。输入作品 ID 后点击「采集评论」开始。
-          </div>
-        )}
-        <div className="space-y-3">
-          {comments.map((c) => (
-            <div key={c.commentId} className="rounded-xl border p-4" style={{ borderColor: '#E5E6EB' }}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium" style={{ color: '#1D2129' }}>{c.author || '匿名用户'}</span>
-                {c.intent && (
-                  <span className="rounded px-2 py-0.5 text-xs font-medium"
-                    style={{ background: '#FFF0F5', color: INTENT_COLORS[c.intent] ?? '#C40E3A' }}>
-                    {c.intent}
-                  </span>
-                )}
-                {c.sentiment && (
-                  <span className="rounded px-2 py-0.5 text-xs font-medium"
-                    style={{ background: '#F2F3F5', color: SENTIMENT_COLORS[c.sentiment] ?? '#4E5969' }}>
-                    {c.sentiment}
-                  </span>
-                )}
-                <span className="rounded px-2 py-0.5 text-xs"
-                  style={{ background: '#F2F3F5', color: '#4E5969' }}>
-                  {STATUS_CN[c.replyStatus ?? 'NONE'] ?? c.replyStatus}
-                </span>
-                {c.collectedVia && (
-                  <span className="rounded px-2 py-0.5 text-xs"
-                    style={{ background: c.collectedVia === 'notification' ? '#F5E8FF' : '#F2F3F5',
-                             color: c.collectedVia === 'notification' ? '#722ED1' : '#86909C' }}>
-                    {c.collectedVia === 'notification' ? '通知采集' : c.collectedVia === 'mock' ? '模拟' : '笔记采集'}
-                  </span>
-                )}
-                <span className="text-xs" style={{ color: '#86909C' }}>
-                  👍 {c.likes ?? 0} · {timeStr(c.commentTime)}
-                </span>
-              </div>
-              <div className="mt-2 text-sm leading-relaxed" style={{ color: '#1D2129' }}>{c.content}</div>
-              {c.replyTo && (
-                <div className="mt-1 text-xs" style={{ color: '#86909C' }}>回复 @{c.replyTo}</div>
-              )}
-              {c.aiSummary && (
-                <div className="mt-2 text-xs" style={{ color: '#4E5969' }}>AI 摘要：{c.aiSummary}</div>
-              )}
-              {c.aiReply && (
-                <div className="mt-1 rounded-lg px-3 py-2 text-xs" style={{ background: '#F7F8FA', color: '#4E5969' }}>
-                  AI 回复：{c.aiReply}
-                </div>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  onClick={() => void handleAnalyzeOne(c.commentId)}
-                  disabled={c.intent !== undefined && c.intent !== ''}
-                  className="rounded-lg border px-3 py-1 text-xs font-medium disabled:opacity-40"
-                  style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
-                >
-                  ✨ 分析
-                </button>
-                <button
-                  onClick={() => openChat(c)}
-                  className="rounded-lg border px-3 py-1 text-xs font-medium"
-                  style={{ borderColor: '#E5E6EB', color: '#722ED1' }}
-                >
-                  💬 AI 对话
-                </button>
-                <button
-                  onClick={() => void handleApprove(c.commentId)}
-                  disabled={c.replyStatus !== 'DRAFT'}
-                  className="rounded-lg border px-3 py-1 text-xs font-medium disabled:opacity-40"
-                  style={{ borderColor: '#E5E6EB', color: '#00B42A' }}
-                >
-                  ✅ 审核通过
-                </button>
-                <button
-                  onClick={() => void handleSend(c.commentId)}
-                  disabled={c.replyStatus !== 'APPROVED'}
-                  className="rounded-lg border px-3 py-1 text-xs font-medium disabled:opacity-40"
-                  style={{ borderColor: '#E5E6EB', color: '#FF2D5E' }}
-                >
-                  📤 发送回复
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* AI 对话面板 */}
-      {chatComment && (
-        <div className="mt-4 rounded-xl border bg-white p-4 shadow-sm" style={{ borderColor: '#E5E6EB' }}>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-medium" style={{ color: '#1D2129' }}>
-              💬 与「{chatComment.author || '匿名用户'}」对话
-            </div>
-            <button onClick={() => setChatComment(null)} className="text-xs" style={{ color: '#86909C' }}>
-              关闭
-            </button>
-          </div>
-          <div className="mb-3 rounded-lg px-3 py-2 text-xs" style={{ background: '#F7F8FA', color: '#4E5969' }}>
-            原评论：{chatComment.content}
-          </div>
-          <div className="mb-3 max-h-64 space-y-2 overflow-y-auto rounded-lg border p-3" style={{ borderColor: '#F2F3F5' }}>
-            {dialogTurns.length === 0 && (
-              <div className="text-xs" style={{ color: '#86909C' }}>还没有对话，发送第一条消息让 AI 生成回复草稿</div>
-            )}
-            {dialogTurns.map((t, i) => (
-              <div key={i} className={`flex ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[75%] rounded-xl px-3 py-2 text-sm ${
-                    t.role === 'user' ? 'text-white' : ''
-                  }`}
-                  style={
-                    t.role === 'user'
-                      ? { background: '#FF2D5E' }
-                      : { background: '#F2F3F5', color: '#1D2129' }
-                  }
-                >
-                  {t.content}
-                </div>
-              </div>
-            ))}
-            {chatBusy && (
-              <div className="text-xs" style={{ color: '#86909C' }}>AI 思考中…</div>
-            )}
-          </div>
-          <div className="mb-3 flex gap-2">
-            <input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void handleChatSend() }}
-              placeholder="输入想和评论用户沟通的内容…"
-              className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            />
-            <button
-              onClick={() => void handleChatSend()}
-              disabled={chatBusy}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-              style={{ background: '#722ED1' }}
-            >
-              发送
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              value={editReply}
-              onChange={(e) => setEditReply(e.target.value)}
-              placeholder="人工修改 AI 回复草稿…"
-              className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
-              style={{ borderColor: '#E5E6EB' }}
-            />
-            <button
-              onClick={() => void handleSaveReply()}
-              className="rounded-lg border px-4 py-2 text-sm font-medium"
-              style={{ borderColor: '#E5E6EB', color: '#165DFF' }}
-            >
-              保存草稿
-            </button>
-            <button
-              onClick={() => void handleApprove(chatComment.commentId)}
-              disabled={chatComment.replyStatus !== 'DRAFT'}
-              className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-40"
-              style={{ borderColor: '#E5E6EB', color: '#00B42A' }}
-            >
-              审核通过
-            </button>
-            <button
-              onClick={() => void handleSend(chatComment.commentId)}
-              disabled={chatComment.replyStatus !== 'APPROVED'}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-              style={{ background: '#FF2D5E' }}
-            >
-              发送回复
-            </button>
-          </div>
+      {activeTab === 'workspace' && (
+        <div className="space-y-4">
+          <CommentsToolbar
+            platform={platform}
+            setPlatform={setPlatform}
+            workId={workId}
+            setWorkId={setWorkId}
+            intent={intent}
+            setIntent={setIntent}
+            sentiment={sentiment}
+            setSentiment={setSentiment}
+            error={error}
+            handleCollect={handleCollect}
+            handleAnalyzeAll={handleAnalyzeAll}
+            loadComments={loadComments}
+            loadStats={loadStats}
+          />
+          <CommentStatsCards stats={stats} intent={intent} sentiment={sentiment} />
+          <CommentListPanel
+            comments={comments}
+            loading={loading}
+            handleAnalyzeOne={handleAnalyzeOne}
+            handleApprove={handleApprove}
+            handleSend={handleSend}
+            openChat={openChat}
+            timeStr={timeStr}
+          />
+          <CommentChatPanel
+            chatComment={chatComment}
+            setChatComment={setChatComment}
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            chatBusy={chatBusy}
+            dialogTurns={dialogTurns}
+            editReply={editReply}
+            setEditReply={setEditReply}
+            handleChatSend={handleChatSend}
+            handleSaveReply={handleSaveReply}
+            handleApprove={handleApprove}
+            handleSend={handleSend}
+          />
         </div>
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className="fixed right-6 top-6 z-[100] flex items-center gap-2 rounded-lg border px-4 py-3 shadow-lg"
-          style={{ background: '#fff', borderColor: toast.color }}
-        >
-          <span className="text-sm" style={{ color: '#1D2129' }}>{toast.msg}</span>
-        </div>
+      {activeTab === 'automation' && (
+        <WatchMonitorCard
+          platform={platform}
+          watches={watches}
+          scheduler={scheduler}
+          sourceStatus={sourceStatus}
+          credentials={credentials}
+          selectedCredential={selectedCredential}
+          setSelectedCredential={setSelectedCredential}
+          watchInput={watchInput}
+          setWatchInput={setWatchInput}
+          watchXsecToken={watchXsecToken}
+          setWatchXsecToken={setWatchXsecToken}
+          watchAutoAnalyze={watchAutoAnalyze}
+          setWatchAutoAnalyze={setWatchAutoAnalyze}
+          watchBusy={watchBusy}
+          unread={unread}
+          notifBusy={notifBusy}
+          tokenEdits={tokenEdits}
+          setTokenEdits={setTokenEdits}
+          handleAddWatch={handleAddWatch}
+          handleUpdateWatchToken={handleUpdateWatchToken}
+          handleToggleWatch={handleToggleWatch}
+          handleRemoveWatch={handleRemoveWatch}
+          handleRunWatch={handleRunWatch}
+          handleCollectNotifications={handleCollectNotifications}
+          handleRunAll={handleRunAll}
+          timeStr={timeStr}
+          credentialName={credentialName}
+        />
       )}
+
+      {activeTab === 'accounts' && (
+        <CredentialManagerCard
+          credentials={credentials}
+          credName={credName}
+          setCredName={setCredName}
+          credBaseUrl={credBaseUrl}
+          setCredBaseUrl={setCredBaseUrl}
+          credToken={credToken}
+          setCredToken={setCredToken}
+          credDefault={credDefault}
+          setCredDefault={setCredDefault}
+          credBusy={credBusy}
+          probes={probes}
+          handleCreateCredential={handleCreateCredential}
+          handleProbeCredential={handleProbeCredential}
+          handleSetDefaultCredential={handleSetDefaultCredential}
+          handleToggleCredential={handleToggleCredential}
+          handleDeleteCredential={handleDeleteCredential}
+        />
+      )}
+
+      {activeTab === 'ops' && (
+        <OpsOverviewCard
+          ops={ops}
+          opsBusy={opsBusy}
+          notifyBusy={notifyBusy}
+          credentials={credentials}
+          handleRotateKeys={handleRotateKeys}
+          handleNotifyTokenWarnings={handleNotifyTokenWarnings}
+          loadOps={loadOps}
+        />
+      )}
+
+      <AppToast toast={toast} />
     </Layout>
+  )
+}
+
+type TabKey = 'workspace' | 'automation' | 'accounts' | 'ops'
+
+const TAB_KEYS: TabKey[] = ['workspace', 'automation', 'accounts', 'ops']
+
+/** 从 URL 读取初始模块（?tab=ops），非法值回落到评论工作台。 */
+function initialTab(): TabKey {
+  const value = new URLSearchParams(window.location.search).get('tab') ?? ''
+  return (TAB_KEYS as string[]).includes(value) ? (value as TabKey) : 'workspace'
+}
+
+/** 顶部状态胶囊：数值 + 语义色。 */
+function StatusPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: 'ok' | 'warn' | 'danger'
+}) {
+  const color = tone === 'danger' ? '#F53F3F' : tone === 'warn' ? '#9C5B00' : '#4E5969'
+  return (
+    <span className="flex items-center gap-2 text-xs" style={{ color: '#86909C' }}>
+      <span>{label}</span>
+      <span className="rounded-md px-2 py-0.5 font-medium" style={{ background: '#F7F8FA', color }}>
+        {value}
+      </span>
+    </span>
   )
 }
