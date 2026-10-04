@@ -150,6 +150,11 @@ contentops:
     enabled: ${CONTENTOPS_SECURITY_ENABLED:false}
     jwt-secret: ${CONTENTOPS_JWT_SECRET:dev-only-secret-please-change-0123456789abcdef}
     jwt-expire-minutes: 120
+    # 平台凭据加密（AES-GCM）：密钥轮换时把旧密钥写入 credential-keys-old，
+    # 执行 POST /api/v1/platform-credentials/rotate 重加密成功后即可移除旧密钥。
+    credential-key: ${CONTENTOPS_SECURITY_CREDENTIAL_KEY:}
+    credential-key-id: ${CONTENTOPS_SECURITY_CREDENTIAL_KEY_ID:}
+    credential-keys-old: ${CONTENTOPS_SECURITY_CREDENTIAL_KEYS_OLD:}
   # 竞品画像系统（P0 定向竞品监控，com.contentops.common.profile.competitor）
   competitor-profile:
     default-monitor-frequency-hours: 24    # 监控频率默认值（小时）
@@ -352,6 +357,9 @@ contentops:
       page-size-param: ${CONTENTOPS_XHS_COMMENT_PAGE_SIZE_PARAM:limit}
       list-path: ${CONTENTOPS_XHS_COMMENT_LIST_PATH:}
       min-interval-seconds: ${CONTENTOPS_XHS_COMMENT_MIN_INTERVAL:60}
+      # 通知增量并发账号数与每账号间隔（账号多时并行拉取，同时限流防风控）
+      notification-parallelism: ${CONTENTOPS_XHS_COMMENT_NOTIFY_PARALLELISM:3}
+      notification-per-account-delay-ms: ${CONTENTOPS_XHS_COMMENT_NOTIFY_DELAY_MS:300}
 
   # LLM 可观测性（P0）：每次真实模型调用的 trace + token/成本/延迟统计
   observability:

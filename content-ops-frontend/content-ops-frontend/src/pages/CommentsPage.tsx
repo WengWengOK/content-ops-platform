@@ -19,6 +19,7 @@ import {
   sendCommentReply,
   setCommentWatchEnabled,
   updateCommentReply,
+  updateCommentWatchToken,
 } from '@/api/comments'
 import {
   createCredential,
@@ -108,6 +109,7 @@ export function CommentsPage() {
   const [credDefault, setCredDefault] = useState(false)
   const [credBusy, setCredBusy] = useState(false)
   const [probes, setProbes] = useState<Record<string, CredentialProbeResult>>({})
+  const [tokenEdits, setTokenEdits] = useState<Record<string, string>>({})
 
   const showToast = (msg: string, color = '#165DFF') => {
     setToast({ msg, color })
@@ -398,6 +400,22 @@ export function CommentsPage() {
     }
   }
 
+  const handleUpdateWatchToken = async (watch: CommentWatch) => {
+    const token = (tokenEdits[watch.watchId] ?? '').trim()
+    if (!token) {
+      showToast('请先粘贴新的 xsec_token', '#F53F3F')
+      return
+    }
+    try {
+      await updateCommentWatchToken(watch.watchId, token)
+      setTokenEdits((prev) => ({ ...prev, [watch.watchId]: '' }))
+      await loadWatches()
+      showToast('票据已更新，状态重置为健康', '#00B42A')
+    } catch (err: any) {
+      showToast(err?.message || '更新票据失败', '#F53F3F')
+    }
+  }
+
   const handleToggleWatch = async (watch: CommentWatch) => {
     try {
       await setCommentWatchEnabled(watch.watchId, !watch.enabled)
@@ -648,6 +666,11 @@ export function CommentsPage() {
                   {probes[c.credentialId].hint}
                 </span>
               )}
+              {(c.tokenState === 'AUTH_INVALID' || c.tokenState === 'ERROR') && (
+                <span className="rounded px-2 py-0.5" style={{ background: '#FFECE8', color: '#F53F3F' }}>
+                  ⚠️ 需更新令牌（AUTH_TOKEN 失效或服务不可达）
+                </span>
+              )}
               {c.lastError && <span style={{ color: '#F53F3F' }}>⚠️ {c.lastError}</span>}
               <span className="ml-auto flex gap-2">
                 <button
@@ -846,12 +869,35 @@ export function CommentsPage() {
               <span className="rounded px-2 py-0.5" style={{ background: '#FFF7E8', color: '#9C5B00' }}>
                 账号 {credentialName(w.credentialId)}
               </span>
+              {w.tokenState === 'EXPIRED' && (
+                <span className="rounded px-2 py-0.5" style={{ background: '#FFECE8', color: '#F53F3F' }}>
+                  ⚠️ 需更新票据（xsec_token 已失效）
+                </span>
+              )}
               <span style={{ color: '#86909C' }}>
                 累计 {w.totalCollected} 条 · 上次新增 {w.lastNewCount} ·{' '}
                 {w.lastCollectedAt ? timeStr(w.lastCollectedAt) : '尚未采集'}
               </span>
               {w.lastError && <span style={{ color: '#F53F3F' }}>⚠️ {w.lastError}</span>}
               <span className="ml-auto flex gap-2">
+                {w.tokenState === 'EXPIRED' && (
+                  <>
+                    <input
+                      value={tokenEdits[w.watchId] ?? ''}
+                      onChange={(e) => setTokenEdits((prev) => ({ ...prev, [w.watchId]: e.target.value }))}
+                      placeholder="粘贴新的 xsec_token"
+                      className="w-52 rounded-lg border px-2 py-1 outline-none"
+                      style={{ borderColor: '#F53F3F' }}
+                    />
+                    <button
+                      onClick={() => void handleUpdateWatchToken(w)}
+                      className="rounded-lg border px-2 py-1"
+                      style={{ borderColor: '#F53F3F', color: '#F53F3F' }}
+                    >
+                      更新票据
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => void handleRunWatch(w.watchId)}
                   disabled={watchBusy === w.watchId}

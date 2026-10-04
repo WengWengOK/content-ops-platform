@@ -192,13 +192,26 @@ public class CredentialService {
         }
     }
 
+    /** 标记账号令牌健康状态（OK / AUTH_INVALID / ERROR），用于前端过期提醒。 */
+    public void markTokenState(String credentialId, String tokenState, String error) {
+        if (!isBlank(credentialId)) {
+            repository.updateTokenState(credentialId, tokenState, error);
+        }
+    }
+
     // ──────────────────────── 探测 ────────────────────────
 
     /** 探测凭据可用性：/health 判断可达，/api/v1/login/status 判断账号是否已登录。 */
     public ProbeResult probe(String credentialId, String ownerId) {
         PlatformCredential credential = requireCredential(credentialId, ownerId);
         String baseUrl = credential.getBaseUrl() == null ? "" : credential.getBaseUrl().trim();
-        String token = cipher.decrypt(credential.getAccessToken());
+        String token;
+        try {
+            token = cipher.decryptOrThrow(credential.getAccessToken());
+        } catch (CredentialDecryptException e) {
+            return new ProbeResult(false, false, baseUrl, "",
+                    "凭据解密失败", "凭据无法解密：请配置 contentops.security.credential-keys-old 后执行密钥轮换");
+        }
         boolean reachable = false;
         String healthDetail = "";
         String loginDetail = "";
@@ -228,6 +241,10 @@ public class CredentialService {
         String hint = !reachable
                 ? "桥服务不可达：请确认 AUTH_TOKEN 对应的服务已启动、baseUrl 正确"
                 : (authenticated ? "凭据可用：账号已登录" : "服务可达，但账号未登录或令牌不对（请先在桥端扫码登录 / 核对 token）");
+        // 探测结果直接沉淀为令牌健康状态，前端据此高亮「需要更新令牌」
+        repository.updateTokenState(credential.getCredentialId(),
+                !reachable ? "ERROR" : (authenticated ? "OK" : "AUTH_INVALID"),
+                reachable && authenticated ? null : hint);
         return new ProbeResult(reachable, authenticated, baseUrl, healthDetail, loginDetail, hint);
     }
 
@@ -295,9 +312,60 @@ public class CredentialService {
         return role != null && "ADMIN".equalsIgnoreCase(role);
     }
 
+    /** 解密令牌；失败时打标记并抛出可操作的错误（绝不把密文当令牌用）。 */
     private PlatformCredential decrypted(PlatformCredential credential) {
-        credential.setAccessToken(cipher.decrypt(credential.getAccessToken()));
-        return credential;
+        try {
+            credential.setAccessToken(cipher.decryptOrThrow(credential.getAccessToken()));
+            return credential;
+        } catch (CredentialDecryptException e) {
+            repository.markUsed(credential.getCredentialId(), "凭据解密失败：" + e.getMessage());
+            throw new BusinessException(ErrorCode.INVALID_STATE,
+                    "凭据无法解密（" + credential.getAccountName() + "）：" + e.getMessage()
+                            + "；请把旧密钥加入 contentops.security.credential-keys-old 后执行密钥轮换");
+        }
+    }
+
+    /** 密钥轮换：把历史密钥加密的凭据重新用当前密钥加密。 */
+    public RotationReport rotate(String ownerId) {
+        if (!cipher.isEncryptionEnabled()) {
+            throw new BusinessException(ErrorCode.INVALID_STATE,
+                    "未配置 contentops.security.credential-key，无需轮换");
+        }
+        List<PlatformCredential> all = repository.list(ownerId, 500);
+        int total = all.size();
+        int rotated = 0;
+        int skipped = 0;
+        List<String> failures = new ArrayList<>();
+        for (PlatformCredential credential : all) {
+            String stored = credential.getAccessToken();
+            if (stored == null || stored.isBlank()) {
+                skipped++;
+                continue;
+            }
+            if (!cipher.needsRotation(stored)) {
+                skipped++;
+                continue;
+            }
+            try {
+                String plain = cipher.decryptOrThrow(stored);
+                credential.setAccessToken(cipher.encrypt(plain));
+                repository.update(credential);
+                rotated++;
+            } catch (CredentialDecryptException e) {
+                failures.add(credential.getAccountName() + "(" + credential.getCredentialId() + "): "
+                        + e.getMessage());
+                repository.markUsed(credential.getCredentialId(), "轮换失败：" + e.getMessage());
+            }
+        }
+        log.info("[Credential] 密钥轮换完成: keyId={}, 总数={}, 已轮换={}, 跳过={}, 失败={}",
+                cipher.currentKeyId(), total, rotated, skipped, failures.size());
+        return new RotationReport(cipher.currentKeyId(), total, rotated, skipped,
+                failures.size(), failures);
+    }
+
+    /** 密钥轮换报告。 */
+    public record RotationReport(String keyId, int total, int rotated, int skipped, int failed,
+                                 List<String> failures) {
     }
 
     private CredentialView toView(PlatformCredential credential) {

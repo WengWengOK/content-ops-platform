@@ -612,6 +612,8 @@ export interface CommentWatch {
   workflowId?: string
   xsecToken?: string
   credentialId?: string
+  tokenState?: string
+  tokenCheckedAt?: string
   autoAnalyze: boolean
   enabled: boolean
   lastCollectedAt?: string
@@ -674,6 +676,7 @@ export interface PlatformCredential {
   accessTokenMasked: string
   enabled: boolean
   defaultCredential: boolean
+  tokenState?: string
   lastUsedAt?: string
   lastError?: string
   createdAt?: string

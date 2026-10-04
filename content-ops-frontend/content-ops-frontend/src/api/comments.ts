@@ -236,3 +236,14 @@ export async function collectCommentNotifications(body?: {
   }>>('/comments/notifications/collect', body ?? {})
   return unwrap(data)
 }
+/** PUT /comments/watches/{id}/token — 更新监控作品的 xsec_token（票据过期时用） */
+export async function updateCommentWatchToken(
+  watchId: string,
+  xsecToken: string
+): Promise<CommentWatch> {
+  const { data } = await apiClient.put<AgentResponse<CommentWatch>>(
+    `/comments/watches/${watchId}/token`,
+    { xsecToken }
+  )
+  return unwrap(data)
+}

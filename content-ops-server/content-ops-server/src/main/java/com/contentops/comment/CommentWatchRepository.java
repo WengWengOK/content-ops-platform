@@ -22,10 +22,10 @@ public class CommentWatchRepository {
 
     private static final String COLS = "watch_id, owner_id, platform, work_id, workflow_id, xsec_token, "
             + "credential_id, auto_analyze, enabled, last_collected_at, last_new_count, total_collected, "
-            + "last_source, last_error, created_at";
+            + "last_source, last_error, token_state, token_checked_at, created_at";
 
     private static final String SQL_INSERT =
-            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            "INSERT INTO contentops_comment_watch (" + COLS + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment_watch "
                     + "WHERE (? = '' OR owner_id = ?) ORDER BY created_at DESC LIMIT ?";
@@ -44,7 +44,15 @@ public class CommentWatchRepository {
             "DELETE FROM contentops_comment_watch WHERE watch_id = ?";
     private static final String SQL_AFTER_RUN =
             "UPDATE contentops_comment_watch SET last_collected_at = ?, last_new_count = ?, "
-                    + "total_collected = total_collected + ?, last_source = ?, last_error = ? WHERE watch_id = ?";
+                    + "total_collected = total_collected + ?, last_source = ?, last_error = ?, "
+                    + "token_state = CASE WHEN ? IS NULL THEN 'OK' ELSE token_state END, "
+                    + "token_checked_at = ? WHERE watch_id = ?";
+    private static final String SQL_TOKEN_STATE =
+            "UPDATE contentops_comment_watch SET token_state = ?, token_checked_at = ?, last_error = ? "
+                    + "WHERE watch_id = ?";
+    private static final String SQL_UPDATE_TOKEN =
+            "UPDATE contentops_comment_watch SET xsec_token = ?, token_state = 'OK', token_checked_at = ? "
+                    + "WHERE watch_id = ?";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -55,6 +63,8 @@ public class CommentWatchRepository {
                     w.getXsecToken(), w.getCredentialId(), w.isAutoAnalyze(), w.isEnabled(),
                     w.getLastCollectedAt() == null ? null : Timestamp.valueOf(w.getLastCollectedAt()),
                     w.getLastNewCount(), w.getTotalCollected(), w.getLastSource(), w.getLastError(),
+                    w.getTokenState() == null ? "UNKNOWN" : w.getTokenState(),
+                    w.getTokenCheckedAt() == null ? null : Timestamp.valueOf(w.getTokenCheckedAt()),
                     Timestamp.valueOf(w.getCreatedAt() == null ? LocalDateTime.now() : w.getCreatedAt()));
         } catch (Exception e) {
             log.error("[Comment] 新增监控项失败: workId={}, err={}", w.getWorkId(), e.getMessage());
@@ -113,11 +123,27 @@ public class CommentWatchRepository {
 
     public void updateAfterRun(String watchId, int newCount, int totalDelta, String source, String error) {
         try {
-            jdbcTemplate.update(SQL_AFTER_RUN, Timestamp.valueOf(LocalDateTime.now()),
-                    newCount, totalDelta, source, truncate(error, 900), watchId);
+            Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+            jdbcTemplate.update(SQL_AFTER_RUN, now, newCount, totalDelta, source,
+                    truncate(error, 900), error, now, watchId);
         } catch (Exception e) {
             log.warn("[Comment] 更新监控项采集状态失败: watchId={}, err={}", watchId, e.getMessage());
         }
+    }
+
+    /** 标记票据健康状态（EXPIRED / ERROR），用于前端过期提醒。 */
+    public void updateTokenState(String watchId, String tokenState, String error) {
+        try {
+            jdbcTemplate.update(SQL_TOKEN_STATE, tokenState, Timestamp.valueOf(LocalDateTime.now()),
+                    truncate(error, 900), watchId);
+        } catch (Exception e) {
+            log.warn("[Comment] 更新票据状态失败: watchId={}, err={}", watchId, e.getMessage());
+        }
+    }
+
+    /** 用户更新 xsec_token 后重置为健康。 */
+    public void updateXsecToken(String watchId, String xsecToken) {
+        jdbcTemplate.update(SQL_UPDATE_TOKEN, xsecToken, Timestamp.valueOf(LocalDateTime.now()), watchId);
     }
 
     private CommentWatch mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -138,6 +164,9 @@ public class CommentWatchRepository {
                 .totalCollected(rs.getInt("total_collected"))
                 .lastSource(rs.getString("last_source"))
                 .lastError(rs.getString("last_error"))
+                .tokenState(rs.getString("token_state"))
+                .tokenCheckedAt(rs.getTimestamp("token_checked_at") == null
+                        ? null : rs.getTimestamp("token_checked_at").toLocalDateTime())
                 .createdAt(created == null ? null : created.toLocalDateTime())
                 .build();
     }

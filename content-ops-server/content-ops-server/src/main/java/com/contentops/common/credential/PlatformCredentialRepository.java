@@ -21,10 +21,11 @@ import java.util.Optional;
 public class PlatformCredentialRepository {
 
     private static final String COLS = "credential_id, owner_id, platform, account_name, account_ref, preset, "
-            + "base_url, access_token, enabled, is_default, last_used_at, last_error, created_at, updated_at";
+            + "base_url, access_token, enabled, is_default, last_used_at, last_error, token_state, "
+            + "created_at, updated_at";
 
     private static final String SQL_INSERT = "INSERT INTO contentops_platform_credential (" + COLS
-            + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     private static final String SQL_LIST = "SELECT " + COLS + " FROM contentops_platform_credential "
             + "WHERE (? = '' OR owner_id = ?) ORDER BY is_default DESC, created_at DESC LIMIT ?";
     private static final String SQL_BY_ID = "SELECT " + COLS
@@ -42,6 +43,8 @@ public class PlatformCredentialRepository {
     private static final String SQL_DELETE = "DELETE FROM contentops_platform_credential WHERE credential_id = ?";
     private static final String SQL_MARK_USED = "UPDATE contentops_platform_credential SET last_used_at = ?, "
             + "last_error = ? WHERE credential_id = ?";
+    private static final String SQL_TOKEN_STATE = "UPDATE contentops_platform_credential SET token_state = ?, "
+            + "last_error = ?, last_used_at = ? WHERE credential_id = ?";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -51,6 +54,7 @@ public class PlatformCredentialRepository {
                 c.getPreset(), c.getBaseUrl(), c.getAccessToken(), c.isEnabled(), c.isDefaultCredential(),
                 c.getLastUsedAt() == null ? null : Timestamp.valueOf(c.getLastUsedAt()),
                 c.getLastError(),
+                c.getTokenState() == null ? "UNKNOWN" : c.getTokenState(),
                 Timestamp.valueOf(c.getCreatedAt() == null ? LocalDateTime.now() : c.getCreatedAt()),
                 Timestamp.valueOf(c.getUpdatedAt() == null ? LocalDateTime.now() : c.getUpdatedAt()));
     }
@@ -119,6 +123,17 @@ public class PlatformCredentialRepository {
         }
     }
 
+    /** 标记账号令牌健康状态（AUTH_INVALID / OK / ERROR）。 */
+    public void updateTokenState(String credentialId, String tokenState, String error) {
+        try {
+            jdbcTemplate.update(SQL_TOKEN_STATE, tokenState,
+                    error == null ? null : error.substring(0, Math.min(error.length(), 900)),
+                    Timestamp.valueOf(LocalDateTime.now()), credentialId);
+        } catch (Exception e) {
+            log.warn("[Credential] 更新令牌状态失败: id={}, err={}", credentialId, e.getMessage());
+        }
+    }
+
     private PlatformCredential mapRow(ResultSet rs, int rowNum) throws SQLException {
         Timestamp lastUsed = rs.getTimestamp("last_used_at");
         Timestamp created = rs.getTimestamp("created_at");
@@ -136,6 +151,7 @@ public class PlatformCredentialRepository {
                 .defaultCredential(rs.getBoolean("is_default"))
                 .lastUsedAt(lastUsed == null ? null : lastUsed.toLocalDateTime())
                 .lastError(rs.getString("last_error"))
+                .tokenState(rs.getString("token_state"))
                 .createdAt(created == null ? null : created.toLocalDateTime())
                 .updatedAt(updated == null ? null : updated.toLocalDateTime())
                 .build();

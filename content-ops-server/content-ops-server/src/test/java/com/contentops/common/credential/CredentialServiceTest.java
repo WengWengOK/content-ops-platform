@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -31,7 +32,7 @@ class CredentialServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(PlatformCredentialRepository.class);
-        service = new CredentialService(repository, new CredentialCipher("unit-test-key"), new com.fasterxml.jackson.databind.ObjectMapper());
+        service = new CredentialService(repository, new CredentialCipher("unit-test-key", "k-test", ""), new com.fasterxml.jackson.databind.ObjectMapper());
     }
 
     @Test
@@ -74,6 +75,51 @@ class CredentialServiceTest {
         assertThat(resolved.get().getCredentialId()).isEqualTo("cred-1");
     }
 
+    @Test
+    @DisplayName("密钥轮换：旧密钥密文被重新加密，报告计数正确")
+    void rotateReEncryptsOldKeyCiphertext() {
+        CredentialCipher oldCipher = new CredentialCipher("old-key", "k-old", "");
+        String oldCiphertext = oldCipher.encrypt("token-to-rotate");
+        CredentialCipher newCipher = new CredentialCipher("new-key", "k-new", "k-old=old-key");
+        CredentialService rotationService = new CredentialService(repository, newCipher,
+                new com.fasterxml.jackson.databind.ObjectMapper());
+
+        when(repository.list(nullable(String.class), anyInt())).thenReturn(List.of(
+                PlatformCredential.builder().credentialId("c1").ownerId("owner-1").platform("xiaohongshu")
+                        .accountName("主号A").accessToken(oldCiphertext).baseUrl("http://x").enabled(true).build(),
+                PlatformCredential.builder().credentialId("c2").ownerId("owner-1").platform("xiaohongshu")
+                        .accountName("小号B").accessToken(newCipher.encrypt("already-new")).baseUrl("http://y")
+                        .enabled(true).build()));
+
+        CredentialService.RotationReport report = rotationService.rotate(null);
+
+        assertThat(report.keyId()).isEqualTo("k-new");
+        assertThat(report.total()).isEqualTo(2);
+        assertThat(report.rotated()).isEqualTo(1);
+        assertThat(report.skipped()).isEqualTo(1);
+        assertThat(report.failed()).isZero();
+        verify(repository).update(any(PlatformCredential.class));
+    }
+
+    @Test
+    @DisplayName("密钥轮换：缺少旧密钥时记为失败，不写坏数据")
+    void rotateReportsFailureWhenKeyMissing() {
+        CredentialCipher oldCipher = new CredentialCipher("lost-key", "k-lost", "");
+        String oldCiphertext = oldCipher.encrypt("token-lost");
+        CredentialCipher newCipher = new CredentialCipher("new-key", "k-new", "");
+        CredentialService rotationService = new CredentialService(repository, newCipher,
+                new com.fasterxml.jackson.databind.ObjectMapper());
+
+        when(repository.list(nullable(String.class), anyInt())).thenReturn(List.of(
+                PlatformCredential.builder().credentialId("c1").ownerId("owner-1").platform("xiaohongshu")
+                        .accountName("主号A").accessToken(oldCiphertext).baseUrl("http://x").enabled(true).build()));
+
+        CredentialService.RotationReport report = rotationService.rotate(null);
+
+        assertThat(report.failed()).isEqualTo(1);
+        assertThat(report.failures().get(0)).contains("主号A");
+        verify(repository, never()).update(any(PlatformCredential.class));
+    }
     @Test
     @DisplayName("列出凭据：不返回其它租户的凭据")
     void listFiltersOtherTenants() {

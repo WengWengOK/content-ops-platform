@@ -76,6 +76,13 @@ public class PlatformCredentialController {
                 java.util.Map.of("deleted", true, "credentialId", credentialId));
     }
 
+    @PostMapping("/rotate")
+    @RequireRole(UserRole.ADMIN)
+    @Operation(summary = "密钥轮换：把历史密钥加密的凭据重新用当前密钥加密（仅管理员）")
+    public AgentResponse<CredentialService.RotationReport> rotate() {
+        return AgentResponse.success("credential", credentialService.rotate(null));
+    }
+
     @PostMapping("/{credentialId}/probe")
     @Operation(summary = "探测凭据：桥是否可达、账号是否已登录")
     public AgentResponse<CredentialService.ProbeResult> probe(@PathVariable String credentialId) {

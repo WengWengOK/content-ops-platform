@@ -60,6 +60,12 @@ public class CommentWatch {
     @Schema(description = "上次采集错误信息（成功时为空）")
     private String lastError;
 
+    @Schema(description = "票据健康状态：OK / EXPIRED（需更新 xsec_token）/ ERROR")
+    private String tokenState;
+
+    @Schema(description = "票据状态最近检查时间")
+    private LocalDateTime tokenCheckedAt;
+
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 }

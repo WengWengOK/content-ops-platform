@@ -318,3 +318,8 @@ CREATE INDEX IF NOT EXISTS idx_credential_platform_enabled
 -- 存量库迁移：评论/监控项补「凭据归属」列（幂等）
 ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS credential_id VARCHAR(64);
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS credential_id VARCHAR(64);
+
+-- 存量库迁移：票据健康状态（OK / EXPIRED / AUTH_INVALID / ERROR），用于过期提醒（幂等）
+ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_state VARCHAR(16);
+ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_checked_at TIMESTAMP;
+ALTER TABLE contentops_platform_credential ADD COLUMN IF NOT EXISTS token_state VARCHAR(16);

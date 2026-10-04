@@ -172,6 +172,12 @@ public class CommentProperties {
         /** 从通知里发现新笔记时，是否自动加入监控（带上通知里的 feed_xsec_token） */
         private boolean autoWatchFromNotifications = true;
 
+        /** 通知增量并发账号数（每个账号一个桥实例调用，账号多时可并行） */
+        private int notificationParallelism = 3;
+
+        /** 每个账号拉取通知前的间隔（毫秒），避免同一时间打爆平台风控 */
+        private int notificationPerAccountDelayMs = 300;
+
         // ─── 通知直回复（只需 comment_id，无需笔记票据，比笔记页回复更稳）───
 
         /** 是否允许通过通知接口直接回复评论 */

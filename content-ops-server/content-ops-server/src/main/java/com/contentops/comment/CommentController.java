@@ -215,6 +215,21 @@ public class CommentController {
         return AgentResponse.success("comment", Map.of("removed", true, "watchId", watchId));
     }
 
+    @PutMapping("/watches/{watchId}/token")
+    @Operation(summary = "更新监控作品的 xsec_token（票据过期时用，更新后状态重置为健康）")
+    public AgentResponse<CommentWatch> updateWatchToken(@PathVariable String watchId,
+                                                        @RequestBody UpdateTokenRequest request) {
+        CommentWatch watch = requireWatch(watchId);
+        if (request.getXsecToken() == null || request.getXsecToken().isBlank()) {
+            return AgentResponse.failure("comment", "xsecToken 不能为空");
+        }
+        watchRepository.updateXsecToken(watch.getWatchId(), request.getXsecToken().trim());
+        auditService.record("COMMENT_WATCH_TOKEN_UPDATE", "comment-watch", watchId, "更新笔记票据");
+        return watchRepository.findById(watchId)
+                .map(updated -> AgentResponse.success("comment", updated))
+                .orElseGet(() -> AgentResponse.failure("comment", "监控项不存在"));
+    }
+
     @PostMapping("/watches/{watchId}/run")
     @Operation(summary = "立即采集该监控作品的新评论")
     public AgentResponse<Map<String, Object>> runWatch(@PathVariable String watchId) {
@@ -481,6 +496,12 @@ public class CommentController {
         private Boolean autoAnalyze;
         /** 指定平台账号凭据 */
         private String credentialId;
+    }
+
+    @Data
+    public static class UpdateTokenRequest {
+        /** 新的笔记票据（xsec_token） */
+        private String xsecToken;
     }
 
     @Data

@@ -59,6 +59,9 @@ public class PlatformCredential {
     @Schema(description = "最近一次错误")
     private String lastError;
 
+    @Schema(description = "账号令牌健康状态：OK / AUTH_INVALID / ERROR")
+    private String tokenState;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
