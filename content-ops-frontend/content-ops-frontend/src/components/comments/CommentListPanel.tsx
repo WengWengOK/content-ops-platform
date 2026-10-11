@@ -91,6 +91,34 @@ export function CommentListPanel({
                 </span>
               </div>
               <div className="mt-2 text-sm leading-relaxed" style={{ color: '#1D2129' }}>{c.content}</div>
+              {((c.media?.length ?? 0) > 0 || (c.mediaCount ?? 0) > 0) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {(c.media ?? []).slice(0, 4).map((m) => (
+                    <a
+                      key={m.mediaId}
+                      href={m.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`${m.mediaType === 'VIDEO' ? '视频' : '图片'} · 所属用户：${m.ownerName || c.author || '未知'}`}
+                      style={{ display: 'inline-block', lineHeight: 0 }}
+                    >
+                      <img
+                        src={m.thumbUrl || m.url}
+                        alt={m.ownerName || c.author || '评论图片'}
+                        style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid #E5E6EB' }}
+                      />
+                    </a>
+                  ))}
+                  <span className="rounded px-2 py-0.5 text-xs" style={{ background: '#F5E8FF', color: '#722ED1' }}>
+                    {c.media?.length ? `含图 ${c.media.length}` : `含图 ${c.mediaCount}`}
+                  </span>
+                  {(c.media ?? []).length > 0 && (
+                    <span className="text-xs" style={{ color: '#86909C' }}>
+                      所属用户：{c.media?.[0]?.ownerName || c.author}
+                    </span>
+                  )}
+                </div>
+              )}
               {c.replyTo && (
                 <div className="mt-1 text-xs" style={{ color: '#86909C' }}>回复 @{c.replyTo}</div>
               )}

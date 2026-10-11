@@ -435,6 +435,38 @@ class XhsCommentApiClientTest {
         assertThat(client.isNotificationReplyConfigured()).isFalse();
         assertThat(client.notificationReplyStatusHint()).contains("通知直回复已关闭");
     }
+    @Test
+    @DisplayName("评论附件：支持对象数组(url/width/height)与纯 URL 数组，并识别视频")
+    void parse_commentMedia() {
+        XhsCommentApiClient client = new XhsCommentApiClient(properties("bearer"), new ObjectMapper());
+
+        XhsCommentApiClient.FetchPage page = client.parse("""
+                {"data":{"list":[
+                  {"id":"c1","content":"看这张图","likeCount":"2","userInfo":{"nickname":"桃桃","userId":"u1"},
+                   "imageList":[
+                     {"url":"https://cdn.xhs/img1.jpg","thumbUrl":"https://cdn.xhs/img1-t.jpg","width":1080,"height":1440},
+                     "https://cdn.xhs/img2.jpg"
+                   ]},
+                  {"id":"c2","content":"视频评论","userInfo":{"nickname":"老王"},
+                   "videoList":[{"videoUrl":"https://cdn.xhs/v1.mp4","width":720,"height":1280}]}
+                ]}}
+                """);
+
+        assertThat(page.comments()).hasSize(2);
+        XhsCommentApiClient.XhsComment first = page.comments().get(0);
+        assertThat(first.media()).hasSize(2);
+        assertThat(first.media().get(0).url()).isEqualTo("https://cdn.xhs/img1.jpg");
+        assertThat(first.media().get(0).thumbUrl()).isEqualTo("https://cdn.xhs/img1-t.jpg");
+        assertThat(first.media().get(0).width()).isEqualTo(1080);
+        assertThat(first.media().get(0).mediaType()).isEqualTo("IMAGE");
+        assertThat(first.media().get(1).url()).isEqualTo("https://cdn.xhs/img2.jpg");
+        assertThat(first.media().get(1).mediaType()).isEqualTo("IMAGE");
+
+        XhsCommentApiClient.XhsComment second = page.comments().get(1);
+        assertThat(second.media()).hasSize(1);
+        assertThat(second.media().get(0).mediaType()).isEqualTo("VIDEO");
+        assertThat(second.media().get(0).url()).isEqualTo("https://cdn.xhs/v1.mp4");
+    }
     // ──────────────────────── 辅助 ────────────────────────
 
     private CommentProperties properties(String authMode) {

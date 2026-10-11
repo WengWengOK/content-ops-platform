@@ -337,7 +337,56 @@ public class XhsCommentApiClient {
         }
         String authorUserId = textOf(node, List.of("userInfo.userId", "user.userId", "user_id",
                 "userId", "from.user_id"));
-        return new XhsComment(id, author, content, likes == null ? 0 : likes, time, replyTo, authorUserId);
+        return new XhsComment(id, author, content, likes == null ? 0 : likes, time, replyTo,
+                authorUserId, extractMedia(node));
+    }
+
+    /** 评论附件字段候选：不同数据源叫法不同，逐个尝试（命中第一个非空数组即返回）。 */
+    private static final List<String> MEDIA_FIELDS = List.of("imageList", "images", "pictures", "pics",
+            "commentImageList", "imageInfoList", "mediaList", "attachments", "videoList", "videos");
+
+    /** 解析评论附件：支持「URL 字符串数组」与「对象数组（url/width/height）」两种常见形态。 */
+    private List<MediaItem> extractMedia(JsonNode node) {
+        List<MediaItem> items = new ArrayList<>();
+        for (String field : MEDIA_FIELDS) {
+            JsonNode array = descend(node, field);
+            if (array == null || !array.isArray() || array.isEmpty()) {
+                continue;
+            }
+            boolean videoHint = field.toLowerCase().startsWith("video");
+            for (JsonNode item : array) {
+                MediaItem media = mapMedia(item, videoHint);
+                if (media != null) {
+                    items.add(media);
+                }
+            }
+            if (!items.isEmpty()) {
+                break;
+            }
+        }
+        return items;
+    }
+
+    private MediaItem mapMedia(JsonNode item, boolean videoHint) {
+        if (item == null || item.isNull()) {
+            return null;
+        }
+        if (item.isTextual()) {
+            String text = item.asText("").trim();
+            return text.isEmpty() ? null : new MediaItem(text, null, videoHint ? "VIDEO" : "IMAGE", null, null);
+        }
+        String url = textOf(item, List.of("url", "urlDefault", "urlPre", "originUrl", "picUrl",
+                "imageUrl", "src", "videoUrl"));
+        if (isBlank(url)) {
+            return null;
+        }
+        String thumb = textOf(item, List.of("thumbUrl", "thumbnail", "thumb", "urlPre", "urlDefault"));
+        Integer width = intOf(item, List.of("width", "w", "imageWidth"));
+        Integer height = intOf(item, List.of("height", "h", "imageHeight"));
+        String declaredType = textOf(item, List.of("type", "mediaType"));
+        String mediaType = videoHint || (declaredType != null && declaredType.toLowerCase().contains("video"))
+                ? "VIDEO" : "IMAGE";
+        return new MediaItem(url, thumb, mediaType, width, height);
     }
 
     private JsonNode firstArrayField(JsonNode node, List<String> fields) {
@@ -1180,6 +1229,11 @@ public class XhsCommentApiClient {
 
     /** 单条评论（数据源无关的中间结构）。 */
     public record XhsComment(String commentId, String author, String content, int likes,
-                             LocalDateTime commentTime, String replyTo, String authorUserId) {
+                             LocalDateTime commentTime, String replyTo, String authorUserId,
+                             List<MediaItem> media) {
+    }
+
+    /** 评论附件（图片/视频）原始信息。 */
+    public record MediaItem(String url, String thumbUrl, String mediaType, Integer width, Integer height) {
     }
 }

@@ -154,7 +154,7 @@ class CommentCollectorTest {
         when(apiClient.fetchPage(anyString(), any(), anyInt(), any())).thenReturn(
                 new XhsCommentApiClient.FetchPage(List.of(
                         new XhsCommentApiClient.XhsComment("c-1", "小红", "求教程", 5,
-                                LocalDateTime.of(2025, 1, 1, 12, 0), null, "u-1")), null, false));
+                                LocalDateTime.of(2025, 1, 1, 12, 0), null, "u-1", List.of())), null, false));
 
         CommentCollector.CollectionResult result = collector.collect("note-1", "owner-1");
 

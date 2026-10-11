@@ -35,6 +35,7 @@ class CommentCollectionJobTest {
     private CommentProperties properties;
     private CredentialService credentialService;
     private TokenWarningNotifier tokenWarningNotifier;
+    private CommentMessageService messageService;
     private CommentCollectionJob job;
 
     @BeforeEach
@@ -47,13 +48,19 @@ class CommentCollectionJobTest {
         properties = new CommentProperties();
         credentialService = mock(CredentialService.class);
         tokenWarningNotifier = mock(TokenWarningNotifier.class);
+        messageService = mock(CommentMessageService.class);
+        // 入库去重已下沉到 CommentMessageService：这里按 commentRepository.exists 的真实语义返回
+        when(messageService.save(any(Comment.class))).thenAnswer(invocation -> {
+            Comment c = invocation.getArgument(0);
+            return !commentRepository.exists(c.getCommentId());
+        });
         when(tokenWarningNotifier.notifyIfNeeded(any(), anyBoolean())).thenReturn(
                 new TokenWarningNotifier.NotifyResult(0, 0, 0, List.of(), Map.of()));
         when(collector.collectFromNotifications(any(), any(), anyInt(), any())).thenReturn(
                 new CommentCollector.NotificationCollectionResult("none", "未配置", "mentions", 0,
                         List.of(), 0, Map.of()));
         job = new CommentCollectionJob(collector, commentRepository, watchRepository,
-                jobRunRepository, analysisService, properties, credentialService, tokenWarningNotifier);
+                jobRunRepository, analysisService, properties, credentialService, tokenWarningNotifier, messageService);
     }
 
     @Test
@@ -85,7 +92,8 @@ class CommentCollectionJobTest {
         assertThat(result.inserted()).isEqualTo(2);
         assertThat(result.analyzed()).isEqualTo(2);
         assertThat(result.error()).isNull();
-        verify(commentRepository, times(2)).insert(any(Comment.class));
+                // 3 条评论都进了入库入口，其中 1 条被服务层按 exists 去重（所以 inserted=2）
+        verify(messageService, times(3)).save(any(Comment.class));
         verify(commentRepository, times(2)).updateAnalysisAndStatus(anyString(), eq("咨询"),
                 eq("NEUTRAL"), eq("摘要"), eq("回复草稿"), any(), any());
         verify(watchRepository).updateAfterRun("w-1", 2, 2, "api", null);

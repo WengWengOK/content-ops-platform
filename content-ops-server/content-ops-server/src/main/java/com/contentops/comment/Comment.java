@@ -48,6 +48,12 @@ public class Comment {
     @Schema(description = "关系标签：FAN(粉丝)/FOLLOWING(关注)/FRIEND(好友)/REGULAR(常客)/SELF/STRANGER(路人)")
     private String relation;
 
+    @Schema(description = "附件数量：0=纯文本，>0=含图/视频")
+    private Integer mediaCount;
+
+    @Schema(description = "附件明细（响应时按需填充，含所属用户）")
+    private java.util.List<CommentMedia> media;
+
     @Schema(description = "评论内容")
     private String content;
 

@@ -39,6 +39,7 @@ public class CommentCollectionJob {
     private final CommentProperties properties;
     private final CredentialService credentialService;
     private final TokenWarningNotifier tokenWarningNotifier;
+    private final CommentMessageService messageService;
 
     /** 单个监控项的采集结果。 */
     public record WatchRunResult(String watchId, String workId, String source, String fallbackReason,
@@ -192,11 +193,8 @@ public class CommentCollectionJob {
             fallbackReason = result.fallbackReason();
             for (Comment c : result.commentsOrEmpty()) {
                 collected++;
-                if (commentRepository.exists(c.getCommentId())) {
-                    continue;
-                }
-                commentRepository.insert(c);
-                if (commentRepository.exists(c.getCommentId())) {
+                // 评论 + 附件（含所属用户）整体入库，重复自动跳过
+                if (messageService.save(c)) {
                     inserted++;
                     fresh.add(c);
                 }
@@ -246,11 +244,7 @@ public class CommentCollectionJob {
             List<Comment> fresh = new ArrayList<>();
             for (Comment c : notif.commentsOrEmpty()) {
                 notifCollected++;
-                if (commentRepository.exists(c.getCommentId())) {
-                    continue;
-                }
-                commentRepository.insert(c);
-                if (commentRepository.exists(c.getCommentId())) {
+                if (messageService.save(c)) {
                     notifInserted++;
                     fresh.add(c);
                 }

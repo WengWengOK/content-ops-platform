@@ -573,6 +573,21 @@ export interface DiscussChatRequest {
 
 export type CommentReplyStatus = 'NONE' | 'DRAFT' | 'APPROVED' | 'SENT'
 
+export interface CommentMedia {
+  mediaId: string
+  commentId: string
+  mediaType?: string
+  url: string
+  thumbUrl?: string
+  width?: number
+  height?: number
+  sortOrder?: number
+  /** 附件所属用户（评论作者） */
+  ownerUserId?: string
+  ownerName?: string
+  createdAt?: string
+}
+
 export interface PlatformComment {
   commentId: string
   platformCommentId?: string
@@ -591,6 +606,8 @@ export interface PlatformComment {
   intentScore?: number
   relation?: string
   authorUserId?: string
+  mediaCount?: number
+  media?: CommentMedia[]
   sentiment?: string
   aiSummary?: string
   aiReply?: string
@@ -605,6 +622,8 @@ export interface CommentStatsItem {
   intentScore?: number
   relation?: string
   authorUserId?: string
+  mediaCount?: number
+  media?: CommentMedia[]
   sentiment?: string
   cnt: number
 }

@@ -22,6 +22,8 @@ export interface CommentsToolbarProps {
   setSentiment: (v: string) => void
   relation: string
   setRelation: (v: string) => void
+  mediaOnly: boolean
+  setMediaOnly: (v: boolean) => void
   error: string
   handleCollect: () => void
   handleAnalyzeAll: () => void
@@ -40,6 +42,8 @@ export function CommentsToolbar({
   setSentiment,
   relation,
   setRelation,
+  mediaOnly,
+  setMediaOnly,
   error,
   handleCollect,
   handleAnalyzeAll,
@@ -78,6 +82,10 @@ export function CommentsToolbar({
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-xs" style={{ color: '#86909C' }}>关系</span>
+            <label className="flex items-center gap-2 text-xs" style={{ color: '#4E5969' }}>
+              <input type="checkbox" checked={mediaOnly} onChange={(e) => setMediaOnly(e.target.checked)} />
+              只看带图
+            </label>
             <select
               value={relation}
               onChange={(e) => setRelation(e.target.value)}

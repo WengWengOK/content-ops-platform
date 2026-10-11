@@ -51,6 +51,7 @@ export async function listComments(params: {
   intent?: string
   sentiment?: string
   relation?: string
+  mediaOnly?: boolean
   limit?: number
 }): Promise<{ total: number; comments: PlatformComment[] }> {
   const { data } = await apiClient.get<AgentResponse<{ total: number; comments: PlatformComment[] }>>(

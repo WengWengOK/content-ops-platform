@@ -58,6 +58,7 @@ public class CommentController {
     private final WatchTokenHealthService watchTokenHealthService;
     private final TokenWarningNotifier tokenWarningNotifier;
     private final CommentRelationService relationService;
+    private final CommentMessageService messageService;
 
     /** 开发模式（未开启鉴权）时 ownerId 为 null，SQL 侧自动不过滤，保证联调可用 */
     private String ownerId() {
@@ -83,11 +84,7 @@ public class CommentController {
 
         int inserted = 0;
         for (Comment c : result.commentsOrEmpty()) {
-            if (repository.exists(c.getCommentId())) {
-                continue;
-            }
-            repository.insert(c);
-            if (repository.exists(c.getCommentId())) {
+            if (messageService.save(c)) {
                 inserted++;
             }
         }
@@ -136,13 +133,17 @@ public class CommentController {
             @RequestParam(required = false) String intent,
             @RequestParam(required = false) String sentiment,
             @RequestParam(required = false) String relation,
+            @RequestParam(required = false, defaultValue = "false") boolean mediaOnly,
             @RequestParam(required = false, defaultValue = "50") Integer limit) {
         List<Comment> comments = repository.list(
                 ownerId(), blank(platform), blank(workId), blank(intent), blank(sentiment),
-                blank(relation), Math.min(limit == null ? 50 : limit, 200));
+                blank(relation), mediaOnly, Math.min(limit == null ? 50 : limit, 200));
+        // 评论即消息：列表一次带回附件明细（含所属用户与时间）
+        List<Comment> mediaAttached = new ArrayList<>(comments);
+        messageService.attachMedia(mediaAttached);
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("total", comments.size());
-        data.put("comments", comments);
+        data.put("total", mediaAttached.size());
+        data.put("comments", mediaAttached);
         return AgentResponse.success("comment", data);
     }
 
@@ -393,11 +394,7 @@ public class CommentController {
         int analyzed = 0;
         List<Comment> fresh = new ArrayList<>();
         for (Comment c : result.commentsOrEmpty()) {
-            if (repository.exists(c.getCommentId())) {
-                continue;
-            }
-            repository.insert(c);
-            if (repository.exists(c.getCommentId())) {
+            if (messageService.save(c)) {
                 inserted++;
                 fresh.add(c);
             }

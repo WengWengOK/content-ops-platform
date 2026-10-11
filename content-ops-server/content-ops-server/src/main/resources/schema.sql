@@ -368,6 +368,30 @@ ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS intent_score DOUBLE PREC
 ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS author_user_id VARCHAR(64);
 ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS relation VARCHAR(16);
 
+-- 存量库迁移：评论补「附件计数」（0=纯文本，>0=含图/视频，用于"只看带图"筛选，幂等）
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS media_count INT DEFAULT 0;
+
+-- 评论附件（图片/视频）：一条评论可带多张，逐条记录「所属用户」便于展示与追责
+CREATE TABLE IF NOT EXISTS contentops_comment_media (
+    media_id      VARCHAR(64)   PRIMARY KEY,
+    comment_id    VARCHAR(64)   NOT NULL,
+    media_type    VARCHAR(16)   DEFAULT 'IMAGE',
+    url           VARCHAR(1024) NOT NULL,
+    thumb_url     VARCHAR(1024),
+    width         INT,
+    height        INT,
+    sort_order    INT           DEFAULT 0,
+    owner_user_id VARCHAR(64),
+    owner_name    VARCHAR(128),
+    extra_json    VARCHAR(2000),
+    created_at    TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_comment_media_comment
+    ON contentops_comment_media (comment_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_comment_media_owner
+    ON contentops_comment_media (owner_user_id);
+
 -- 评论用户关系库：粉丝（connections 通知）/关注/好友（手工或外部关系源）/常客等标签
 CREATE TABLE IF NOT EXISTS contentops_comment_user (
     user_key       VARCHAR(160) PRIMARY KEY,

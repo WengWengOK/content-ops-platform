@@ -88,6 +88,7 @@ export function CommentsPage() {
   const [intent, setIntent] = useState('')
   const [sentiment, setSentiment] = useState('')
   const [relation, setRelation] = useState('')
+  const [mediaOnly, setMediaOnly] = useState(false)
   const [comments, setComments] = useState<PlatformComment[]>([])
   const [stats, setStats] = useState<CommentStats>({ intent: [], sentiment: [] })
   const [loading, setLoading] = useState(false)
@@ -141,6 +142,7 @@ export function CommentsPage() {
         intent: intent || undefined,
         sentiment: sentiment || undefined,
         relation: relation || undefined,
+        mediaOnly: mediaOnly || undefined,
         limit: 100,
       })
       setComments(res.comments ?? [])
@@ -150,7 +152,7 @@ export function CommentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [platform, workId, intent, sentiment, relation])
+  }, [platform, workId, intent, sentiment, relation, mediaOnly])
 
   const loadStats = useCallback(async () => {
     try {
@@ -650,6 +652,8 @@ export function CommentsPage() {
             setSentiment={setSentiment}
             relation={relation}
             setRelation={setRelation}
+            mediaOnly={mediaOnly}
+            setMediaOnly={setMediaOnly}
             error={error}
             handleCollect={handleCollect}
             handleAnalyzeAll={handleAnalyzeAll}

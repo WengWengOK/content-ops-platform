@@ -23,15 +23,15 @@ public class CommentRepository {
     private static final String COLS = "comment_id, platform_comment_id, collected_via, credential_id, owner_id, "
             + "platform, work_id, workflow_id, author, author_user_id, relation, content, likes, "
             + "comment_time, reply_to, intent, intent_source, intent_score, sentiment, ai_summary, ai_reply, "
-            + "reply_status, dialog_history, collected_at";
+            + "reply_status, dialog_history, media_count, collected_at";
 
     private static final String SQL_INSERT =
             "INSERT INTO contentops_comment "
                     + "(comment_id, platform_comment_id, collected_via, credential_id, owner_id, platform, "
                     + " work_id, workflow_id, author, author_user_id, relation, content, likes, "
                     + " comment_time, reply_to, intent, intent_source, intent_score, sentiment, ai_summary, "
-                    + " ai_reply, reply_status, dialog_history, collected_at) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + " ai_reply, reply_status, dialog_history, media_count, collected_at) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment "
                     + "WHERE (? = '' OR owner_id = ?) "
@@ -40,6 +40,7 @@ public class CommentRepository {
                     + "  AND (? IS NULL OR ? = '' OR intent = ?) "
                     + "  AND (? IS NULL OR ? = '' OR sentiment = ?) "
                     + "  AND (? IS NULL OR ? = '' OR relation = ?) "
+                    + "  AND (? = 0 OR media_count > 0) "
                     + "ORDER BY collected_at DESC LIMIT ?";
     private static final String SQL_BY_ID =
             "SELECT " + COLS + " FROM contentops_comment WHERE comment_id = ?";
@@ -82,7 +83,8 @@ public class CommentRepository {
                     c.getReplyTo(), c.getIntent(), c.getIntentSource(), c.getIntentScore(),
                     c.getSentiment(), c.getAiSummary(), c.getAiReply(),
                     c.getReplyStatus() == null ? "NONE" : c.getReplyStatus(),
-                    c.getDialogHistory(), Timestamp.valueOf(java.time.LocalDateTime.now()));
+                    c.getDialogHistory(), c.getMediaCount() == null ? 0 : c.getMediaCount(),
+                    Timestamp.valueOf(java.time.LocalDateTime.now()));
         } catch (Exception e) {
             log.warn("[Comment] 插入失败(可能是重复评论): id={}, err={}", c.getCommentId(), e.getMessage());
         }
@@ -110,6 +112,12 @@ public class CommentRepository {
     /** 列表查询（支持按关系标签筛选，如 FAN/FOLLOWING/FRIEND）。 */
     public List<Comment> list(String ownerId, String platform, String workId,
                               String intent, String sentiment, String relation, int limit) {
+        return list(ownerId, platform, workId, intent, sentiment, relation, false, limit);
+    }
+
+    /** 列表查询（mediaOnly=true 时只返回带图/视频的评论）。 */
+    public List<Comment> list(String ownerId, String platform, String workId, String intent, String sentiment,
+                              String relation, boolean mediaOnly, int limit) {
         String o = ownerId == null ? "" : ownerId;
         String p = platform == null ? "" : platform;
         String w = workId == null ? "" : workId;
@@ -118,7 +126,7 @@ public class CommentRepository {
         String r = relation == null ? "" : relation;
         try {
             return jdbcTemplate.query(SQL_LIST, this::mapRow,
-                    o, o, p, p, p, w, w, w, i, i, i, s, s, s, r, r, r, limit);
+                    o, o, p, p, p, w, w, w, i, i, i, s, s, s, r, r, r, mediaOnly ? 1 : 0, limit);
         } catch (Exception e) {
             log.error("[Comment] 查询失败", e);
             return List.of();
@@ -152,6 +160,16 @@ public class CommentRepository {
                     summary, reply, commentId);
         } catch (Exception e) {
             log.warn("[Comment] 更新分析(含状态)失败: id={}, err={}", commentId, e.getMessage());
+        }
+    }
+
+    /** 回写附件数量（0=纯文本，>0=含图/视频）。 */
+    public void updateMediaCount(String commentId, int mediaCount) {
+        try {
+            jdbcTemplate.update("UPDATE contentops_comment SET media_count = ? WHERE comment_id = ?",
+                    mediaCount, commentId);
+        } catch (Exception e) {
+            log.warn("[Comment] 更新附件数量失败: id={}, err={}", commentId, e.getMessage());
         }
     }
 
@@ -228,6 +246,7 @@ public class CommentRepository {
                 .aiSummary(rs.getString("ai_summary"))
                 .aiReply(rs.getString("ai_reply"))
                 .replyStatus(rs.getString("reply_status"))
+                .mediaCount(rs.getObject("media_count") == null ? 0 : rs.getInt("media_count"))
                 .dialogHistory(rs.getString("dialog_history"))
                 .collectedAt(collected == null ? null : collected.toLocalDateTime())
                 .build();
