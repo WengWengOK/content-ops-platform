@@ -1,5 +1,9 @@
 # Content Ops 项目检查与评测报告
 
+> **时效性说明（2026-10 更新）**：本文为 2026-08 的项目评审快照，部分结论随后续迭代已变化
+> （评论助手/凭据与密钥轮换/意图语料库/关系标签/运维与预警/平台字节序号等均已落地）。
+> **当前能力以根 [README.md](../README.md) 与 [docs/COMMENT-ASSISTANT.md](COMMENT-ASSISTANT.md) 为准。**
+
 > 检查日期：2026-08-18 ｜ 检查人：Codex（独立复核）
 > 基线：git HEAD `f4156d1`（服务化拆分骨架 + 长期记忆 + 动态路由 + 自我改进闭环）
 > 配套文档：能力/差距评分见 [EVALUATION-2026-08-18.md](EVALUATION-2026-08-18.md)，架构蓝图见 [ARCHITECTURE.md](ARCHITECTURE.md)
