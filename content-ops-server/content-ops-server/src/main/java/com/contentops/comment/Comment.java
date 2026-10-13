@@ -54,6 +54,18 @@ public class Comment {
     @Schema(description = "附件明细（响应时按需填充，含所属用户）")
     private java.util.List<CommentMedia> media;
 
+    @Schema(description = "生成该草稿的场景客服 Agent 配置 ID")
+    private String replyProfileId;
+
+    @Schema(description = "自动标记（JSON 数组，只标记不自动修正）：禁止承诺/未核实信息/需转人工等")
+    private String replyFlags;
+
+    @Schema(description = "草稿置信度（1-最高风险标记置信度），越高越可信")
+    private Double replyConfidence;
+
+    @Schema(description = "复核状态：NONE（无风险）/ NEEDS_REVIEW（高置信度进清单）/ SAMPLED（抽样复核）/ REVIEWED（人工已复核）")
+    private String replyReviewState;
+
     @Schema(description = "评论内容")
     private String content;
 

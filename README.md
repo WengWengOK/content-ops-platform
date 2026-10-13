@@ -10,6 +10,7 @@
 |------|------|
 | 内容生产 | 选题 → 内容 → 配图 → 发布的 4 阶段流水线，人机协同（平台选择/大纲/风格确认）、多平台并行扇出、按平台出产物、ZIP 下载 |
 | 评论助手 | 评论采集（真实接口/模拟，可插拔数据源）、通知增量、意图语料库 RAG 前置识别、情感/摘要、关系标签（粉丝/关注/好友/常客/路人）、附件（图片/视频）与归属、多轮 AI 起草、人工审核、真实回复、定时采集与票据预警 |
+| 场景客服回复 Agent | 可插拔场景配置（电商带货 / 课程模板 / 通用客服，新增场景不改代码）、按场景生成回复草稿、**忠实度校验只标记不修正**（禁止承诺 / 未核实价格·促销·时效 / 漏提示转人工 / 外链 / 超长），高置信度进复核清单、中低置信度抽样、人工复核状态机 |
 | 多账号凭据 | 按租户归属的平台账号凭据（AES-GCM 加密、掩码出参、跨租户 403）、连通性探测、密钥轮换、采集/回复/通知全部按凭据走 |
 | 热点监控 | 7 平台真实热榜（60s + newsnow 多路降级）、关键词启停与命中记录、AI 相关性/真假/摘要分析、突发热点检测、时间范围筛选、趋势曲线与平台对比 |
 | 实时通知 | WebSocket 推送、邮件（SMTP 可配）、Grafana Alerting → 飞书/企业微信机器人、票据预警卡片（带直达按钮） |
@@ -91,7 +92,8 @@ go run cmd/login/main.go
 | Agent 注册表 | `GET /api/v1/agents` |
 | 工作流 | `POST /api/v1/workflow/start`，SSE 事件 `GET /workflow/{id}/events`，流式讨论 `GET /discussion/{sid}/chat/stream` |
 | 热点 | `GET /api/v1/trends`（burst/timeRange/watch）、`/web-search`、`/history`、`/bursts` |
-| 评论助手 | `POST /api/v1/comments/collect`、`GET /api/v1/comments`（支持 relation/mediaOnly）、`POST /comments/notifications/collect`、`GET /comments/ops-overview` |
+| 评论助手 | `POST /api/v1/comments/collect`、`GET /api/v1/comments`（支持 relation/mediaOnly/reviewState）、`POST /comments/notifications/collect`、`GET /comments/ops-overview` |
+| 场景客服回复 Agent | `GET/POST /api/v1/comments/reply-agents`、`POST /comments/reply-agents/preview`（试跑不落库）、`GET /comments/review-queue`、`PUT /comments/{id}/review`、`POST /comments/{id}/recheck` |
 | 意图语料库 | `GET/POST /api/v1/comments/intent-corpus`、`POST /comments/intent-corpus/match`（阈值调优预览） |
 | 账号凭据 | `GET/POST /api/v1/platform-credentials`、`POST /platform-credentials/{id}/probe`、`POST /platform-credentials/rotate` |
 | 可观测 | `GET /api/v1/observability/llm/traces`、`/stats`、`/evals/runs`、`/audit` |
@@ -104,7 +106,7 @@ go run cmd/login/main.go
 | 工作流仪表盘 / 创建工作流 | 流水线状态与发起，人机协同（选题确认、平台选择、大纲/风格确认） |
 | 作品中心 / 作品合集 | 作品列表（带平台徽标，平台用字节序号存储、前端解码展示）与按类型的合集管理 |
 | 热点监控 | 热榜、关键词监控、突发热点、趋势曲线 |
-| 评论助手 | 五个模块：评论工作台 / 自动采集 / 账号凭据 / 意图与关系 / 运维总览（URL 同步 `?tab=…`，支持深链） |
+| 评论助手 | 六个模块：评论工作台 / 自动采集 / 账号凭据 / 意图与关系 / 客服 Agent / 运维总览（URL 同步 `?tab=…`，支持深链） |
 | 数据中心 / LLM 观测 | 分析报告与 LLM 成本、延迟、评测 |
 
 ## 六、工程质量

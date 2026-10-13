@@ -63,6 +63,18 @@ export function CommentListPanel({
                     语料命中
                   </span>
                 )}
+                {c.replyReviewState === 'NEEDS_REVIEW' && (
+                  <span className="rounded px-2 py-0.5 text-xs font-medium"
+                        style={{ background: '#FFECE8', color: '#F53F3F' }}>需复核</span>
+                )}
+                {c.replyReviewState === 'SAMPLED' && (
+                  <span className="rounded px-2 py-0.5 text-xs"
+                        style={{ background: '#FFF7E8', color: '#9C5B00' }}>抽样复核</span>
+                )}
+                {c.replyReviewState === 'REVIEWED' && (
+                  <span className="rounded px-2 py-0.5 text-xs"
+                        style={{ background: '#E8FFEA', color: '#00782C' }}>已复核</span>
+                )}
                 {c.intent && (
                   <span className="rounded px-2 py-0.5 text-xs font-medium"
                     style={{ background: '#FFF0F5', color: INTENT_COLORS[c.intent] ?? '#C40E3A' }}>

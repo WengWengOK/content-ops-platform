@@ -39,7 +39,8 @@ class CommentReplyServiceTest {
         properties = new CommentProperties();
         service = new CommentReplyService(repository, new ObjectMapper(), mock(ChatModel.class),
                 apiClient, watchRepository, properties, mock(CredentialService.class),
-                mock(XhsClientFactory.class));
+                mock(XhsClientFactory.class), mock(ReplyAgentProfileService.class),
+                mock(ScenarioReplyAgent.class));
     }
 
     @Test

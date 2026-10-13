@@ -76,6 +76,7 @@ import { CommentListPanel } from '@/components/comments/CommentListPanel'
 import { CommentStatsCards } from '@/components/comments/CommentStatsCards'
 import { CommentsToolbar } from '@/components/comments/CommentsToolbar'
 import { CommentRelationsCard } from '@/components/comments/CommentRelationsCard'
+import { ReplyAgentCard } from '@/components/comments/ReplyAgentCard'
 import { CredentialManagerCard } from '@/components/comments/CredentialManagerCard'
 import { IntentCorpusCard } from '@/components/comments/IntentCorpusCard'
 import { OpsOverviewCard } from '@/components/comments/OpsOverviewCard'
@@ -587,6 +588,7 @@ export function CommentsPage() {
     { key: 'automation', label: '自动采集', badge: watches.length || undefined },
     { key: 'accounts', label: '账号凭据', badge: credentials.length || undefined },
     { key: 'quality', label: '意图与关系' },
+    { key: 'agent', label: '客服 Agent' },
     {
       key: 'ops',
       label: '运维总览',
@@ -747,6 +749,8 @@ export function CommentsPage() {
         </div>
       )}
 
+      {activeTab === 'agent' && <ReplyAgentCard />}
+
       {activeTab === 'ops' && (
         <OpsOverviewCard
           ops={ops}
@@ -764,9 +768,9 @@ export function CommentsPage() {
   )
 }
 
-type TabKey = 'workspace' | 'automation' | 'accounts' | 'quality' | 'ops'
+type TabKey = 'workspace' | 'automation' | 'accounts' | 'quality' | 'agent' | 'ops'
 
-const TAB_KEYS: TabKey[] = ['workspace', 'automation', 'accounts', 'quality', 'ops']
+const TAB_KEYS: TabKey[] = ['workspace', 'automation', 'accounts', 'quality', 'agent', 'ops']
 
 /** 从 URL 读取初始模块（?tab=ops），非法值回落到评论工作台。 */
 function initialTab(): TabKey {

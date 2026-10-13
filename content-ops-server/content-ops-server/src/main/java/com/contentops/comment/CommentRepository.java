@@ -23,15 +23,17 @@ public class CommentRepository {
     private static final String COLS = "comment_id, platform_comment_id, collected_via, credential_id, owner_id, "
             + "platform, work_id, workflow_id, author, author_user_id, relation, content, likes, "
             + "comment_time, reply_to, intent, intent_source, intent_score, sentiment, ai_summary, ai_reply, "
-            + "reply_status, dialog_history, media_count, collected_at";
+            + "reply_status, dialog_history, media_count, reply_profile_id, reply_flags, reply_confidence, "
+            + "reply_review_state, collected_at";
 
     private static final String SQL_INSERT =
             "INSERT INTO contentops_comment "
                     + "(comment_id, platform_comment_id, collected_via, credential_id, owner_id, platform, "
                     + " work_id, workflow_id, author, author_user_id, relation, content, likes, "
                     + " comment_time, reply_to, intent, intent_source, intent_score, sentiment, ai_summary, "
-                    + " ai_reply, reply_status, dialog_history, media_count, collected_at) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    + " ai_reply, reply_status, dialog_history, media_count, reply_profile_id, reply_flags, "
+                    + " reply_confidence, reply_review_state, collected_at) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String SQL_LIST =
             "SELECT " + COLS + " FROM contentops_comment "
                     + "WHERE (? = '' OR owner_id = ?) "
@@ -41,6 +43,7 @@ public class CommentRepository {
                     + "  AND (? IS NULL OR ? = '' OR sentiment = ?) "
                     + "  AND (? IS NULL OR ? = '' OR relation = ?) "
                     + "  AND (? = 0 OR media_count > 0) "
+                    + "  AND (? IS NULL OR ? = '' OR reply_review_state = ?) "
                     + "ORDER BY collected_at DESC LIMIT ?";
     private static final String SQL_BY_ID =
             "SELECT " + COLS + " FROM contentops_comment WHERE comment_id = ?";
@@ -84,6 +87,7 @@ public class CommentRepository {
                     c.getSentiment(), c.getAiSummary(), c.getAiReply(),
                     c.getReplyStatus() == null ? "NONE" : c.getReplyStatus(),
                     c.getDialogHistory(), c.getMediaCount() == null ? 0 : c.getMediaCount(),
+                    c.getReplyProfileId(), c.getReplyFlags(), c.getReplyConfidence(), c.getReplyReviewState(),
                     Timestamp.valueOf(java.time.LocalDateTime.now()));
         } catch (Exception e) {
             log.warn("[Comment] 插入失败(可能是重复评论): id={}, err={}", c.getCommentId(), e.getMessage());
@@ -118,6 +122,12 @@ public class CommentRepository {
     /** 列表查询（mediaOnly=true 时只返回带图/视频的评论）。 */
     public List<Comment> list(String ownerId, String platform, String workId, String intent, String sentiment,
                               String relation, boolean mediaOnly, int limit) {
+        return list(ownerId, platform, workId, intent, sentiment, relation, mediaOnly, "", limit);
+    }
+
+    /** 列表查询（reviewState 过滤：NEEDS_REVIEW / SAMPLED / REVIEWED）。 */
+    public List<Comment> list(String ownerId, String platform, String workId, String intent, String sentiment,
+                              String relation, boolean mediaOnly, String reviewState, int limit) {
         String o = ownerId == null ? "" : ownerId;
         String p = platform == null ? "" : platform;
         String w = workId == null ? "" : workId;
@@ -125,8 +135,10 @@ public class CommentRepository {
         String s = sentiment == null ? "" : sentiment;
         String r = relation == null ? "" : relation;
         try {
+            String review = reviewState == null ? "" : reviewState;
             return jdbcTemplate.query(SQL_LIST, this::mapRow,
-                    o, o, p, p, p, w, w, w, i, i, i, s, s, s, r, r, r, mediaOnly ? 1 : 0, limit);
+                    o, o, p, p, p, w, w, w, i, i, i, s, s, s, r, r, r, mediaOnly ? 1 : 0,
+                    review, review, review, limit);
         } catch (Exception e) {
             log.error("[Comment] 查询失败", e);
             return List.of();
@@ -161,6 +173,33 @@ public class CommentRepository {
         } catch (Exception e) {
             log.warn("[Comment] 更新分析(含状态)失败: id={}, err={}", commentId, e.getMessage());
         }
+    }
+
+    /** 回写回复草稿审计信息（来源配置 / 自动标记 / 置信度 / 复核状态）。 */
+    public void updateReplyAudit(String commentId, String profileId, String flagsJson,
+                                 Double confidence, String reviewState) {
+        try {
+            jdbcTemplate.update("UPDATE contentops_comment SET reply_profile_id = ?, reply_flags = ?, "
+                    + "reply_confidence = ?, reply_review_state = ? WHERE comment_id = ?",
+                    profileId, flagsJson, confidence, reviewState, commentId);
+        } catch (Exception e) {
+            log.warn("[Comment] 更新回复审计失败: id={}, err={}", commentId, e.getMessage());
+        }
+    }
+
+    /** 人工复核完成标记。 */
+    public void updateReviewState(String commentId, String reviewState) {
+        try {
+            jdbcTemplate.update("UPDATE contentops_comment SET reply_review_state = ? WHERE comment_id = ?",
+                    reviewState, commentId);
+        } catch (Exception e) {
+            log.warn("[Comment] 更新复核状态失败: id={}, err={}", commentId, e.getMessage());
+        }
+    }
+
+    /** 高置信度标记清单（待人工复核）。 */
+    public List<Comment> listNeedingReview(String ownerId, int limit) {
+        return list(ownerId, "", "", "", "", "", false, "NEEDS_REVIEW", limit);
     }
 
     /** 回写附件数量（0=纯文本，>0=含图/视频）。 */
@@ -247,6 +286,11 @@ public class CommentRepository {
                 .aiReply(rs.getString("ai_reply"))
                 .replyStatus(rs.getString("reply_status"))
                 .mediaCount(rs.getObject("media_count") == null ? 0 : rs.getInt("media_count"))
+                .replyProfileId(rs.getString("reply_profile_id"))
+                .replyFlags(rs.getString("reply_flags"))
+                .replyConfidence(rs.getObject("reply_confidence") == null
+                        ? null : rs.getDouble("reply_confidence"))
+                .replyReviewState(rs.getString("reply_review_state"))
                 .dialogHistory(rs.getString("dialog_history"))
                 .collectedAt(collected == null ? null : collected.toLocalDateTime())
                 .build();

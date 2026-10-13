@@ -15,6 +15,9 @@ import type {
   IntentMatchPreview,
   OpsOverview,
   PlatformComment,
+  ReplyAgentProfile,
+  ReplyDraftPreview,
+  ReplyFlagItem,
 } from '@/types'
 
 function unwrap<T>(resp: AgentResponse<T>): T {
@@ -52,6 +55,7 @@ export async function listComments(params: {
   sentiment?: string
   relation?: string
   mediaOnly?: boolean
+  reviewState?: string
   limit?: number
 }): Promise<{ total: number; comments: PlatformComment[] }> {
   const { data } = await apiClient.get<AgentResponse<{ total: number; comments: PlatformComment[] }>>(
@@ -351,5 +355,87 @@ export async function previewIntentMatch(
     '/comments/intent-corpus/match',
     { text, threshold, topK }
   )
+  return unwrap(data)
+}
+// ═══════════════════════════════════════════════════════════════
+//  场景客服回复 Agent（可插拔配置）+ 忠实度校验复核
+// ═══════════════════════════════════════════════════════════════
+
+/** GET /comments/reply-agents — 场景配置列表（电商带货/课程客服/通用…） */
+export async function listReplyAgents(): Promise<ReplyAgentProfile[]> {
+  const { data } = await apiClient.get<AgentResponse<ReplyAgentProfile[]>>('/comments/reply-agents')
+  return unwrap(data) ?? []
+}
+
+/** POST /comments/reply-agents — 新增场景配置（复制模板定制新场景） */
+export async function createReplyAgent(body: Partial<ReplyAgentProfile>): Promise<ReplyAgentProfile> {
+  const { data } = await apiClient.post<AgentResponse<ReplyAgentProfile>>('/comments/reply-agents', body)
+  return unwrap(data)
+}
+
+/** PUT /comments/reply-agents/{id} — 更新场景配置 */
+export async function updateReplyAgent(
+  profileId: string,
+  body: Partial<ReplyAgentProfile>
+): Promise<ReplyAgentProfile> {
+  const { data } = await apiClient.put<AgentResponse<ReplyAgentProfile>>(
+    `/comments/reply-agents/${profileId}`,
+    body
+  )
+  return unwrap(data)
+}
+
+/** POST /comments/reply-agents/{id}/activate — 设为默认场景 */
+export async function activateReplyAgent(profileId: string): Promise<ReplyAgentProfile> {
+  const { data } = await apiClient.post<AgentResponse<ReplyAgentProfile>>(
+    `/comments/reply-agents/${profileId}/activate`
+  )
+  return unwrap(data)
+}
+
+/** PUT /comments/reply-agents/{id}/enabled — 启用/停用 */
+export async function setReplyAgentEnabled(profileId: string, enabled: boolean): Promise<void> {
+  await apiClient.put(`/comments/reply-agents/${profileId}/enabled`, { enabled })
+}
+
+/** POST /comments/reply-agents/preview — 试跑：生成草稿 + 自动标记（不落库） */
+export async function previewReplyAgent(body: {
+  profileId?: string
+  commentContent: string
+  productContext?: string
+}): Promise<ReplyDraftPreview> {
+  const { data } = await apiClient.post<AgentResponse<ReplyDraftPreview>>(
+    '/comments/reply-agents/preview',
+    body
+  )
+  return unwrap(data)
+}
+
+/** GET /comments/review-queue — 高置信度自动标记的复核清单 */
+export async function listReviewQueue(
+  reviewState = 'NEEDS_REVIEW',
+  limit = 50
+): Promise<{ total: number; comments: PlatformComment[] }> {
+  const { data } = await apiClient.get<AgentResponse<{ total: number; comments: PlatformComment[] }>>(
+    '/comments/review-queue',
+    { params: { reviewState, limit } }
+  )
+  return unwrap(data)
+}
+
+/** PUT /comments/{id}/review — 人工复核完成 */
+export async function markCommentReviewed(commentId: string): Promise<void> {
+  await apiClient.put(`/comments/${commentId}/review`, { reviewState: 'REVIEWED' })
+}
+
+/** POST /comments/{id}/recheck — 对已有回复重新做忠实度校验（只更新标记） */
+export async function recheckCommentReply(
+  commentId: string,
+  profileId?: string,
+  productContext?: string
+): Promise<{ flags: ReplyFlagItem[]; confidence: number; reviewState: string }> {
+  const { data } = await apiClient.post<
+    AgentResponse<{ flags: ReplyFlagItem[]; confidence: number; reviewState: string }>
+  >(`/comments/${commentId}/recheck`, { profileId, productContext })
   return unwrap(data)
 }

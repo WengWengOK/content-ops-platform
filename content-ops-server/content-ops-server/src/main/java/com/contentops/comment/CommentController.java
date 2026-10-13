@@ -59,6 +59,8 @@ public class CommentController {
     private final TokenWarningNotifier tokenWarningNotifier;
     private final CommentRelationService relationService;
     private final CommentMessageService messageService;
+    private final ReplyAgentProfileService replyAgentProfileService;
+    private final ScenarioReplyAgent scenarioReplyAgent;
 
     /** 开发模式（未开启鉴权）时 ownerId 为 null，SQL 侧自动不过滤，保证联调可用 */
     private String ownerId() {
@@ -134,10 +136,11 @@ public class CommentController {
             @RequestParam(required = false) String sentiment,
             @RequestParam(required = false) String relation,
             @RequestParam(required = false, defaultValue = "false") boolean mediaOnly,
+            @RequestParam(required = false) String reviewState,
             @RequestParam(required = false, defaultValue = "50") Integer limit) {
         List<Comment> comments = repository.list(
                 ownerId(), blank(platform), blank(workId), blank(intent), blank(sentiment),
-                blank(relation), mediaOnly, Math.min(limit == null ? 50 : limit, 200));
+                blank(relation), mediaOnly, blank(reviewState), Math.min(limit == null ? 50 : limit, 200));
         // 评论即消息：列表一次带回附件明细（含所属用户与时间）
         List<Comment> mediaAttached = new ArrayList<>(comments);
         messageService.attachMedia(mediaAttached);
@@ -453,6 +456,115 @@ public class CommentController {
 
     // ──────────────────────── 分析 / 对话 / 回复 ────────────────────────
 
+    // ════════════════ 场景客服回复 Agent（可插拔配置）════════════════
+
+    @GetMapping("/reply-agents")
+    @Operation(summary = "场景客服回复 Agent 配置列表（电商带货/课程客服/通用…）")
+    public AgentResponse<List<ReplyAgentProfile>> replyAgents() {
+        return AgentResponse.success("comment", replyAgentProfileService.list(ownerId()));
+    }
+
+    @PostMapping("/reply-agents")
+    @Operation(summary = "新增场景配置（复制电商带货模板即可定制新场景，如课程客服）")
+    public AgentResponse<ReplyAgentProfile> createReplyAgent(@RequestBody ReplyAgentProfile request) {
+        return AgentResponse.success("comment", replyAgentProfileService.create(ownerId(), request));
+    }
+
+    @PutMapping("/reply-agents/{profileId}")
+    @Operation(summary = "更新场景配置（事实/禁止承诺/转人工规则/语气/长度/链接）")
+    public AgentResponse<ReplyAgentProfile> updateReplyAgent(@PathVariable String profileId,
+                                                             @RequestBody ReplyAgentProfile request) {
+        return AgentResponse.success("comment",
+                replyAgentProfileService.update(ownerId(), profileId, request));
+    }
+
+    @DeleteMapping("/reply-agents/{profileId}")
+    @Operation(summary = "删除场景配置")
+    public AgentResponse<Map<String, Object>> deleteReplyAgent(@PathVariable String profileId) {
+        replyAgentProfileService.delete(profileId);
+        return AgentResponse.success("comment", Map.of("deleted", true, "profileId", profileId));
+    }
+
+    @PostMapping("/reply-agents/{profileId}/activate")
+    @Operation(summary = "把某场景设为默认（未指定 profileId 时使用）")
+    public AgentResponse<ReplyAgentProfile> activateReplyAgent(@PathVariable String profileId) {
+        return AgentResponse.success("comment",
+                replyAgentProfileService.activate(ownerId(), profileId));
+    }
+
+    @PutMapping("/reply-agents/{profileId}/enabled")
+    @Operation(summary = "启用/停用场景配置")
+    public AgentResponse<Map<String, Object>> setReplyAgentEnabled(@PathVariable String profileId,
+                                                                   @RequestBody SetEnabledRequest request) {
+        replyAgentProfileService.setEnabled(profileId, request.isEnabled());
+        return AgentResponse.success("comment",
+                Map.of("profileId", profileId, "enabled", request.isEnabled()));
+    }
+
+    @PostMapping("/reply-agents/preview")
+    @Operation(summary = "试跑：用指定场景生成草稿并返回自动标记（不落库，用于定制调试）")
+    public AgentResponse<Map<String, Object>> previewReplyAgent(@RequestBody PreviewRequest request) {
+        ReplyAgentProfile profile = replyAgentProfileService.resolve(ownerId(), request.getProfileId());
+        ScenarioReplyAgent.DraftResult draft = scenarioReplyAgent.draft(profile,
+                request.getCommentContent() == null ? "" : request.getCommentContent(),
+                List.of(), request.getCommentContent() == null ? "" : request.getCommentContent(),
+                request.getProductContext());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("profileId", draft.profileId());
+        data.put("scenario", draft.scenario());
+        data.put("reply", draft.reply());
+        data.put("source", draft.source());
+        data.put("confidence", draft.confidence());
+        data.put("reviewState", draft.reviewState());
+        data.put("flags", draft.flags());
+        return AgentResponse.success("comment", data);
+    }
+
+    // ════════════════ 忠实度校验：自动标记 + 人工复核 ════════════════
+
+    @GetMapping("/review-queue")
+    @Operation(summary = "复核清单：高置信度自动标记（不自动修正，等人工处理）")
+    public AgentResponse<Map<String, Object>> reviewQueue(
+            @RequestParam(required = false) String reviewState,
+            @RequestParam(required = false, defaultValue = "50") Integer limit) {
+        String state = blank(reviewState).isBlank() ? "NEEDS_REVIEW" : reviewState.trim().toUpperCase();
+        List<Comment> comments = repository.list(ownerId(), "", "", "", "", "", false, state,
+                Math.min(limit == null ? 50 : limit, 200));
+        messageService.attachMedia(comments);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("reviewState", state);
+        data.put("total", comments.size());
+        data.put("comments", comments);
+        return AgentResponse.success("comment", data);
+    }
+
+    @PutMapping("/{commentId}/review")
+    @Operation(summary = "人工复核完成：标记 REVIEWED（可传 reviewState 覆盖，如 SAMPLED→REVIEWED）")
+    public AgentResponse<Comment> markReviewed(@PathVariable String commentId,
+                                               @RequestBody(required = false) ReviewRequest request) {
+        Comment comment = repository.findById(commentId)
+                .orElseGet(() -> {
+                    throw new com.contentops.common.exception.BusinessException(
+                            com.contentops.common.exception.ErrorCode.NOT_FOUND, "评论不存在");
+                });
+        String state = request == null || request.getReviewState() == null || request.getReviewState().isBlank()
+                ? "REVIEWED" : request.getReviewState().trim().toUpperCase();
+        repository.updateReviewState(commentId, state);
+        auditService.record("COMMENT_REPLY_REVIEW", "comment", commentId, "回复草稿复核：" + state);
+        return repository.findById(commentId)
+                .map(updated -> AgentResponse.success("comment", updated))
+                .orElseGet(() -> AgentResponse.failure("comment", "评论不存在: " + commentId));
+    }
+
+    @PostMapping("/{commentId}/recheck")
+    @Operation(summary = "对已有回复重新做忠实度校验（只更新标记，不修改内容）")
+    public AgentResponse<ReplyComplianceChecker.CheckResult> recheck(@PathVariable String commentId,
+                                                                     @RequestBody(required = false) RecheckRequest request) {
+        return AgentResponse.success("comment", replyService.recheckReply(commentId,
+                request == null ? null : request.getProfileId(),
+                request == null ? null : request.getProductContext()));
+    }
+
     @PostMapping("/analyze-all")
     @Operation(summary = "批量分析某作品的评论（意图/情感/摘要/回复草稿）")
     public AgentResponse<Map<String, Object>> analyzeAll(@RequestBody AnalyzeAllRequest request) {
@@ -494,7 +606,8 @@ public class CommentController {
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             return AgentResponse.failure("comment", "message 不能为空");
         }
-        Comment comment = replyService.chat(commentId, request.getMessage().trim());
+        Comment comment = replyService.chat(commentId, request.getMessage().trim(),
+                request.getProfileId(), request.getProductContext());
         return AgentResponse.success("comment", comment);
     }
 
@@ -599,6 +712,10 @@ public class CommentController {
     public static class ChatRequest {
         @NotBlank(message = "message 不能为空")
         private String message;
+        /** 指定场景客服 Agent 配置；为空用默认场景（电商带货） */
+        private String profileId;
+        /** 临时补充事实（如具体商品信息） */
+        private String productContext;
     }
 
     @Data
@@ -621,6 +738,24 @@ public class CommentController {
     public static class UpdateTokenRequest {
         /** 新的笔记票据（xsec_token） */
         private String xsecToken;
+    }
+
+    @Data
+    public static class PreviewRequest {
+        private String profileId;
+        private String commentContent;
+        private String productContext;
+    }
+
+    @Data
+    public static class ReviewRequest {
+        private String reviewState;
+    }
+
+    @Data
+    public static class RecheckRequest {
+        private String profileId;
+        private String productContext;
     }
 
     @Data

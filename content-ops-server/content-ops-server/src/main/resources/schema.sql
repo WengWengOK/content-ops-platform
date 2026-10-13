@@ -392,6 +392,39 @@ CREATE INDEX IF NOT EXISTS idx_comment_media_comment
 CREATE INDEX IF NOT EXISTS idx_comment_media_owner
     ON contentops_comment_media (owner_user_id);
 
+-- 场景客服回复 Agent（可插拔）：电商带货 / 课程客服 / 通用客服各一条 profile，
+-- 商品事实、禁止承诺、转人工规则、语气与长度都在 profile 里配置，不改代码即可定制新场景。
+CREATE TABLE IF NOT EXISTS contentops_reply_agent_profile (
+    profile_id        VARCHAR(64)   PRIMARY KEY,
+    owner_id          VARCHAR(64),
+    name              VARCHAR(128)  NOT NULL,
+    scenario          VARCHAR(32)   NOT NULL,
+    description       VARCHAR(500),
+    tone              VARCHAR(255),
+    system_prompt     TEXT,
+    product_facts     VARCHAR(4000),
+    forbidden_claims  VARCHAR(2000),
+    escalate_keywords VARCHAR(1000),
+    reply_max_chars   INT           DEFAULT 120,
+    allow_links       BOOLEAN       DEFAULT FALSE,
+    enabled           BOOLEAN       DEFAULT TRUE,
+    is_default        BOOLEAN       DEFAULT FALSE,
+    created_at        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_reply_profile_owner
+    ON contentops_reply_agent_profile (owner_id, enabled, is_default DESC);
+
+-- 存量库迁移：评论补「回复草稿的来源 Agent / 自动标记 / 置信度 / 复核状态」（幂等）
+-- 设计原则：自动标记 + 人工复核，不做自动修正；高置信度进复核清单，低置信度抽样。
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS reply_profile_id VARCHAR(64);
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS reply_flags TEXT;
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS reply_confidence DOUBLE PRECISION;
+ALTER TABLE contentops_comment ADD COLUMN IF NOT EXISTS reply_review_state VARCHAR(16);
+CREATE INDEX IF NOT EXISTS idx_comment_review_state
+    ON contentops_comment (reply_review_state, collected_at DESC);
+
 -- 评论用户关系库：粉丝（connections 通知）/关注/好友（手工或外部关系源）/常客等标签
 CREATE TABLE IF NOT EXISTS contentops_comment_user (
     user_key       VARCHAR(160) PRIMARY KEY,

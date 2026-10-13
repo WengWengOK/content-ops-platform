@@ -35,6 +35,8 @@ public class CommentReplyService {
     private final CommentProperties properties;
     private final CredentialService credentialService;
     private final XhsClientFactory clientFactory;
+    private final ReplyAgentProfileService replyAgentProfileService;
+    private final ScenarioReplyAgent scenarioReplyAgent;
 
     private static final String CHAT_PROMPT = """
             你是小红书博主的评论区回复助手，用自然口语化、有小红书风格的中文回复用户。
@@ -53,6 +55,16 @@ public class CommentReplyService {
      * 多轮 AI 对话：追加用户消息 → 生成回复 → 写回 dialog_history（状态保持 DRAFT）。
      */
     public Comment chat(String commentId, String message) {
+        return chat(commentId, message, null, null);
+    }
+
+    /**
+     * 多轮对话 + 场景客服 Agent 起草。
+     *
+     * <p>草稿由 {@link ScenarioReplyAgent} 按场景配置生成，随后经校验器做「只标记不修正」的忠实度校验：
+     * 高置信度问题进复核清单（NEEDS_REVIEW），中低置信度标记为抽样复核（SAMPLED），不改写模型输出。
+     */
+    public Comment chat(String commentId, String message, String profileId, String productContext) {
         Comment comment = findAndCheckOwner(commentId);
         if (message == null || message.isBlank()) {
             throw new BusinessException(ErrorCode.MISSING_REQUIRED_INPUT, "消息不能为空");
@@ -61,19 +73,19 @@ public class CommentReplyService {
         List<Map<String, String>> history = loadHistory(comment.getDialogHistory());
         history.add(Map.of("role", "user", "content", message.trim()));
 
-        String reply;
+        ReplyAgentProfile profile = replyAgentProfileService.resolve(comment.getOwnerId(), profileId);
+        ScenarioReplyAgent.DraftResult draft;
         try {
-            String prompt = CHAT_PROMPT.formatted(
-                    safe(comment.getContent()), formatHistory(history), message.trim());
-            reply = chatModel.chat(prompt).trim();
-            if (reply.isBlank()) {
-                reply = fallbackReply(comment, message);
-            }
+            draft = scenarioReplyAgent.draft(profile, comment.getContent(), history, message.trim(), productContext);
         } catch (Exception e) {
-            log.warn("[Comment] AI 对话失败，降级回复: id={}, err={}", commentId, e.getMessage());
-            reply = fallbackReply(comment, message);
+            log.warn("[Comment] 场景 Agent 起草失败，降级模板: id={}, err={}", commentId, e.getMessage());
+            String reply = fallbackReply(comment, message);
+            ReplyComplianceChecker.CheckResult check =
+                    scenarioReplyAgent.recheck(reply, profile, comment.getContent(), productContext);
+            draft = new ScenarioReplyAgent.DraftResult(reply, profile.getProfileId(), profile.getScenario(),
+                    check.confidence(), check.flags(), check.reviewState(), "template");
         }
-        history.add(Map.of("role", "assistant", "content", reply));
+        history.add(Map.of("role", "assistant", "content", draft.reply()));
 
         String json;
         try {
@@ -82,10 +94,32 @@ public class CommentReplyService {
             json = "[]";
         }
         repository.updateDialog(commentId, json);
-        repository.updateReply(commentId, reply, "DRAFT");
+        repository.updateReply(commentId, draft.reply(), "DRAFT");
+        repository.updateReplyAudit(commentId, draft.profileId(), toJson(draft.flags()),
+                draft.confidence(), draft.reviewState());
 
         return repository.findById(commentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR, "评论不存在"));
+    }
+
+    /** 对已有回复（含人工修改后）重新做忠实度校验，只更新标记不修改内容。 */
+    public ReplyComplianceChecker.CheckResult recheckReply(String commentId, String profileId,
+                                                           String productContext) {
+        Comment comment = findAndCheckOwner(commentId);
+        ReplyAgentProfile profile = replyAgentProfileService.resolve(comment.getOwnerId(), profileId);
+        ReplyComplianceChecker.CheckResult check = scenarioReplyAgent.recheck(
+                safe(comment.getAiReply()), profile, comment.getContent(), productContext);
+        repository.updateReplyAudit(commentId, profile.getProfileId(), toJson(check.flags()),
+                check.confidence(), check.reviewState());
+        return check;
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            return "[]";
+        }
     }
 
     /**

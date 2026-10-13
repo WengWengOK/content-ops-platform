@@ -588,6 +588,40 @@ export interface CommentMedia {
   createdAt?: string
 }
 
+export interface ReplyFlagItem {
+  code: string
+  level: 'HIGH' | 'MEDIUM' | 'LOW' | string
+  message: string
+  confidence: number
+}
+
+export interface ReplyAgentProfile {
+  profileId: string
+  ownerId?: string
+  name: string
+  scenario: string
+  description?: string
+  tone?: string
+  systemPrompt?: string
+  productFacts?: string
+  forbiddenClaims?: string
+  escalateKeywords?: string
+  replyMaxChars?: number
+  allowLinks: boolean
+  enabled: boolean
+  defaultProfile: boolean
+}
+
+export interface ReplyDraftPreview {
+  profileId?: string
+  scenario?: string
+  reply: string
+  source?: string
+  confidence: number
+  reviewState?: string
+  flags: ReplyFlagItem[]
+}
+
 export interface PlatformComment {
   commentId: string
   platformCommentId?: string
@@ -608,6 +642,10 @@ export interface PlatformComment {
   authorUserId?: string
   mediaCount?: number
   media?: CommentMedia[]
+  replyProfileId?: string
+  replyFlags?: string
+  replyConfidence?: number
+  replyReviewState?: string
   sentiment?: string
   aiSummary?: string
   aiReply?: string
@@ -624,6 +662,10 @@ export interface CommentStatsItem {
   authorUserId?: string
   mediaCount?: number
   media?: CommentMedia[]
+  replyProfileId?: string
+  replyFlags?: string
+  replyConfidence?: number
+  replyReviewState?: string
   sentiment?: string
   cnt: number
 }

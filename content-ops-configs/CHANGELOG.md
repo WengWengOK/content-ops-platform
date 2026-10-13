@@ -22,7 +22,13 @@ All notable changes to this project will be documented in this file.
   `POST /platform-credentials/rotate` 批量重加密、解密失败显式报错（绝不把密文当令牌返回）
 - **运维与预警**：运维总览（轮换状态/账号健康/票据预警/最近任务）、票据 `token_state` +
   观测有效期（`min(配置阈值, 观测×0.8)` 提前预警）、一键更新票据、预警汇总推送飞书交互卡片（带直达按钮）
-- **前端模块化**：评论助手页拆为 7 个模块组件 + 分段控件（评论工作台/自动采集/账号凭据/意图与关系/运维总览），
+- **场景客服回复 Agent（可插拔 + 忠实度校验）**：`contentops_reply_agent_profile` 场景配置（内置电商带货默认 /
+  课程示例模板（停用）/ 通用兜底三个种子），场景差异（提示词、商品事实、禁止承诺、转人工词、语气、长度、外链）
+  全部配置化，新增场景不改代码；回复草稿经 `ReplyComplianceChecker` 做**只标记不修正**的忠实度校验
+  （禁止承诺 / 内置高危词 / 未核实价格·促销·时效 / 漏提示转人工 / 外链 / 超长），
+  高置信度进 `NEEDS_REVIEW` 复核清单、中低置信度 `SAMPLED` 抽样；`reply_flags`/`reply_confidence`/
+  `reply_review_state` 落库审计；支持 `recheck` 对人工改写后的草稿重新标记（文本原样保留）
+- **前端模块化**：评论助手页拆为 7 个模块组件 + 分段控件（评论工作台/自动采集/账号凭据/意图与关系/客服 Agent/运维总览），
   模块与 URL 同步支持深链
 
 ### Changed

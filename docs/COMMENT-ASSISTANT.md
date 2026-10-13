@@ -31,6 +31,8 @@ contentops_comment                评论（消息）主表
   relation                       FAN/FOLLOWING/FRIEND/REGULAR/SELF/STRANGER
   intent / intent_source / intent_score  意图 + 判定来源（corpus/llm/heuristic）+ 相似度
   sentiment / ai_summary / ai_reply / reply_status / dialog_history
+  reply_profile_id / reply_flags / reply_confidence / reply_review_state
+                                 场景回复草稿的忠实度审计（见第五节）
   media_count                    0=纯文本，>0=含图/视频（"只看带图"筛选）
 
 contentops_comment_media          评论附件（一条评论可多张）
@@ -48,7 +50,11 @@ contentops_comment_watch          自动采集监控项
 contentops_comment_job_run        每轮采集任务记录（触发方式/作品数/抓取/新增/分析/失败/明细）
 contentops_comment_user           评论者关系库（user_key=platform:userId，relation/来源/评论次数/备注）
 contentops_intent_corpus          意图语料库（intent/phrase/来源/启用/命中次数）
-contentops_platform_credential    平台账号凭据（见第五节）
+contentops_reply_agent_profile    场景客服回复 Agent 配置（可插拔，见第五节）
+  profile_id / owner_id（空=全局）/ name / scenario(ECOMMERCE|COURSE|GENERIC)
+  tone / system_prompt / product_facts / forbidden_claims / escalate_keywords
+  reply_max_chars / allow_links / enabled / is_default
+contentops_platform_credential    平台账号凭据（见第六节）
 ```
 
 ---
@@ -95,15 +101,28 @@ flowchart LR
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/comments/collect` | 采集评论（`workId`、可选 `xsecToken`/`credentialId`），返回 `source`（api/mock）与回退原因 |
-| GET | `/comments` | 评论列表：`platform`/`workId`/`intent`/`sentiment`/`relation`/`mediaOnly`/`limit`，一次带回附件明细 |
+| GET | `/comments` | 评论列表：`platform`/`workId`/`intent`/`sentiment`/`relation`/`mediaOnly`/`reviewState`/`limit`，一次带回附件明细 |
 | GET | `/comments/stats` | 意图/情感统计 |
 | GET | `/comments/relations` | 关系分布 + 评论者列表 |
 | PUT | `/comments/relations/{userKey}` | 设置关系标签（关注/好友等人工或外部源写入） |
 | POST | `/comments/relations/sync-followers` | 同步「新增关注」通知，维护粉丝(FAN)标签 |
 | POST | `/comments/analyze-all` · `/{id}/analyze` | 批量 / 单条 AI 分析（意图+情感+摘要+回复草稿） |
-| POST | `/{id}/reply/chat` | 多轮 AI 对话（生成回复草稿） |
+| POST | `/{id}/reply/chat` | 多轮 AI 对话（生成回复草稿）；可传 `profileId` 指定场景、`productContext` 临时补充事实 |
 | POST | `/{id}/approve` · `/{id}/send` | 审核通过 → 真实发送（返回 `sendMode=real|simulated`） |
 | PUT | `/{id}/reply` | 人工修改回复内容/状态 |
+
+### 场景客服回复 Agent（可插拔）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET/POST | `/comments/reply-agents` | 列出场景配置（含内置种子）/ 新增场景 |
+| PUT/DELETE | `/comments/reply-agents/{id}` | 修改 / 删除场景 |
+| POST | `/comments/reply-agents/{id}/activate` | 设为该租户默认场景 |
+| PUT | `/comments/reply-agents/{id}/enabled` | 启用/停用（课程模板默认停用） |
+| POST | `/comments/reply-agents/preview` | 试跑：返回草稿 + 标记 + 复核状态（不落库，用于定制调试） |
+| GET | `/comments/review-queue` | 复核清单（默认 `NEEDS_REVIEW`，可传 `reviewState`） |
+| PUT | `/comments/{id}/review` | 人工复核完成 → `REVIEWED`（可传 `reviewState` 覆盖） |
+| POST | `/comments/{id}/recheck` | 对已有/人工改写后的草稿重新标记（不改文本） |
 
 ### 自动采集监控
 
@@ -138,7 +157,68 @@ flowchart LR
 
 ---
 
-## 五、多账号凭据与密钥轮换
+## 五、场景客服回复 Agent（可插拔场景 + 忠实度校验）
+
+### 5.1 设计原则：自动标记 + 人工复核，不自动修正
+
+自动识别错误的准确率很难做到很高，而**误判成本不低**：把正确的标成错误会浪费人工复核时间，把错误的放过用户可能照着错步骤操作。因此本模块：
+
+1. 只产出**带置信度的标记**，交给人工复核；
+2. 高置信度（HIGH）自动进**复核清单**，中低置信度按抽样复核；
+3. **不修改模型输出**，避免「自动修正」引入不可追溯的新错误；
+4. 等样本积累够了，再考虑训练一个小分类器做自动判别。
+
+> 精度优先的实现细节：承诺词处于**否定/拒绝语境**（如「不能保证涨薪」）时降级为抽样，不算高危；「已提示转人工」的判定覆盖真实话术（转接 / 人工 / 专人 / 客服 / 售后…），避免把已合规的回复误判成漏提示。
+
+### 5.2 场景可插拔：一个 profile = 一个客服场景
+
+电商带货、课程顾问、通用客服……场景差异全部落在 `contentops_reply_agent_profile` 里（提示词、商品事实、禁止承诺、转人工规则、语气、长度、是否允许发链接），**新增场景不需要改代码**。
+
+内置种子（表为空时自动写入）：
+
+| profileId | 场景 | 默认 | 说明 |
+|-----------|------|------|------|
+| `reply-agent-ecommerce-default` | ECOMMERCE | ✅ 启用 | 电商带货客服：48h 发货 / 7 天无理由；禁止承诺「绝对正品 / 保证见效 / 全网最低价 / 假一赔十」；退款·退货·投诉·发票·差价·质量问题·律师·维权 → 转人工 |
+| `reply-agent-generic-default` | GENERIC | 启用 | 通用客服兜底 |
+| `reply-agent-course-template` | COURSE | ⛔ 停用 | 课程客服**示例模板**：禁止承诺「保证涨薪 / 保证过审 / 包就业 / 保过」，退费·合同 → 转人工。要卖课时启用并改事实即可 |
+
+配置解析链：显式 `profileId` → 该租户默认 → 全局默认 → 电商兜底。
+
+### 5.3 校验维度（只标记，不改写）
+
+| 标记 | 等级 | 触发条件 |
+|------|------|----------|
+| `FORBIDDEN_CLAIM` | HIGH（否定语境降为 LOW） | 命中场景配置的禁止承诺 |
+| `FORBIDDEN_CLAIM_BUILTIN` | HIGH（否定语境降为 LOW） | 命中内置高危词（百分百 / 全网最低 / 包治 / 治愈 / 稳赚…） |
+| `PRICE_UNVERIFIED` | MEDIUM | 回复谈价格/优惠，但事实里没有价格信息 |
+| `PROMO_UNVERIFIED` | MEDIUM | 回复承诺包邮/返现/赠品等，事实里未配置 |
+| `SHIPPING_UNVERIFIED` | MEDIUM | 回复给出发货/时效承诺，事实里未配置 |
+| `ESCALATION_MISSING` | HIGH | 评论命中转人工词，但回复没提示人工接手 |
+| `LINK_NOT_ALLOWED` | MEDIUM | 场景不允许发链接却出现外链 |
+| `TOO_LONG` | LOW | 回复长度超过场景上限 1.5 倍 |
+
+置信度与状态：`confidence = 无标记 ? 0.95 : 1 - 最高标记置信度`；`reviewState = 有 HIGH → NEEDS_REVIEW；有中低 → SAMPLED；无标记 → NONE`。
+
+### 5.4 复核状态机
+
+```
+NEEDS_REVIEW ──人工处理──> REVIEWED
+SAMPLED      ──人工处理──> REVIEWED
+NONE         —— 无需复核
+
+recheck：对人工改写后的草稿重新标记，草稿文本原样保留
+```
+
+### 5.5 定制一个新场景（例：卖课客服）
+
+1. `POST /comments/reply-agents` 建一条 profile（简单做法：复制 `reply-agent-course-template` 的字段后 PUT 改事实）；
+2. 填 `systemPrompt` / `productFacts` / `forbiddenClaims` / `escalateKeywords` / `replyMaxChars`；
+3. `POST /comments/reply-agents/preview` 试跑（不落库），确认草稿口吻与标记符合预期；
+4. `POST /comments/reply-agents/{id}/activate` 设为该租户默认，之后 `/reply/chat` 不传 `profileId` 也走它。
+
+---
+
+## 六、多账号凭据与密钥轮换
 
 - 一条凭据 = 某租户在某平台的一个账号：`preset`（对接方式）+ `baseUrl`（桥地址）+ `accessToken`（AES-GCM 加密落库）。
 - 令牌**出参一律掩码**（`****en-A`）；跨租户访问 403；`owner_id` 为空视为共享凭据。
@@ -149,7 +229,7 @@ flowchart LR
 
 ---
 
-## 六、定时任务与预警
+## 七、定时任务与预警
 
 - 调度：`contentops.comment.collect-ms`（默认 10 分钟）；每轮顺序为
   **① 通知增量（按账号并行）→ ② 粉丝标签同步 → ③ 按笔记监控采集**，最后按需推送票据预警。
@@ -162,7 +242,7 @@ flowchart LR
 
 ---
 
-## 七、前端模块（评论助手页）
+## 八、前端模块（评论助手页）
 
 顶部状态条（账号数 / 监控作品 / 票据待处理 / 账号异常 / 待轮换密钥 / 最近采集）+ 分段控件切换五个模块，
 模块与 URL 同步（`?tab=workspace|automation|accounts|quality|ops`），预警卡片按钮直达 `?tab=ops`：
@@ -173,11 +253,12 @@ flowchart LR
 | 自动采集 | 调度状态、数据源诊断、监控列表（含票据就地更新）、拉取评论通知 |
 | 账号凭据 | 账号增删改、测试连接、设为默认、启停 |
 | 意图与关系 | 语料库维护 / 匹配预览 / 命中率分布；关系分布与人工标记 |
+| 客服 Agent | 场景配置（新建·编辑事实·设为默认·启停）、试跑预览（草稿/来源/置信度/标记）、复核清单与「标记已复核」 |
 | 运维总览 | 轮换状态与一键轮换、账号健康、票据预警清单、立即推送预警 |
 
 ---
 
-## 八、配置参考
+## 九、配置参考
 
 ```yaml
 contentops:
@@ -228,7 +309,7 @@ contentops:
 
 ---
 
-## 九、已知限制
+## 十、已知限制
 
 | 限制 | 说明与建议 |
 |------|------------|
@@ -238,3 +319,4 @@ contentops:
 | 关注/好友标签 | 桥只提供「谁关注了我」（connections 通知 → FAN），不提供「我关注/互关」；FOLLOWING/FRIEND 需人工标记或外部关系源写入 |
 | 票据与令牌会过期 | xsec_token 会失效（已做提前预警 + 一键更新）；桥的 AUTH_TOKEN 变更后在「账号凭据」里更新即可 |
 | 通知是滚动窗口 | 通知列表只保留近期条目，长期未跑可能翻页丢失；建议保持采集间隔 ≤ 10 分钟，历史数据靠按笔记监控兜底 |
+| 回复校验仍是规则 + 高置信度标记 | 校验器不做自动修正，误判靠「否定语境降级 + 真实话术覆盖」压低，但仍会有漏标/误标；复核清单按 HIGH 优先，等样本够了再训小分类器 |
