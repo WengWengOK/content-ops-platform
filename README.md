@@ -15,7 +15,8 @@
 | 热点监控 | 7 平台真实热榜（60s + newsnow 多路降级）、关键词启停与命中记录、AI 相关性/真假/摘要分析、突发热点检测、时间范围筛选、趋势曲线与平台对比 |
 | 实时通知 | WebSocket 推送、邮件（SMTP 可配）、Grafana Alerting → 飞书/企业微信机器人、票据预警卡片（带直达按钮） |
 | 全网搜索 | 热榜内搜索 + Tavily 全网/新闻聚合（可配） |
-| RAG | 文档摄入、BM25+向量混合检索、重排、RAGAS 评测；评论意图语料库（本地 BGE 中文嵌入，无需外部 Key） |
+| RAG | 文档摄入、BM25+向量混合检索、重排、HyDE/Multi-query、RAGAS 评测；评论意图语料库（本地 BGE 中文嵌入，无需外部 Key） |
+| 知识库问答 + RAG 错误识别 | 检索充分性判断 + 接地生成（强制引用）+ 引用校验 + **答案-证据忠实度校验（只标记不修正）** + 用户隐式信号归因 + 离线聚类找盲区与回归集；高风险进人工复核清单，中低置信度抽样 |
 | Agent 平台 | Agent 注册表控制面、MCP Server（/mcp）、A2A 事件契约、事件 Outbox（Kafka 就绪）、崩溃恢复 |
 | 可观测 | OTel 分布式追踪（Jaeger）、LLM token/成本/延迟大盘（Prometheus + Grafana）、LLM trace 表（关联 traceId） |
 | 评测与治理 | LLM-as-Judge 流水线自动判分 + CI 门禁、JWT + RBAC（ADMIN/CREATOR/VIEWER）、操作审计、安全护栏、成本熔断与预算告警 |
@@ -96,6 +97,7 @@ go run cmd/login/main.go
 | 场景客服回复 Agent | `GET/POST /api/v1/comments/reply-agents`、`POST /comments/reply-agents/preview`（试跑不落库）、`GET /comments/review-queue`、`PUT /comments/{id}/review`、`POST /comments/{id}/recheck` |
 | 意图语料库 | `GET/POST /api/v1/comments/intent-corpus`、`POST /comments/intent-corpus/match`（阈值调优预览） |
 | 账号凭据 | `GET/POST /api/v1/platform-credentials`、`POST /platform-credentials/{id}/probe`、`POST /platform-credentials/rotate` |
+| 知识库问答 | `POST /api/v1/kb/qa/ask`、`GET /kb/qa/risk-log`、`/review-queue`、`PUT /kb/qa/{id}/review`、`POST /kb/qa/{id}/recheck`、`POST /kb/qa/offline/cluster` · `/offline/promote` |
 | 可观测 | `GET /api/v1/observability/llm/traces`、`/stats`、`/evals/runs`、`/audit` |
 | 告警机器人 | 飞书/企微 Webhook：`FEISHU_WEBHOOK` / `WECOM_WEBHOOK` 环境变量 |
 
@@ -123,6 +125,8 @@ go run cmd/login/main.go
 |------|------|
 | [docs/COMMENT-ASSISTANT.md](docs/COMMENT-ASSISTANT.md) | 评论助手设计与运维：数据模型、链路、接口、凭据与轮换、定时任务与预警、配置、已知限制 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 多 Agent 架构、服务化拆分蓝图与横切能力 |
+| [docs/RAG-ERROR-DETECTION.md](docs/RAG-ERROR-DETECTION.md) | RAG 四类错误 + 五层识别（检索侧/引用/忠实度/隐式信号/离线聚类）、阈值、接口与实测 |
+| [docs/PROJECT-STAR.md](docs/PROJECT-STAR.md) | STAR 法则项目描述 + 多智能体框架（CrewAI）定位分析 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 部署、环境变量、健康检查、CI 门禁 |
 | [docs/GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md) | 与大厂 AI 应用的差距分析（历史版本，最新评测见 docs/EVALUATION-*） |
 | [docs/PROJECT_REVIEW.md](docs/PROJECT_REVIEW.md) | 项目评审记录 |

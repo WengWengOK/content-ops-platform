@@ -69,6 +69,32 @@ contentops:
   # 前端基础地址：用于在飞书/企微预警消息里生成「操作直达」链接
   web:
     base-url: ${CONTENTOPS_WEB_BASE_URL:http://localhost:5173}
+  # 知识库问答 + RAG 错误识别（检索侧 / 引用校验 / 忠实度 / 隐式信号 / 离线聚类）
+  # 阈值均为「先保守后放宽」的默认值：宁可多进人工清单，也不要放过错误答案。
+  knowledge:
+    qa:
+      enabled: ${CONTENTOPS_KB_QA:true}
+      top-k: 5
+      relevant-score-threshold: 0.5     # 单条证据视为「相关」的重排分门槛
+      min-relevant-count: 1             # 少于该条数 → 召回不足信号
+      min-top-score: 0.35               # 最高分低于此值 → 向量路相似度偏低信号
+      max-rewrite-rounds: 2             # 改写两轮仍不充分 → 拒答 + 记高风险检索日志
+      refuse-on-insufficient: true
+      path-divergence-threshold: 0.34   # 关键词路 / 向量路 topK 重合度低于此值 → 双路分歧
+      max-evidence-chars: 1200
+      faithfulness:
+        enabled: true
+        support-threshold: 0.6            # 结论被证据覆盖的比例（长证据 + 短结论必须用覆盖率，不能用 Jaccard）
+        partial-threshold: 0.3
+        unsupported-ratio-threshold: 0.3  # 不支持占比超此值 → HIGH（进人工复核清单）
+        partial-ratio-threshold: 0.5
+        llm-judge-enabled: false          # 高风险样本再送强模型复核（成本更高，默认关）
+        llm-judge-max-claims: 5
+      implicit:
+        enabled: true
+        repeat-window-minutes: 30
+        repeat-similarity: 0.45
+        citation-dwell-ms: 2000
   orchestrator:
     engine: ${CONTENTOPS_ENGINE:legacy}
   # 模型路由（P2：创意类 gpt-4o/0.8，格式化类 gpt-4o-mini/0.3）——

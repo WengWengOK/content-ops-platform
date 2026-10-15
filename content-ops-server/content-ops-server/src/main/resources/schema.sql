@@ -456,3 +456,58 @@ ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS observed_ttl_days 
 -- 存量库迁移：票据预警「已通知状态 / 通知时间」，用于去重与重复提醒间隔（幂等）
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_notified_state VARCHAR(16);
 ALTER TABLE contentops_comment_watch ADD COLUMN IF NOT EXISTS token_notified_at TIMESTAMP;
+
+-- ════════════════════════════════════════════════════════════════
+-- 知识库问答 + RAG 错误识别（五层：检索侧 / 引用校验 / 忠实度 / 隐式信号 / 离线聚类）
+-- ════════════════════════════════════════════════════════════════
+
+-- 一次问答 = 一行，携带全部质量信号（检索充分性、引用校验、忠实度报告、风险与复核状态）
+CREATE TABLE IF NOT EXISTS contentops_kb_qa (
+    qa_id          VARCHAR(64)  PRIMARY KEY,
+    owner_id       VARCHAR(64),
+    question       TEXT         NOT NULL,
+    answer         TEXT,
+    refused        BOOLEAN      DEFAULT FALSE,
+    source         VARCHAR(16),
+    citations      TEXT,
+    citation_check TEXT,
+    retrieval      TEXT,
+    faithfulness   TEXT,
+    risk_level     VARCHAR(8),
+    review_state   VARCHAR(16)  DEFAULT 'NONE',
+    suspected_error  BOOLEAN    DEFAULT FALSE,
+    suspected_reason VARCHAR(1000),
+    trace_id       VARCHAR(64),
+    latency_ms     BIGINT,
+    prompt_tokens  INT,
+    completion_tokens INT,
+    created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_qa_owner_time
+    ON contentops_kb_qa (owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_qa_review_state
+    ON contentops_kb_qa (review_state, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_qa_risk
+    ON contentops_kb_qa (risk_level, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_qa_refused
+    ON contentops_kb_qa (refused, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_qa_suspected
+    ON contentops_kb_qa (suspected_error, created_at DESC);
+
+-- 用户隐式/显式反馈信号（点踩、追问质疑、重复提问、引用秒退、转人工确认）
+CREATE TABLE IF NOT EXISTS contentops_kb_qa_signal (
+    signal_id      VARCHAR(64)  PRIMARY KEY,
+    qa_id          VARCHAR(64)  NOT NULL,
+    owner_id       VARCHAR(64),
+    signal_type    VARCHAR(32)  NOT NULL,
+    confidence     DOUBLE PRECISION,
+    detail         VARCHAR(1000),
+    related_qa_id  VARCHAR(64),
+    created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_qa_signal_qa
+    ON contentops_kb_qa_signal (qa_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_qa_signal_owner_type
+    ON contentops_kb_qa_signal (owner_id, signal_type, created_at DESC);
