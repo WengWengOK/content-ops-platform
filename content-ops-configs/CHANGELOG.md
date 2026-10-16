@@ -36,6 +36,13 @@ All notable changes to this project will be documented in this file.
   离线聚类找知识库盲区、错误样本一键并入回归评测集（stage=`kb-qa`）。全程**只标记不修正**，
   高风险进人工复核清单、中低置信度抽样。实测修掉两个真实误判：长证据+短结论用 Jaccard 会把逐字复述的
   正确答案判成编造（改用证据覆盖率），模型主动拒答被误判为引用不实（改为盲区信号）
+- **CrewAI 研究 crew 接入（外部 Agent）**：新增 `content-ops-crewai/` 独立 Python 服务（研究员→策划→事实核查
+  三角色，`crewai` 与 `lite` 双执行器同构，容器镜像基于 python:3.12-slim）+ 平台侧 `ExternalAgentController`
+  （`/api/v1/external-agents/status|research/run`）。crew 不直连数据库，只用服务账号 JWT 调平台工具
+  （热榜 / 按主题搜热榜 / 全网搜索 / 知识库检索），产出由平台回写知识库（type=research_report）进检索与评测面，
+  并记审计与 traceId。实测修掉两个真实问题：推理型模型把 token 花在 reasoning 上导致正文为空
+  （放宽 max_tokens + content 空时回落 reasoning_content + 紧凑提示重试一次）、全局热榜对垂类主题无效
+  （新增按主题搜热榜工具）
 - **前端模块化**：评论助手页拆为 7 个模块组件 + 分段控件（评论工作台/自动采集/账号凭据/意图与关系/客服 Agent/运维总览），
   模块与 URL 同步支持深链
 

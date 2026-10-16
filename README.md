@@ -17,6 +17,7 @@
 | 全网搜索 | 热榜内搜索 + Tavily 全网/新闻聚合（可配） |
 | RAG | 文档摄入、BM25+向量混合检索、重排、HyDE/Multi-query、RAGAS 评测；评论意图语料库（本地 BGE 中文嵌入，无需外部 Key） |
 | 知识库问答 + RAG 错误识别 | 检索充分性判断 + 接地生成（强制引用）+ 引用校验 + **答案-证据忠实度校验（只标记不修正）** + 用户隐式信号归因 + 离线聚类找盲区与回归集；高风险进人工复核清单，中低置信度抽样 |
+| 外部 Agent（CrewAI） | 独立 Python 研究 crew（研究员→策划→事实核查三角色），通过平台工具做选题研究；平台侧统一发起、产出回写知识库进检索与评测面；容器化运行，另带 `lite` 执行器便于对比与降级 |
 | Agent 平台 | Agent 注册表控制面、MCP Server（/mcp）、A2A 事件契约、事件 Outbox（Kafka 就绪）、崩溃恢复 |
 | 可观测 | OTel 分布式追踪（Jaeger）、LLM token/成本/延迟大盘（Prometheus + Grafana）、LLM trace 表（关联 traceId） |
 | 评测与治理 | LLM-as-Judge 流水线自动判分 + CI 门禁、JWT + RBAC（ADMIN/CREATOR/VIEWER）、操作审计、安全护栏、成本熔断与预算告警 |
@@ -98,6 +99,7 @@ go run cmd/login/main.go
 | 意图语料库 | `GET/POST /api/v1/comments/intent-corpus`、`POST /comments/intent-corpus/match`（阈值调优预览） |
 | 账号凭据 | `GET/POST /api/v1/platform-credentials`、`POST /platform-credentials/{id}/probe`、`POST /platform-credentials/rotate` |
 | 知识库问答 | `POST /api/v1/kb/qa/ask`、`GET /kb/qa/risk-log`、`/review-queue`、`PUT /kb/qa/{id}/review`、`POST /kb/qa/{id}/recheck`、`POST /kb/qa/offline/cluster` · `/offline/promote` |
+| 外部 Agent | `POST /api/v1/external-agents/research/run`（CrewAI 选题研究 + 回写知识库）、`GET /external-agents/status`（crew 探活） |
 | 可观测 | `GET /api/v1/observability/llm/traces`、`/stats`、`/evals/runs`、`/audit` |
 | 告警机器人 | 飞书/企微 Webhook：`FEISHU_WEBHOOK` / `WECOM_WEBHOOK` 环境变量 |
 
@@ -127,6 +129,7 @@ go run cmd/login/main.go
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 多 Agent 架构、服务化拆分蓝图与横切能力 |
 | [docs/RAG-ERROR-DETECTION.md](docs/RAG-ERROR-DETECTION.md) | RAG 四类错误 + 五层识别（检索侧/引用/忠实度/隐式信号/离线聚类）、阈值、接口与实测 |
 | [docs/PROJECT-STAR.md](docs/PROJECT-STAR.md) | STAR 法则项目描述 + 多智能体框架（CrewAI）定位分析 |
+| [docs/CREWAI-INTEGRATION.md](docs/CREWAI-INTEGRATION.md) | CrewAI 研究 crew 接入：架构、运行方式、接口、端到端实测与踩坑记录 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 部署、环境变量、健康检查、CI 门禁 |
 | [docs/GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md) | 与大厂 AI 应用的差距分析（历史版本，最新评测见 docs/EVALUATION-*） |
 | [docs/PROJECT_REVIEW.md](docs/PROJECT_REVIEW.md) | 项目评审记录 |

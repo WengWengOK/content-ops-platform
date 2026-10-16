@@ -95,6 +95,16 @@ contentops:
         repeat-window-minutes: 30
         repeat-similarity: 0.45
         citation-dwell-ms: 2000
+  # 外部 Agent（CrewAI 研究 crew）：独立 Python 服务，通过 HTTP 用平台工具做研究，
+  # 平台侧统一发起与回写（产出进知识库 → 可被 RAG 检索、可进评测集）。默认关闭，先起服务再打开。
+  external-agents:
+    enabled: ${CONTENTOPS_EXTERNAL_AGENTS:true}
+    crewai:
+      enabled: ${CONTENTOPS_CREWAI_ENABLED:false}
+      base-url: ${CONTENTOPS_CREWAI_BASE_URL:http://localhost:8000}
+      timeout-ms: ${CONTENTOPS_CREWAI_TIMEOUT_MS:240000}
+      default-niche: ${CONTENTOPS_CREWAI_NICHE:}
+      write-back-to-kb: ${CONTENTOPS_CREWAI_WRITEBACK:true}
   orchestrator:
     engine: ${CONTENTOPS_ENGINE:legacy}
   # 模型路由（P2：创意类 gpt-4o/0.8，格式化类 gpt-4o-mini/0.3）——
