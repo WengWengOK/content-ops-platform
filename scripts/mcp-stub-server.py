@@ -19,7 +19,12 @@ TOOLS = [
     {"name": "publish_note", "description": "发布图文笔记（桩）",
      "inputSchema": {"type": "object", "properties": {
          "title": {"type": "string"}, "content": {"type": "string"},
-         "images": {"type": "array", "items": {"type": "string"}}}}},
+         "images": {"type": "array", "items": {"type": "string"}},
+         "products": {"type": "array", "items": {"type": "string"}}}}},
+    {"name": "publish_product", "description": "商品上架（桩）",
+     "inputSchema": {"type": "object", "properties": {
+         "title": {"type": "string"}, "price": {"type": "string"},
+         "stock": {"type": "integer"}, "images": {"type": "array"}}}},
     # ── 影刀 RPA 官方 MCP Server 的同名工具（桩实现，用于验证 RPA 通道与异步轮询）──
     {"name": "queryApplist", "description": "查询影刀应用列表（桩）",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -53,8 +58,13 @@ def handle(request):
         if name == "check_login":
             text = "已登录：demo 账号（桩）"
         elif name == "publish_note":
-            text = ("桩服务已接收发布请求\n标题：%s\n正文长度：%d\n图片：%s\n笔记ID：stub-note-0001"
-                    % (args.get("title", ""), len(str(args.get("content", ""))), args.get("images", [])))
+            text = ("桩服务已接收发布请求\n标题：%s\n正文长度：%d\n图片：%s\n挂车商品：%s\n笔记ID：stub-note-0001"
+                    % (args.get("title", ""), len(str(args.get("content", ""))),
+                       args.get("images", []), args.get("products", [])))
+        elif name == "publish_product":
+            text = ("商品已上架（桩）\n标题：%s\n价格：%s\n库存：%s\n图片数：%d\n商品ID：stub-product-0001"
+                    % (args.get("title", ""), args.get("price", ""), args.get("stock", ""),
+                       len(args.get("images") or [])))
         elif name == "queryApplist":
             text = json.dumps({"apps": [
                 {"appId": "app-demo-001", "name": "小红书图文发布（桩）"},

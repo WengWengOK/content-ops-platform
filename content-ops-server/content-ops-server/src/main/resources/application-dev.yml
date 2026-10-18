@@ -40,6 +40,7 @@ contentops:
           work-dir: ${CONTENTOPS_REPO_ROOT:.}
           timeout-ms: 60000
           publish-tool: publish_note
+          product-tool: publish_product
           param-names:
             content: content
           note: 开发用桩服务，仅验证链路

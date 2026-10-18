@@ -47,7 +47,12 @@ public class PlatformPublishService {
 
     /** 规范化字段 → 值 */
     public record PublishContent(String title, String content, List<String> images, String coverUrl,
-                                 String videoPath, List<String> tags) {
+                                 String videoPath, List<String> tags, List<String> products) {
+    }
+
+    /** 商品上架内容（小红书千帆 / 影刀应用入参对齐这个结构） */
+    public record ProductContent(String title, String price, Integer stock, String description,
+                                 List<String> images, String sku, String category) {
     }
 
     /** 发布结果 */
@@ -134,6 +139,139 @@ public class PlatformPublishService {
                 System.currentTimeMillis() - started, last == null ? null : last.raw());
         audit(key, outcome);
         return outcome;
+    }
+
+    /**
+     * 商品上架（小红书千帆等）。
+     *
+     * <p>小红书没有开源的商品上架 MCP：优先走配置的 RPA 通道（影刀操作千帆商家后台），
+     * 或任何提供 {@code product-tool} 的 MCP。参数与发布共用 {@code param-names}。
+     */
+    public PublishOutcome publishProduct(String platform, ProductContent product, boolean dryRun) {
+        long started = System.currentTimeMillis();
+        String key = platform == null ? "" : platform.trim().toLowerCase();
+        List<String> channels = resolveChannels(key);
+        if (channels.isEmpty()) {
+            return new PublishOutcome(false, "simulated", null,
+                    "平台 " + key + " 未配置发布通道，未真实上架商品", started, null);
+        }
+        String invalid = validateProduct(product);
+        if (invalid != null) {
+            return new PublishOutcome(false, "invalid", null, invalid, started, null);
+        }
+        if (dryRun) {
+            String channel = channels.get(0);
+            String tool = productTool(key, channel);
+            return new PublishOutcome(false, "mcp-dry-run", tool,
+                    "演练模式未真实上架，将使用的参数：" + buildProductArgs(key, channel, product),
+                    System.currentTimeMillis() - started, null);
+        }
+        List<String> failures = new ArrayList<>();
+        boolean allowFallback = "auto".equalsIgnoreCase(configChannel(key));
+        for (String channel : channels) {
+            Optional<McpClient> client = clientFactory.clientFor(key, channel);
+            if (client.isEmpty()) {
+                failures.add(channel + "：未启用");
+                continue;
+            }
+            String tool = null;
+            try {
+                tool = productTool(key, channel);
+                McpClient.McpCallResult result = client.get().callTool(tool, buildProductArgs(key, channel, product));
+                if (result.ok()) {
+                    PublishOutcome outcome;
+                    if ("rpa".equals(channel) && hasStatusTool(key)) {
+                        outcome = pollJob(key, tool, client.get(), result, started);
+                    } else {
+                        outcome = new PublishOutcome(true, channel, tool, summarise(result.text()),
+                                System.currentTimeMillis() - started, result.raw());
+                    }
+                    if (outcome.ok()) {
+                        audit(key, outcome);
+                        return outcome;
+                    }
+                    failures.add(channel + "：" + outcome.detail());
+                    if (!allowFallback) {
+                        audit(key, outcome);
+                        return outcome;
+                    }
+                } else {
+                    failures.add(channel + "：工具返回错误：" + summarise(result.text()));
+                }
+            } catch (Exception e) {
+                log.warn("[Publish] 平台 {} 的 {} 通道商品上架失败：{}", key, channel, e.getMessage());
+                failures.add(channel + "：" + e.getMessage());
+                if (!allowFallback) {
+                    PublishOutcome outcome = new PublishOutcome(false, channel, tool,
+                            "商品上架失败：" + e.getMessage(), System.currentTimeMillis() - started, null);
+                    audit(key, outcome);
+                    return outcome;
+                }
+            }
+        }
+        PublishOutcome outcome = new PublishOutcome(false, channels.get(channels.size() - 1), null,
+                "所有通道商品上架都失败：" + String.join("；", failures),
+                System.currentTimeMillis() - started, null);
+        audit(key, outcome);
+        return outcome;
+    }
+
+    private boolean hasStatusTool(String platform) {
+        PublishMcpProperties.Rpa rpa = rpaConfig(platform);
+        return rpa.getStatusTool() != null && !rpa.getStatusTool().isBlank();
+    }
+
+    /** 商品上架工具：渠道各自配置；没配就明确报错（不允许猜）。 */
+    private String productTool(String platform, String channel) {
+        PublishMcpProperties.PlatformMcp cfg = properties.getPlatforms().get(platform);
+        String tool = "rpa".equals(channel) ? rpaConfig(platform).getProductTool()
+                : (cfg == null ? null : cfg.getProductTool());
+        if (tool == null || tool.isBlank()) {
+            throw new IllegalStateException("平台 " + platform + " 的 " + channel
+                    + " 通道未配置 product-tool（商品上架工具）");
+        }
+        return tool.trim();
+    }
+
+    private Map<String, Object> buildProductArgs(String platform, String channel, ProductContent product) {
+        PublishMcpProperties.PlatformMcp cfg = properties.getPlatforms().get(platform);
+        PublishMcpProperties.Rpa rpa = "rpa".equals(channel) ? rpaConfig(platform) : null;
+        Map<String, String> names = rpa != null ? rpa.getParamNames() : cfg.getParamNames();
+        Map<String, Object> args = new LinkedHashMap<>();
+        putIfPresent(args, names.getOrDefault("title", "title"), product.title());
+        putIfPresent(args, names.getOrDefault("price", "price"), product.price());
+        putIfPresent(args, names.getOrDefault("stock", "stock"), product.stock());
+        putIfPresent(args, names.getOrDefault("description", "description"), product.description());
+        putIfPresent(args, names.getOrDefault("images", "images"), product.images());
+        putIfPresent(args, names.getOrDefault("sku", "sku"), product.sku());
+        putIfPresent(args, names.getOrDefault("category", "category"), product.category());
+        Map<String, String> extras = rpa != null ? rpa.getExtraParams() : cfg.getExtraParams();
+        if (extras != null) {
+            extras.forEach((k, v) -> putIfPresent(args, names.getOrDefault(k, k), v));
+        }
+        return args;
+    }
+
+    private String validateProduct(ProductContent product) {
+        if (product == null || product.title() == null || product.title().isBlank()) {
+            return "商品标题不能为空";
+        }
+        if (product.images() == null || product.images().isEmpty()) {
+            return "商品图片不能为空（至少一张主图）";
+        }
+        if (product.price() != null && !product.price().isBlank()) {
+            try {
+                if (new java.math.BigDecimal(product.price()).signum() < 0) {
+                    return "商品价格不能为负：" + product.price();
+                }
+            } catch (NumberFormatException e) {
+                return "商品价格格式不正确：" + product.price();
+            }
+        }
+        if (product.stock() != null && product.stock() < 0) {
+            return "商品库存不能为负：" + product.stock();
+        }
+        return null;
     }
 
     /** 单通道执行（RPA 通道在异步作业时会轮询状态）。 */
@@ -449,6 +587,7 @@ public class PlatformPublishService {
         putIfPresent(args, names.getOrDefault("cover", "cover"), content.coverUrl());
         putIfPresent(args, names.getOrDefault("video", "video"), content.videoPath());
         putIfPresent(args, names.getOrDefault("tags", "tags"), content.tags());
+        putIfPresent(args, names.getOrDefault("products", "products"), content.products());
         if (cfg != null) {
             cfg.getExtraParams().forEach((k, v) -> putIfPresent(args, names.getOrDefault(k, k), v));
         }
@@ -469,6 +608,7 @@ public class PlatformPublishService {
         putIfPresent(args, names.getOrDefault("cover", "cover"), content.coverUrl());
         putIfPresent(args, names.getOrDefault("video", "video"), content.videoPath());
         putIfPresent(args, names.getOrDefault("tags", "tags"), content.tags());
+        putIfPresent(args, names.getOrDefault("products", "products"), content.products());
         cfg.getExtraParams().forEach((k, v) -> putIfPresent(args, names.getOrDefault(k, k), v));
         return args;
     }

@@ -52,9 +52,28 @@ public class PlatformPublishController {
                                                       @RequestBody PublishRequest request) {
         PlatformPublishService.PublishContent content = new PlatformPublishService.PublishContent(
                 request.getTitle(), request.getContent(), request.getImages(), request.getCoverUrl(),
-                request.getVideoPath(), request.getTags());
+                request.getVideoPath(), request.getTags(), request.getProducts());
         PlatformPublishService.PublishOutcome outcome =
                 publishService.publish(platform, content, request.isDryRun());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("platform", platform);
+        data.put("ok", outcome.ok());
+        data.put("channel", outcome.channel());
+        data.put("tool", outcome.tool());
+        data.put("detail", outcome.detail());
+        data.put("elapsedMs", outcome.elapsedMs());
+        return AgentResponse.success("publish", data);
+    }
+
+    @PostMapping("/{platform}/products")
+    @Operation(summary = "商品上架（小红书千帆走影刀 RPA 或支持 product-tool 的 MCP）")
+    public AgentResponse<Map<String, Object>> publishProduct(@PathVariable String platform,
+                                                             @RequestBody ProductRequest request) {
+        PlatformPublishService.ProductContent product = new PlatformPublishService.ProductContent(
+                request.getTitle(), request.getPrice(), request.getStock(), request.getDescription(),
+                request.getImages(), request.getSku(), request.getCategory());
+        PlatformPublishService.PublishOutcome outcome =
+                publishService.publishProduct(platform, product, request.isDryRun());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("platform", platform);
         data.put("ok", outcome.ok());
@@ -111,6 +130,21 @@ public class PlatformPublishController {
         private String coverUrl;
         private String videoPath;
         private List<String> tags;
+        /** 挂车商品关键词或商品 ID（小红书 xiaohongshu-mcp 的 publish_content.products） */
+        private List<String> products;
+        private boolean dryRun;
+    }
+
+    @Data
+    public static class ProductRequest {
+        private String title;
+        /** 价格，字符串避免浮点误差（如 "59.90"） */
+        private String price;
+        private Integer stock;
+        private String description;
+        private List<String> images;
+        private String sku;
+        private String category;
         private boolean dryRun;
     }
 }

@@ -57,7 +57,7 @@ class PlatformPublishServiceTest {
     private PlatformPublishService.PublishContent content() {
         return new PlatformPublishService.PublishContent(
                 "AI 提效实测", "正文内容", List.of("https://cdn/1.jpg"),
-                "https://cdn/cover.jpg", "C:/works/demo.mp4", List.of("AI", "提效"));
+                "https://cdn/cover.jpg", "C:/works/demo.mp4", List.of("AI", "提效"), List.of());
     }
 
     @Test
@@ -327,5 +327,93 @@ class PlatformPublishServiceTest {
 
         assertThat(outcome.ok()).isFalse();
         assertThat(outcome.detail()).contains("未从返回中解析到作业ID");
+    }
+
+    // ─────────────── 挂车与商品上架 ───────────────
+
+    @Test
+    @DisplayName("笔记发布带 products：挂车商品进入工具参数")
+    void noteCarriesProducts() {
+        properties.getPlatforms().put("xiaohongshu", platform("publish_content"));
+        when(factory.clientFor("xiaohongshu", "mcp")).thenReturn(Optional.of(client));
+        when(client.callTool(eq("publish_content"), any()))
+                .thenReturn(new McpClient.McpCallResult(true, "已发布", null));
+        PlatformPublishService.PublishContent withProducts = new PlatformPublishService.PublishContent(
+                "标题", "正文", List.of("https://cdn/1.jpg"), null, null, null,
+                List.of("保湿面膜", "sku-123"));
+
+        PlatformPublishService.PublishOutcome outcome = service.publish("xiaohongshu", withProducts, false);
+
+        assertThat(outcome.ok()).isTrue();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> argsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(client).callTool(eq("publish_content"), argsCaptor.capture());
+        @SuppressWarnings("unchecked")
+        List<String> products = (List<String>) argsCaptor.getValue().get("products");
+        assertThat(products).containsExactly("保湿面膜", "sku-123");
+    }
+
+    private PlatformPublishService.ProductContent product() {
+        return new PlatformPublishService.ProductContent(
+                "保湿面膜 10 片装", "59.90", 100, "补水保湿", List.of("https://cdn/p1.jpg"),
+                "SKU-001", "美妆护肤");
+    }
+
+    @Test
+    @DisplayName("商品上架校验：标题/图片/价格/库存")
+    void validatesProduct() {
+        properties.getPlatforms().put("stub", platform("publish_note"));
+        properties.getPlatforms().get("stub").setProductTool("publish_product");
+
+        assertThat(service.publishProduct("stub", new PlatformPublishService.ProductContent(
+                " ", "1", 1, "", List.of("x"), null, null), false).detail())
+                .contains("商品标题不能为空");
+        assertThat(service.publishProduct("stub", new PlatformPublishService.ProductContent(
+                "标题", "1", 1, "", List.of(), null, null), false).detail())
+                .contains("商品图片不能为空");
+        assertThat(service.publishProduct("stub", new PlatformPublishService.ProductContent(
+                "标题", "abc", 1, "", List.of("x"), null, null), false).detail())
+                .contains("商品价格格式不正确");
+        assertThat(service.publishProduct("stub", new PlatformPublishService.ProductContent(
+                "标题", "1", -1, "", List.of("x"), null, null), false).detail())
+                .contains("商品库存不能为负");
+    }
+
+    @Test
+    @DisplayName("商品上架：走配置的 product-tool，参数含价格/库存/图片")
+    void publishesProductThroughMcp() {
+        properties.getPlatforms().put("stub", platform("publish_note"));
+        properties.getPlatforms().get("stub").setProductTool("publish_product");
+        when(factory.clientFor("stub", "mcp")).thenReturn(Optional.of(client));
+        when(client.callTool(eq("publish_product"), any()))
+                .thenReturn(new McpClient.McpCallResult(true, "商品已上架，ID=stub-product-0001", null));
+
+        PlatformPublishService.PublishOutcome outcome = service.publishProduct("stub", product(), false);
+
+        assertThat(outcome.ok()).isTrue();
+        assertThat(outcome.channel()).isEqualTo("mcp");
+        assertThat(outcome.tool()).isEqualTo("publish_product");
+        assertThat(outcome.detail()).contains("stub-product-0001");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> argsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(client).callTool(eq("publish_product"), argsCaptor.capture());
+        assertThat(argsCaptor.getValue())
+                .containsEntry("title", "保湿面膜 10 片装")
+                .containsEntry("price", "59.90")
+                .containsEntry("stock", 100);
+    }
+
+    @Test
+    @DisplayName("商品上架演练：只回显参数，不调工具")
+    void productDryRun() {
+        properties.getPlatforms().put("stub", platform("publish_note"));
+        properties.getPlatforms().get("stub").setProductTool("publish_product");
+        when(factory.clientFor("stub", "mcp")).thenReturn(Optional.of(client));
+
+        PlatformPublishService.PublishOutcome outcome = service.publishProduct("stub", product(), true);
+
+        assertThat(outcome.channel()).isEqualTo("mcp-dry-run");
+        assertThat(outcome.detail()).contains("SKU-001").contains("59.90");
+        verify(client, never()).callTool(anyString(), any());
     }
 }

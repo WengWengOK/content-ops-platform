@@ -20,6 +20,7 @@
 | 外部 Agent（CrewAI） | 独立 Python 研究 crew（研究员→策划→事实核查三角色），通过平台工具做选题研究；平台侧统一发起、产出回写知识库进检索与评测面；容器化运行，另带 `lite` 执行器便于对比与降级 |
 | 多平台发布（MCP） | 各平台发布接社区现成 MCP server（抖音 CDP 自动化 / 小红书 HTTP+MCP / 公众号文颜），自研 MCP 客户端支持 stdio 与 Streamable HTTP 双传输；作品字段按配置映射到工具参数；未配置或调用失败**明确返回未上传**，不伪造成功 |
 | 发布通道回落（影刀 RPA） | 平台可配 `channel: auto\|mcp\|rpa`：原生 MCP 失败自动回落影刀 RPA（官方 MCP Server，真实 UI 操作）；开放 API 模式的异步作业自动轮询 `queryJob` 到成功/失败/超时 |
+| 小红书运营闭环 | **商品上架 → 笔记发布并挂车**一条龙：上架失败不发布笔记；上架成功后自动把商品加进 `products` 挂车；笔记走 xiaohongshu-mcp，商品走影刀 RPA/千帆 |
 | Agent 平台 | Agent 注册表控制面、MCP Server（/mcp）、A2A 事件契约、事件 Outbox（Kafka 就绪）、崩溃恢复 |
 | 可观测 | OTel 分布式追踪（Jaeger）、LLM token/成本/延迟大盘（Prometheus + Grafana）、LLM trace 表（关联 traceId） |
 | 评测与治理 | LLM-as-Judge 流水线自动判分 + CI 门禁、JWT + RBAC（ADMIN/CREATOR/VIEWER）、操作审计、安全护栏、成本熔断与预算告警 |
@@ -104,6 +105,7 @@ go run cmd/login/main.go
 | 外部 Agent | `POST /api/v1/external-agents/research/run`（CrewAI 选题研究 + 回写知识库）、`GET /external-agents/status`（crew 探活） |
 | 平台发布 | `GET /api/v1/publish/platforms/status?probe=`（各平台 MCP 配置与 tools/list 探活）、`POST /publish/platforms/{platform}/publish`（含 dryRun）、`POST /publish/platforms/{platform}/tools/{tool}/call` |
 | 发布通道工具 | `POST /api/v1/publish/platforms/{platform}/channels/{channel}/tools/{tool}/call`（如 `rpa` 通道的 `queryApplist` / `queryRobotParam`） |
+| 小红书运营 | `POST /api/v1/publish/xiaohongshu/operations/run`（上架→发布并挂车）、`POST /publish/platforms/{platform}/products`（单独上架） |
 | 可观测 | `GET /api/v1/observability/llm/traces`、`/stats`、`/evals/runs`、`/audit` |
 | 告警机器人 | 飞书/企微 Webhook：`FEISHU_WEBHOOK` / `WECOM_WEBHOOK` 环境变量 |
 

@@ -66,6 +66,9 @@ public class PublishMcpProperties {
         /** 发布工具名；留空则按名称启发式从 tools/list 里挑（publish/upload/post/create） */
         private String publishTool;
 
+        /** 商品上架工具名（该平台的 MCP 若支持商品创建/上架则填，如 publish_product） */
+        private String productTool;
+
         /** 参数名映射：我们的规范字段 → 该 MCP 工具的参数名 */
         private Map<String, String> paramNames = new LinkedHashMap<>();
 
@@ -114,6 +117,9 @@ public class PublishMcpProperties {
 
         /** 发布工具：local 用 runApp；openApi 用 startJob（异步） */
         private String publishTool = "runApp";
+
+        /** 商品上架工具：影刀里通常也是 runApp（用另一个 appId / 参数区分），按应用实际工具名填 */
+        private String productTool = "runApp";
 
         /** 异步作业状态查询工具（openApi 的 startJob 配套 queryJob；local 留空） */
         private String statusTool;

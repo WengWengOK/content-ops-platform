@@ -57,6 +57,11 @@ All notable changes to this project will be documented in this file.
   平台级 `channel: auto|mcp|rpa`：auto 原生 MCP 失败自动回落 RPA，显式通道失败不回落；
   新增按通道调工具接口（`/publish/platforms/{platform}/channels/{channel}/tools/{tool}/call`）。
   实测：影刀通道探活返回 5 个工具、`queryApplist` 可取应用、异步发布 `startJob→queryJob` 747ms 到 SUCCESS
+- **小红书运营闭环（商品上架 → 笔记发布挂车）**：新增 `POST /api/v1/publish/xiaohongshu/operations/run`
+  与 `/publish/platforms/{platform}/products`。笔记发布走 xiaohongshu-mcp 并支持 `products` 挂车参数
+  （该 MCP 只挂已上架商品，所以顺序必须是先上架）；商品上架走影刀 RPA（千帆商家后台）或任何提供
+  `product-tool` 的 MCP。上架失败自动停止发布，上架成功则把商品标题并入挂车列表。
+  实测桩通道：上架 265ms 返回商品ID，笔记发布 38ms 且挂车 `['店铺爆款','保湿面膜 10 片装']`
 - **前端模块化**：评论助手页拆为 7 个模块组件 + 分段控件（评论工作台/自动采集/账号凭据/意图与关系/客服 Agent/运维总览），
   模块与 URL 同步支持深链
 

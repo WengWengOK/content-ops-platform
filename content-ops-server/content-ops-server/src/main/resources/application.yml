@@ -165,7 +165,29 @@ contentops:
             title: title
             content: content
             images: images
+            products: products        # 挂车：商品关键词/ID 列表（账号需已开通商品功能）
           note: 需要先在 MCP server 侧扫码登录小红书
+          # 商品上架：xiaohongshu-mcp 只负责「挂已有商品」，上架走影刀操作千帆商家后台
+          rpa:
+            enabled: false
+            command: ["npx", "-y", "yingdao-mcp-server"]
+            env:
+              RPA_MODEL: local
+              SHADOWBOT_PATH: ${SHADOWBOT_PATH:}
+              USER_FOLDER: ${SHADOWBOT_USER_FOLDER:}
+            publish-tool: runApp
+            product-tool: runApp
+            param-names:
+              title: title
+              price: price
+              stock: stock
+              description: description
+              images: images
+              sku: sku
+              category: category
+            extra-params:
+              appId: ${YINGDAO_XHS_PRODUCT_APP_ID:}
+            note: 小红书商品上架请建一个「千帆商品上架」影刀应用，appId 填这里
         # 公众号：文颜（Markdown 排版 + 发布），支持 stdio 与远程两种模式
         # 参考实现：caol64/wenyan-mcp
         wechat:

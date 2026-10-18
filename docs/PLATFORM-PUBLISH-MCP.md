@@ -256,3 +256,105 @@ POST /api/v1/publish/platforms/douyin/channels/rpa/tools/queryRobotParam/call {"
 | 未进工作流编排 | 目前是独立发布入口；接进 4 阶段流水线的「发布阶段」是下一步（复用同一 Service 即可） |
 | 影刀 SSE 模式 | 官方 SSE 是 legacy SSE 传输，当前客户端只支持 stdio 与 Streamable HTTP；用 stdio 即可 |
 | 影刀本地模式限制 | 只能运行「我获取的应用」且至少手动执行过一次；无人值守批量场景建议用企业开放 API 模式 |
+
+---
+
+## 九、小红书：从作品发布到商品上架
+
+### 9.1 调研结论
+
+| 能力 | 现成方案 | 结论 |
+|------|----------|------|
+| 笔记发布 | [xpzouying/xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) 的 `publish_content` / `publish_with_video` | 直接可用（HTTP + MCP），我们已接 |
+| **笔记挂车** | 同上，参数 `products`（商品关键词或商品 ID 列表，自动搜索并选第一个匹配，**账号需开通商品功能**） | 直接可用 |
+| 视频/图集自动上传 | [dreammis/social-auto-upload](https://github.com/dreammis/social-auto-upload) | 可作为 xiaohongshu-mcp 的替代/补充 |
+| **商品上架（千帆）** | 未找到开源 MCP；小红书电商开放平台（千帆）有商品/库存类 OpenAPI；影刀可操作千帆商家后台 | **走影刀 RPA（本仓库已接）或千帆 OpenAPI** |
+
+> 注意：`xiaohongshu-mcp` 的 `products` 只能挂**已经上架**的商品，它不负责创建商品。
+> 所以「先上架、再发布并挂车」这个顺序是必须的。
+
+### 9.2 工作流
+
+```
+POST /api/v1/publish/xiaohongshu/operations/run
+  1) product-listing：商品上架（影刀 RPA → 千帆商家后台；或支持 product-tool 的 MCP）
+       失败 → 直接停止，不发布笔记（避免发出无货可挂的种草笔记）
+  2) note-publish：发布笔记（xiaohongshu-mcp 的 publish_content）
+       products = 用户指定商品 + 刚上架商品标题（自动挂车）
+```
+
+两步可以分别走不同通道：笔记走原生 MCP、商品走影刀 RPA，`channel: auto` 下互不绑架。
+
+### 9.3 接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/publish/xiaohongshu/operations/run` | 一次完成「上架 → 发布并挂车」，返回分步结果 |
+| POST | `/api/v1/publish/platforms/{platform}/products` | 单独上架商品 |
+| POST | `/api/v1/publish/platforms/xiaohongshu/publish` | 单独发布笔记（可带 `products` 挂车） |
+
+请求示例（演练时把 `dryRun` 设为 `true`）：
+
+```json
+{
+  "platform": "xiaohongshu",
+  "product": {
+    "title": "保湿面膜 10 片装",
+    "price": "59.90",
+    "stock": 100,
+    "description": "补水保湿",
+    "images": ["https://cdn/p1.jpg"],
+    "sku": "SKU-001",
+    "category": "美妆护肤"
+  },
+  "note": {
+    "title": "秋冬补水面膜实测",
+    "content": "正文……",
+    "images": ["https://cdn/n1.jpg"],
+    "products": ["店铺爆款"]
+  },
+  "dryRun": false
+}
+```
+
+返回 `steps[]`：每步的 `ok / channel / tool / detail / elapsedMs`；上架失败时第二步会写明「已停止发布笔记」。
+
+### 9.4 配置
+
+```yaml
+contentops:
+  publish:
+    mcp:
+      platforms:
+        xiaohongshu:
+          enabled: true               # 笔记发布（xiaohongshu-mcp，扫码登录）
+          transport: http
+          url: http://127.0.0.1:18060/mcp
+          param-names:
+            products: products        # 挂车
+          rpa:                        # 商品上架（影刀操作千帆）
+            enabled: true
+            command: ["npx", "-y", "yingdao-mcp-server"]
+            env:
+              RPA_MODEL: local
+              SHADOWBOT_PATH: "D:/Program Files/ShadowBot/ShadowBot.exe"
+              USER_FOLDER: "C:/Users/you/AppData/Roaming/ShadowBot"
+            product-tool: runApp
+            extra-params:
+              appId: "你的千帆商品上架应用ID"
+```
+
+### 9.5 实测（桩通道，真实协议）
+
+| 步骤 | 结果 |
+|------|------|
+| product-listing | `ok=true, channel=mcp, tool=publish_product, 265ms`，返回商品ID `stub-product-0001` |
+| note-publish | `ok=true, channel=mcp, tool=publish_note, 38ms`，**挂车商品 `['店铺爆款', '保湿面膜 10 片装']`**（新上架商品自动加入） |
+| 单测 | 编排 4 个（先上架后发布/上架失败中止/演练/只发笔记）+ 商品上架与挂车参数 4 个 |
+
+### 9.6 限制与注意事项
+
+- **商品上架需要商家权限**：影刀里要用已登录千帆商家后台的账号；OpenAPI 需要商家授权（app key/secret + access token）。
+- **挂车需要账号开通商品功能**，且 `products` 传的是已上架商品的关键词/ID；没有商品时不会凭空挂上。
+- **图片/视频需本地路径**：千帆、抖音、小红书的上传工具基本都只认本地文件；URL 素材要先落盘。
+- 商品上架是**有副作用**的操作，建议先用 `dryRun` 演练参数，再小批量真跑。
