@@ -27,6 +27,32 @@ springdoc:
 dashscope:
   enabled: false
 
+# 平台发布 MCP：开发环境加一个"桩"通道，用 scripts/mcp-stub-server.py 冒烟验证发布链路
+# （不连真实平台，默认关闭，用 CONTENTOPS_PUBLISH_STUB=true 打开）
+contentops:
+  publish:
+    mcp:
+      platforms:
+        stub:
+          enabled: ${CONTENTOPS_PUBLISH_STUB:false}
+          transport: stdio
+          command: ["python", "${CONTENTOPS_PUBLISH_STUB_SCRIPT:scripts/mcp-stub-server.py}"]
+          work-dir: ${CONTENTOPS_REPO_ROOT:.}
+          timeout-ms: 60000
+          publish-tool: publish_note
+          param-names:
+            content: content
+          note: 开发用桩服务，仅验证链路
+        # 官方参考实现（@modelcontextprotocol/server-everything）：验证与第三方 MCP server 的真实互通
+        # 用官方 filesystem server 做互通性验证：它能列出真实工具，
+        # 且没有发布类工具，正好验证我们"未暴露发布工具"的守卫逻辑
+        mcp-reference:
+          enabled: ${CONTENTOPS_PUBLISH_REFERENCE:false}
+          transport: stdio
+          command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "${CONTENTOPS_REPO_ROOT:.}"]
+          timeout-ms: 120000
+          note: 官方文件系统 MCP server，用于互通性验证（无发布工具）
+
 # 开发环境 Redis 无需密码
 spring:
   datasource:

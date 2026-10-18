@@ -43,6 +43,14 @@ All notable changes to this project will be documented in this file.
   并记审计与 traceId。实测修掉两个真实问题：推理型模型把 token 花在 reasoning 上导致正文为空
   （放宽 max_tokens + content 空时回落 reasoning_content + 紧凑提示重试一次）、全局热榜对垂类主题无效
   （新增按主题搜热榜工具）
+- **多平台发布接 MCP（作品真实上传）**：新增 `common/mcp/client`（MCP 客户端：`initialize` →
+  `tools/list` → `tools/call`；支持 **stdio** 与 **Streamable HTTP/SSE** 双传输）与 `publish/mcp`
+  （按平台配置、工具选择、参数映射、审计）。调研并预置社区 MCP：抖音 `douyin-upload-mcp-skill`（CDP 自动化）、
+  小红书 `xiaohongshu-mcp`（HTTP+MCP）、公众号 `wenyan-mcp`，B 站保留占位。新增
+  `/api/v1/publish/platforms/status|{platform}/publish|tools/{tool}/call|reset`。未配置或调用失败明确返回
+  `ok=false`，不伪造成功。实测修掉四个坑：通知等响应白等超时（拆出 notify，30s→0.29s）、
+  Windows `npx` 需解析为 `npx.cmd`、弱语义把 `create_directory` 误当发布工具（改为只认强语义 +
+  未识别要求显式配置）、Python stdio 中文乱码（默认注入 UTF-8 环境变量）
 - **前端模块化**：评论助手页拆为 7 个模块组件 + 分段控件（评论工作台/自动采集/账号凭据/意图与关系/客服 Agent/运维总览），
   模块与 URL 同步支持深链
 

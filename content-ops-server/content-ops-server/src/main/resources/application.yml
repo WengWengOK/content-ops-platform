@@ -105,6 +105,64 @@ contentops:
       timeout-ms: ${CONTENTOPS_CREWAI_TIMEOUT_MS:240000}
       default-niche: ${CONTENTOPS_CREWAI_NICHE:}
       write-back-to-kb: ${CONTENTOPS_CREWAI_WRITEBACK:true}
+  # 各平台发布走社区现成的 MCP server（抖音/小红书/公众号…）。
+  # 默认全部关闭：MCP server 依赖登录态（浏览器 profile / Cookie / AppID），没配好拉起进程只会失败。
+  # 开启方式：先本地把对应 MCP server 跑起来并完成登录，再把 enabled 改成 true。
+  publish:
+    mcp:
+      enabled: ${CONTENTOPS_PUBLISH_MCP:true}
+      initialize-timeout-ms: 60000
+      platforms:
+        # 抖音：浏览器自动化（CDP）上传视频/图文，stdio 传输
+        # 参考实现：WJZ-P/douyin-upload-mcp-skill
+        douyin:
+          enabled: false
+          transport: stdio
+          command: ["npx", "-y", "douyin-upload-mcp"]
+          env:
+            BROWSER_DEBUG_PORT: "40821"
+          timeout-ms: 300000
+          param-names:
+            title: title
+            content: desc
+            images: images
+            video: video_path
+          note: 需要先在本地登录抖音创作者平台（浏览器 profile 复用）
+        # 小红书：HTTP + MCP 双模式（评论模块已对接其 HTTP API）
+        # 参考实现：xpzouying/xiaohongshu-mcp
+        xiaohongshu:
+          enabled: false
+          transport: http
+          url: ${XHS_MCP_URL:http://127.0.0.1:18060/mcp}
+          token: ${XHS_MCP_TOKEN:}
+          timeout-ms: 180000
+          param-names:
+            title: title
+            content: content
+            images: images
+          note: 需要先在 MCP server 侧扫码登录小红书
+        # 公众号：文颜（Markdown 排版 + 发布），支持 stdio 与远程两种模式
+        # 参考实现：caol64/wenyan-mcp
+        wechat:
+          enabled: false
+          transport: stdio
+          command: ["npx", "-y", "@wenyan-md/mcp"]
+          timeout-ms: 180000
+          param-names:
+            title: title
+            content: markdown
+            cover: cover
+          note: 需要在 MCP server 侧配置公众号 AppID/AppSecret
+        # B 站：社区 MCP 以搜索为主，发布能力有限，保留占位按需替换
+        bilibili:
+          enabled: false
+          transport: http
+          url: ${BILIBILI_MCP_URL:http://127.0.0.1:18061/mcp}
+          timeout-ms: 180000
+          param-names:
+            title: title
+            video: video_path
+          note: 社区实现发布能力有限，建议用官方开放平台客户端或替换为可用 MCP
   orchestrator:
     engine: ${CONTENTOPS_ENGINE:legacy}
   # 模型路由（P2：创意类 gpt-4o/0.8，格式化类 gpt-4o-mini/0.3）——
