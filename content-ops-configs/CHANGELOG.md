@@ -51,6 +51,12 @@ All notable changes to this project will be documented in this file.
   `ok=false`，不伪造成功。实测修掉四个坑：通知等响应白等超时（拆出 notify，30s→0.29s）、
   Windows `npx` 需解析为 `npx.cmd`、弱语义把 `create_directory` 误当发布工具（改为只认强语义 +
   未识别要求显式配置）、Python stdio 中文乱码（默认注入 UTF-8 环境变量）
+- **影刀 RPA 发布通道**：复用 MCP 客户端接影刀官方 MCP Server（`npx -y yingdao-mcp-server`），
+  支持本地模式（`RPA_MODEL=local` + `SHADOWBOT_PATH`/`USER_FOLDER`，工具 `queryApplist`/`queryRobotParam`/`runApp`）
+  与企业开放 API 模式（`ACCESS_KEY_ID/SECRET`，`startJob` + `queryJob` 异步轮询）。
+  平台级 `channel: auto|mcp|rpa`：auto 原生 MCP 失败自动回落 RPA，显式通道失败不回落；
+  新增按通道调工具接口（`/publish/platforms/{platform}/channels/{channel}/tools/{tool}/call`）。
+  实测：影刀通道探活返回 5 个工具、`queryApplist` 可取应用、异步发布 `startJob→queryJob` 747ms 到 SUCCESS
 - **前端模块化**：评论助手页拆为 7 个模块组件 + 分段控件（评论工作台/自动采集/账号凭据/意图与关系/客服 Agent/运维总览），
   模块与 URL 同步支持深链
 

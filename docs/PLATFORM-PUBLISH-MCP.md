@@ -146,7 +146,107 @@ contentops:
 
 ---
 
-## 七、已知限制
+## 七、影刀 RPA 通道（真实 UI 操作兜底）
+
+原生平台 MCP 依赖各自登录态，遇到"接口发不了/需要点页面"的场景，用 **影刀 RPA** 跑真实 UI 操作。
+影刀提供官方 MCP Server（[ying-dao/yingdao_mcp_server](https://github.com/ying-dao/yingdao_mcp_server)），
+**复用同一个 MCP 客户端**即可接入，无需新增协议实现。
+
+### 7.1 影刀官方 MCP Server
+
+| 项 | 内容 |
+|----|------|
+| 启动 | `npx -y yingdao-mcp-server`（stdio） |
+| 本地模式 | `RPA_MODEL=local`，另配 `SHADOWBOT_PATH`（ShadowBot.exe 路径）与 `USER_FOLDER`（影刀用户文件夹）；只能跑「我获取的应用」且至少执行过一次 |
+| 开放 API 模式 | `RPA_MODEL=openApi`，另配 `ACCESS_KEY_ID` / `ACCESS_KEY_SECRET`（企业管理员在影刀控制台获取） |
+| 工具（本地） | `queryApplist`、`queryRobotParam`、`runApp` |
+| 工具（开放 API） | 以上之外还有 `uploadFile`、`startJob`、`queryJob`、`queryClientList` |
+
+> SSE 模式（`http://localhost:3000/sse`）暂不支持：那是 legacy SSE（先 `GET /sse` 建流、再 POST 到消息端点），
+> 我们的 HTTP 传输是 Streamable HTTP。**用 stdio 模式即可**，也是影刀官方推荐的本地接法。
+
+### 7.2 通道模型
+
+每个平台可配 `channel`：
+
+- `auto`（默认）：原生 MCP 优先，失败自动回落 RPA；两者都失败才返回失败；
+- `mcp` / `rpa`：**只走指定通道**，失败不回落（避免"以为在测 MCP，实际被 RPA 兜住了"）。
+
+配置示例（本地模式）：
+
+```yaml
+contentops:
+  publish:
+    mcp:
+      platforms:
+        douyin:
+          enabled: false        # 原生 MCP 关闭
+          channel: rpa          # 只走影刀
+          rpa:
+            enabled: true
+            command: ["npx", "-y", "yingdao-mcp-server"]
+            env:
+              RPA_MODEL: local
+              SHADOWBOT_PATH: "D:/Program Files/ShadowBot/ShadowBot.exe"
+              USER_FOLDER: "C:/Users/you/AppData/Roaming/ShadowBot"
+            publish-tool: runApp
+            param-names:        # 先用 queryRobotParam 查清影刀应用的入参名
+              title: 标题
+              content: 正文
+              images: 图片列表
+            extra-params:
+              appId: "你的影刀应用ID"
+```
+
+企业开放 API 模式（异步作业）：
+
+```yaml
+          rpa:
+            enabled: true
+            env:
+              RPA_MODEL: openApi
+              ACCESS_KEY_ID: ${YINGDAO_AK:}
+              ACCESS_KEY_SECRET: ${YINGDAO_SK:}
+            publish-tool: startJob
+            status-tool: queryJob      # 配了就自动轮询
+            job-id-field: jobId
+            job-status-field: status
+            job-done-values: "SUCCESS,SUCCEEDED,COMPLETED,DONE"
+            job-failed-values: "FAILED,ERROR,CANCELLED"
+            poll-interval-ms: 3000
+            poll-timeout-ms: 600000
+```
+
+### 7.3 影刀流程建议（实际操作侧）
+
+每个平台建一个影刀应用，入参建议固定为：`title` / `content` / `images`（本地路径列表）/ `video`（本地路径），
+应用内部完成：打开创作者平台 → 上传素材 → 填标题正文 → 发布 → 返回作品链接。
+
+配置前先查清参数：
+
+```bash
+# 列出影刀应用
+POST /api/v1/publish/platforms/douyin/channels/rpa/tools/queryApplist/call   {}
+# 查某个应用的入参
+POST /api/v1/publish/platforms/douyin/channels/rpa/tools/queryRobotParam/call {"appId":"..."}
+```
+
+把返回的参数名填进 `param-names`，`appId` 填进 `extra-params`，即可用统一接口发布。
+
+### 7.4 实测（桩 MCP server 模拟影刀工具）
+
+| 场景 | 结果 |
+|------|------|
+| RPA 通道探活 | `probe=ok`，工具 `queryApplist / queryRobotParam / runApp / startJob / queryJob` |
+| `queryApplist` | 返回应用列表（用于填 `appId`） |
+| 发布（异步） | `channel=rpa, ok=true, tool=startJob, elapsedMs=747`，detail：`作业 job-stub-1 完成：{"status":"SUCCESS","result":"作品已发布"}` |
+| 单元测试 | 14 个发布链路用例，含 auto 回落、显式通道不回落、异步轮询成功/失败/缺 jobId |
+
+接真实影刀只需把 `command` 换成 `npx -y yingdao-mcp-server`、填好 `env` 与 `appId`，代码不用改。
+
+---
+
+## 八、已知限制
 
 | 限制 | 说明 |
 |------|------|
@@ -154,3 +254,5 @@ contentops:
 | 视频/图片的本地路径 | 抖音与小红书基本只接受**本地文件路径**，图文作品里的图片是 URL，发布前需要先落盘（`images` 传本地路径即可） |
 | 平台差异仍在 | 每个 MCP server 的参数名/形状不同，靠 `param-names` 适配；接入新平台时先用 `dry-run` + `tools/{tool}/call` 摸清参数 |
 | 未进工作流编排 | 目前是独立发布入口；接进 4 阶段流水线的「发布阶段」是下一步（复用同一 Service 即可） |
+| 影刀 SSE 模式 | 官方 SSE 是 legacy SSE 传输，当前客户端只支持 stdio 与 Streamable HTTP；用 stdio 即可 |
+| 影刀本地模式限制 | 只能运行「我获取的应用」且至少手动执行过一次；无人值守批量场景建议用企业开放 API 模式 |

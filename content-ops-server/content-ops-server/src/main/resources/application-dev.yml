@@ -52,6 +52,26 @@ contentops:
           command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "${CONTENTOPS_REPO_ROOT:.}"]
           timeout-ms: 120000
           note: 官方文件系统 MCP server，用于互通性验证（无发布工具）
+        # 影刀 RPA 通道联调（用桩 MCP server 模拟影刀官方工具：queryApplist / queryRobotParam / runApp / startJob / queryJob）
+        # 真实环境把 command 换成 "npx -y yingdao-mcp-server" 并配 RPA_MODEL / SHADOWBOT_PATH 或 ACCESS_KEY_*
+        yingdao:
+          enabled: false
+          channel: rpa
+          rpa:
+            enabled: ${CONTENTOPS_PUBLISH_RPA:false}
+            command: ["python", "${CONTENTOPS_PUBLISH_RPA_SCRIPT:scripts/mcp-stub-server.py}"]
+            work-dir: ${CONTENTOPS_REPO_ROOT:.}
+            timeout-ms: 60000
+            publish-tool: startJob
+            status-tool: queryJob
+            job-id-field: jobId
+            poll-interval-ms: 300
+            poll-timeout-ms: 20000
+            param-names:
+              content: content
+            extra-params:
+              appId: app-demo-001
+            note: 影刀 RPA 联调桩（异步 startJob → queryJob 轮询）
 
 # 开发环境 Redis 无需密码
 spring:

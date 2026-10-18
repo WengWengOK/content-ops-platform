@@ -128,6 +128,31 @@ contentops:
             images: images
             video: video_path
           note: 需要先在本地登录抖音创作者平台（浏览器 profile 复用）
+          # 影刀 RPA 通道（官方 MCP Server）：MCP 不可用时用真实 UI 操作兜底
+          # 默认 runApp（本地模式）；企业开放 API 模式改成 startJob + status-tool=queryJob
+          channel: auto
+          rpa:
+            enabled: false
+            command: ["npx", "-y", "yingdao-mcp-server"]
+            env:
+              RPA_MODEL: local
+              SHADOWBOT_PATH: ${SHADOWBOT_PATH:}
+              USER_FOLDER: ${SHADOWBOT_USER_FOLDER:}
+            timeout-ms: 300000
+            publish-tool: runApp
+            # openApi 模式示例：
+            #   env: {RPA_MODEL: openApi, ACCESS_KEY_ID: xxx, ACCESS_KEY_SECRET: xxx}
+            #   publish-tool: startJob
+            #   status-tool: queryJob
+            #   job-id-field: jobId
+            param-names:
+              title: title
+              content: content
+              images: images
+              video: video
+            extra-params:
+              appId: ${YINGDAO_DOUYIN_APP_ID:}
+            note: 影刀应用入参先用 queryRobotParam 查清，再对齐 param-names
         # 小红书：HTTP + MCP 双模式（评论模块已对接其 HTTP API）
         # 参考实现：xpzouying/xiaohongshu-mcp
         xiaohongshu:
@@ -153,6 +178,19 @@ contentops:
             content: markdown
             cover: cover
           note: 需要在 MCP server 侧配置公众号 AppID/AppSecret
+          rpa:
+            enabled: false
+            env:
+              RPA_MODEL: local
+              SHADOWBOT_PATH: ${SHADOWBOT_PATH:}
+              USER_FOLDER: ${SHADOWBOT_USER_FOLDER:}
+            publish-tool: runApp
+            param-names:
+              title: title
+              content: markdown
+              cover: cover
+            extra-params:
+              appId: ${YINGDAO_WECHAT_APP_ID:}
         # B 站：社区 MCP 以搜索为主，发布能力有限，保留占位按需替换
         bilibili:
           enabled: false

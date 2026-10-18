@@ -74,5 +74,74 @@ public class PublishMcpProperties {
 
         /** 备注（说明这个 MCP server 的来源与登录前置条件） */
         private String note;
+
+        /**
+         * 发布通道：{@code auto}（MCP → RPA → 模拟）/ {@code mcp} / {@code rpa}。
+         * RPA 通道用于 MCP 不可用或需要真实 UI 操作的场景（如影刀）。
+         */
+        private String channel = "auto";
+
+        /** 影刀 RPA 通道（官方 MCP Server：npx -y yingdao-mcp-server） */
+        private Rpa rpa = new Rpa();
+    }
+
+    /**
+     * RPA 通道配置（影刀官方 MCP Server 暴露的工具）。
+     *
+     * <p>本地模式工具：{@code queryApplist} / {@code queryRobotParam} / {@code runApp}；
+     * 开放 API 模式额外有 {@code uploadFile} / {@code startJob} / {@code queryJob} / {@code queryClientList}。
+     */
+    @Data
+    public static class Rpa {
+
+        /** 是否启用 RPA 通道 */
+        private boolean enabled = false;
+
+        /** 启动命令（默认影刀官方 MCP Server） */
+        private List<String> command = new ArrayList<>(List.of("npx", "-y", "yingdao-mcp-server"));
+
+        /**
+         * 环境变量：
+         * local → RPA_MODEL=local, SHADOWBOT_PATH, USER_FOLDER；
+         * openApi → RPA_MODEL=openApi, ACCESS_KEY_ID, ACCESS_KEY_SECRET。
+         */
+        private Map<String, String> env = new LinkedHashMap<>();
+
+        private String workDir;
+
+        /** 握手/工具调用超时 */
+        private int timeoutMs = 180_000;
+
+        /** 发布工具：local 用 runApp；openApi 用 startJob（异步） */
+        private String publishTool = "runApp";
+
+        /** 异步作业状态查询工具（openApi 的 startJob 配套 queryJob；local 留空） */
+        private String statusTool;
+
+        /** 从 startJob 返回里取作业 ID 的字段名（留空则用整段返回文本） */
+        private String jobIdField;
+
+        /** 判定作业完成的字段名（如 status） */
+        private String jobStatusField = "status";
+
+        /** 作业完成的状态值（逗号分隔） */
+        private String jobDoneValues = "SUCCESS,SUCCEEDED,SUCCESSFUL,COMPLETED,DONE,FINISHED";
+
+        /** 作业失败的状态值（逗号分隔） */
+        private String jobFailedValues = "FAILED,FAIL,ERROR,CANCELLED,CANCELED";
+
+        /** 轮询间隔 */
+        private int pollIntervalMs = 3000;
+
+        /** 轮询最长等待 */
+        private int pollTimeoutMs = 600000;
+
+        /** 我们的规范字段 → 影刀应用参数名（先用 queryRobotParam 查清楚再填） */
+        private Map<String, String> paramNames = new LinkedHashMap<>();
+
+        /** 固定参数（如应用 ID appId、机器人组、平台标识） */
+        private Map<String, String> extraParams = new LinkedHashMap<>();
+
+        private String note;
     }
 }

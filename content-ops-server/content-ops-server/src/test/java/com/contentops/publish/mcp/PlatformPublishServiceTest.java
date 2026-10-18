@@ -3,6 +3,7 @@ package com.contentops.publish.mcp;
 import com.contentops.common.audit.AuditService;
 import com.contentops.common.mcp.client.McpClient;
 import com.contentops.common.mcp.client.McpClientException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,7 +40,7 @@ class PlatformPublishServiceTest {
         factory = mock(McpPublishClientFactory.class);
         auditService = mock(AuditService.class);
         client = mock(McpClient.class);
-        service = new PlatformPublishService(properties, factory, auditService);
+        service = new PlatformPublishService(properties, factory, auditService, new ObjectMapper());
     }
 
     private PublishMcpProperties.PlatformMcp platform(String publishTool) {
@@ -61,7 +63,7 @@ class PlatformPublishServiceTest {
     @Test
     @DisplayName("未配置 MCP：明确返回未真实上传（channel=simulated, ok=false）")
     void simulatedWhenNotConfigured() {
-        when(factory.clientFor("douyin")).thenReturn(Optional.empty());
+        when(factory.clientFor("douyin", "mcp")).thenReturn(Optional.empty());
 
         PlatformPublishService.PublishOutcome outcome = service.publish("douyin", content(), false);
 
@@ -75,7 +77,7 @@ class PlatformPublishServiceTest {
     @DisplayName("走 MCP：自动挑发布工具 + 按 param-names 映射参数 + 记审计")
     void publishesThroughMcp() {
         properties.getPlatforms().put("douyin", platform(null));
-        when(factory.clientFor("douyin")).thenReturn(Optional.of(client));
+        when(factory.clientFor("douyin", "mcp")).thenReturn(Optional.of(client));
         when(client.listTools()).thenReturn(List.of(
                 new McpClient.McpToolInfo("check_login", "检查登录态"),
                 new McpClient.McpToolInfo("publish_video", "上传视频")));
@@ -104,7 +106,7 @@ class PlatformPublishServiceTest {
     @DisplayName("显式配置 publish-tool 时不再拉 tools/list")
     void respectsConfiguredTool() {
         properties.getPlatforms().put("wechat", platform("publish_article"));
-        when(factory.clientFor("wechat")).thenReturn(Optional.of(client));
+        when(factory.clientFor("wechat", "mcp")).thenReturn(Optional.of(client));
         when(client.callTool(eq("publish_article"), any()))
                 .thenReturn(new McpClient.McpCallResult(true, "已发布", null));
 
@@ -118,7 +120,7 @@ class PlatformPublishServiceTest {
     @DisplayName("演练模式：只回显将使用的参数，不调用工具")
     void dryRun() {
         properties.getPlatforms().put("douyin", platform("publish_video"));
-        when(factory.clientFor("douyin")).thenReturn(Optional.of(client));
+        when(factory.clientFor("douyin", "mcp")).thenReturn(Optional.of(client));
 
         PlatformPublishService.PublishOutcome outcome = service.publish("douyin", content(), true);
 
@@ -132,7 +134,7 @@ class PlatformPublishServiceTest {
     @DisplayName("MCP 调用失败：ok=false，原因透出并记审计，不伪装成功")
     void mcpFailureIsReported() {
         properties.getPlatforms().put("xiaohongshu", platform("publish_note"));
-        when(factory.clientFor("xiaohongshu")).thenReturn(Optional.of(client));
+        when(factory.clientFor("xiaohongshu", "mcp")).thenReturn(Optional.of(client));
         when(client.callTool(eq("publish_note"), any()))
                 .thenThrow(new McpClientException("未登录小红书，请先扫码"));
 
@@ -148,7 +150,7 @@ class PlatformPublishServiceTest {
     @DisplayName("MCP 没有发布类工具：给出可执行的提示（要求显式配置 publish-tool）")
     void noPublishToolExposed() {
         properties.getPlatforms().put("bilibili", platform(null));
-        when(factory.clientFor("bilibili")).thenReturn(Optional.of(client));
+        when(factory.clientFor("bilibili", "mcp")).thenReturn(Optional.of(client));
         when(client.listTools()).thenReturn(List.of(new McpClient.McpToolInfo("search_video", "搜索")));
 
         PlatformPublishService.PublishOutcome outcome = service.publish("bilibili", content(), false);
@@ -161,7 +163,7 @@ class PlatformPublishServiceTest {
     @DisplayName("回归：绝不能把 create_directory / list_notes 这类工具猜成发布工具")
     void neverGuessesNonPublishTools() {
         properties.getPlatforms().put("mcp-reference", platform(null));
-        when(factory.clientFor("mcp-reference")).thenReturn(Optional.of(client));
+        when(factory.clientFor("mcp-reference", "mcp")).thenReturn(Optional.of(client));
         when(client.listTools()).thenReturn(List.of(
                 new McpClient.McpToolInfo("read_file", "读文件"),
                 new McpClient.McpToolInfo("create_directory", "建目录"),
@@ -180,7 +182,7 @@ class PlatformPublishServiceTest {
     void statusAndProbe() {
         properties.getPlatforms().put("douyin", platform("publish_video"));
         properties.getPlatforms().put("wechat", new PublishMcpProperties.PlatformMcp());
-        when(factory.clientFor("douyin")).thenReturn(Optional.of(client));
+        when(factory.clientFor("douyin", "mcp")).thenReturn(Optional.of(client));
         when(client.listTools()).thenReturn(List.of(new McpClient.McpToolInfo("publish_video", "上传视频")));
 
         @SuppressWarnings("unchecked")
@@ -201,7 +203,7 @@ class PlatformPublishServiceTest {
     @DisplayName("探活失败不影响状态接口")
     void probeFailureIsGraceful() {
         properties.getPlatforms().put("xiaohongshu", platform("publish_note"));
-        when(factory.clientFor("xiaohongshu")).thenReturn(Optional.of(client));
+        when(factory.clientFor("xiaohongshu", "mcp")).thenReturn(Optional.of(client));
         when(client.listTools()).thenThrow(new McpClientException("连接被拒绝"));
 
         @SuppressWarnings("unchecked")
@@ -211,5 +213,119 @@ class PlatformPublishServiceTest {
 
         assertThat(xhs).containsEntry("probe", "failed");
         assertThat((String) xhs.get("probeError")).contains("连接被拒绝");
+    }
+
+    // ─────────────── 影刀 RPA 通道 ───────────────
+
+    private void enableRpa(String platform, String publishTool, String statusTool) {
+        PublishMcpProperties.PlatformMcp cfg = properties.getPlatforms().get(platform);
+        PublishMcpProperties.Rpa rpa = new PublishMcpProperties.Rpa();
+        rpa.setEnabled(true);
+        rpa.setPublishTool(publishTool);
+        rpa.setStatusTool(statusTool);
+        rpa.setPollIntervalMs(10);
+        rpa.setPollTimeoutMs(2000);
+        cfg.setRpa(rpa);
+    }
+
+    @Test
+    @DisplayName("auto 模式：原生 MCP 失败后回落影刀 RPA 并成功")
+    void fallsBackToRpa() {
+        properties.getPlatforms().put("douyin", platform("publish_video"));
+        enableRpa("douyin", "runApp", null);
+        McpClient rpaClient = mock(McpClient.class);
+        when(factory.clientFor("douyin", "mcp")).thenReturn(Optional.of(client));
+        when(factory.clientFor("douyin", "rpa")).thenReturn(Optional.of(rpaClient));
+        when(client.listTools()).thenReturn(List.of(new McpClient.McpToolInfo("publish_video", "上传视频")));
+        when(client.callTool(eq("publish_video"), any())).thenThrow(new McpClientException("浏览器未登录"));
+        when(rpaClient.callTool(eq("runApp"), any()))
+                .thenReturn(new McpClient.McpCallResult(true, "影刀应用已执行", null));
+
+        PlatformPublishService.PublishOutcome outcome = service.publish("douyin", content(), false);
+
+        assertThat(outcome.ok()).isTrue();
+        assertThat(outcome.channel()).isEqualTo("rpa");
+        assertThat(outcome.tool()).isEqualTo("runApp");
+        verify(rpaClient).callTool(eq("runApp"), any());
+    }
+
+    @Test
+    @DisplayName("显式 channel=mcp：失败也不回落 RPA（避免误操作）")
+    void explicitChannelDoesNotFallback() {
+        properties.getPlatforms().put("douyin", platform("publish_video"));
+        properties.getPlatforms().get("douyin").setChannel("mcp");
+        enableRpa("douyin", "runApp", null);
+        McpClient rpaClient = mock(McpClient.class);
+        when(factory.clientFor("douyin", "mcp")).thenReturn(Optional.of(client));
+        when(client.listTools()).thenReturn(List.of(new McpClient.McpToolInfo("publish_video", "上传视频")));
+        when(client.callTool(eq("publish_video"), any())).thenThrow(new McpClientException("浏览器未登录"));
+
+        PlatformPublishService.PublishOutcome outcome = service.publish("douyin", content(), false);
+
+        assertThat(outcome.ok()).isFalse();
+        assertThat(outcome.channel()).isEqualTo("mcp");
+        verify(rpaClient, never()).callTool(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("影刀 openApi 异步作业：startJob 拿 jobId，轮询 queryJob 到 SUCCESS")
+    void pollsAsyncJob() {
+        properties.getPlatforms().put("douyin", platform("publish_video"));
+        properties.getPlatforms().get("douyin").setChannel("rpa");
+        enableRpa("douyin", "startJob", "queryJob");
+        properties.getPlatforms().get("douyin").getRpa().setJobIdField("jobId");
+        McpClient rpaClient = mock(McpClient.class);
+        when(factory.clientFor("douyin", "rpa")).thenReturn(Optional.of(rpaClient));
+        when(rpaClient.callTool(eq("startJob"), any()))
+                .thenReturn(new McpClient.McpCallResult(true, "{\"jobId\":\"job-42\"}",
+                        "{\"content\":[{\"text\":\"{\\\"jobId\\\":\\\"job-42\\\"}\"}]}"));
+        when(rpaClient.callTool(eq("queryJob"), any()))
+                .thenReturn(new McpClient.McpCallResult(true, "{\"status\":\"RUNNING\"}", "{\"status\":\"RUNNING\"}"))
+                .thenReturn(new McpClient.McpCallResult(true, "{\"status\":\"SUCCESS\"}", "{\"status\":\"SUCCESS\"}"));
+
+        PlatformPublishService.PublishOutcome outcome = service.publish("douyin", content(), false);
+
+        assertThat(outcome.ok()).isTrue();
+        assertThat(outcome.channel()).isEqualTo("rpa");
+        assertThat(outcome.detail()).contains("job-42").contains("SUCCESS");
+        verify(rpaClient, times(2)).callTool(eq("queryJob"), any());
+    }
+
+    @Test
+    @DisplayName("影刀作业失败：ok=false，带失败状态")
+    void reportsFailedJob() {
+        properties.getPlatforms().put("douyin", platform("publish_video"));
+        properties.getPlatforms().get("douyin").setChannel("rpa");
+        enableRpa("douyin", "startJob", "queryJob");
+        McpClient rpaClient = mock(McpClient.class);
+        when(factory.clientFor("douyin", "rpa")).thenReturn(Optional.of(rpaClient));
+        when(rpaClient.callTool(eq("startJob"), any()))
+                .thenReturn(new McpClient.McpCallResult(true, "{\"jobId\":\"job-7\"}", "{\"jobId\":\"job-7\"}"));
+        when(rpaClient.callTool(eq("queryJob"), any()))
+                .thenReturn(new McpClient.McpCallResult(true,
+                        "{\"status\":\"FAILED\",\"message\":\"账号未登录\"}",
+                        "{\"status\":\"FAILED\",\"message\":\"账号未登录\"}"));
+
+        PlatformPublishService.PublishOutcome outcome = service.publish("douyin", content(), false);
+
+        assertThat(outcome.ok()).isFalse();
+        assertThat(outcome.detail()).contains("失败").contains("FAILED");
+    }
+
+    @Test
+    @DisplayName("影刀未返回作业ID：明确报错，不假装成功")
+    void missingJobId() {
+        properties.getPlatforms().put("douyin", platform("publish_video"));
+        properties.getPlatforms().get("douyin").setChannel("rpa");
+        enableRpa("douyin", "startJob", "queryJob");
+        McpClient rpaClient = mock(McpClient.class);
+        when(factory.clientFor("douyin", "rpa")).thenReturn(Optional.of(rpaClient));
+        when(rpaClient.callTool(eq("startJob"), any()))
+                .thenReturn(new McpClient.McpCallResult(true, "已提交", null));
+
+        PlatformPublishService.PublishOutcome outcome = service.publish("douyin", content(), false);
+
+        assertThat(outcome.ok()).isFalse();
+        assertThat(outcome.detail()).contains("未从返回中解析到作业ID");
     }
 }

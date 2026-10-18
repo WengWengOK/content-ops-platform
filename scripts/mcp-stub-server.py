@@ -20,7 +20,20 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {
          "title": {"type": "string"}, "content": {"type": "string"},
          "images": {"type": "array", "items": {"type": "string"}}}}},
+    # ── 影刀 RPA 官方 MCP Server 的同名工具（桩实现，用于验证 RPA 通道与异步轮询）──
+    {"name": "queryApplist", "description": "查询影刀应用列表（桩）",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "queryRobotParam", "description": "查询影刀应用入参（桩）",
+     "inputSchema": {"type": "object", "properties": {"appId": {"type": "string"}}}},
+    {"name": "runApp", "description": "运行影刀应用（桩，同步）",
+     "inputSchema": {"type": "object", "properties": {"appId": {"type": "string"}}}},
+    {"name": "startJob", "description": "启动作业（桩，异步，返回 jobId）",
+     "inputSchema": {"type": "object", "properties": {"appId": {"type": "string"}}}},
+    {"name": "queryJob", "description": "查询作业状态（桩）",
+     "inputSchema": {"type": "object", "properties": {"jobId": {"type": "string"}}}},
 ]
+
+JOB_POLLS = {}
 
 
 def handle(request):
@@ -42,6 +55,26 @@ def handle(request):
         elif name == "publish_note":
             text = ("桩服务已接收发布请求\n标题：%s\n正文长度：%d\n图片：%s\n笔记ID：stub-note-0001"
                     % (args.get("title", ""), len(str(args.get("content", ""))), args.get("images", [])))
+        elif name == "queryApplist":
+            text = json.dumps({"apps": [
+                {"appId": "app-demo-001", "name": "小红书图文发布（桩）"},
+                {"appId": "app-demo-002", "name": "抖音视频发布（桩）"}]}, ensure_ascii=False)
+        elif name == "queryRobotParam":
+            text = json.dumps({"appId": args.get("appId", "app-demo-001"),
+                               "params": ["title", "content", "images", "video"]}, ensure_ascii=False)
+        elif name == "runApp":
+            text = "影刀应用已运行：%s（同步返回）" % args.get("appId", "-")
+        elif name == "startJob":
+            job_id = "job-stub-1"
+            JOB_POLLS[job_id] = 0
+            text = json.dumps({"jobId": job_id, "status": "RUNNING"}, ensure_ascii=False)
+        elif name == "queryJob":
+            job_id = args.get("jobId", "")
+            polls = JOB_POLLS.get(job_id, 0)
+            JOB_POLLS[job_id] = polls + 1
+            status = "RUNNING" if polls < 2 else "SUCCESS"
+            text = json.dumps({"jobId": job_id, "status": status,
+                               "result": "作品已发布" if status == "SUCCESS" else ""}, ensure_ascii=False)
         else:
             return {"jsonrpc": "2.0", "id": request.get("id"),
                     "error": {"code": -32601, "message": "unknown tool: %s" % name}}

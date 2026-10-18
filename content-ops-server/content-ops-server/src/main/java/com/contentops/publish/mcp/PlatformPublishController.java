@@ -71,6 +71,20 @@ public class PlatformPublishController {
                                                        @PathVariable String tool,
                                                        @RequestBody(required = false) Map<String, Object> args) {
         McpClient.McpCallResult result = publishService.callTool(platform, tool, args);
+        return toolResult(result);
+    }
+
+    @PostMapping("/{platform}/channels/{channel}/tools/{tool}/call")
+    @Operation(summary = "按通道调工具：mcp（平台原生）/ rpa（影刀，如 queryApplist、queryRobotParam）")
+    public AgentResponse<Map<String, Object>> callChannelTool(@PathVariable String platform,
+                                                              @PathVariable String channel,
+                                                              @PathVariable String tool,
+                                                              @RequestBody(required = false) Map<String, Object> args) {
+        McpClient.McpCallResult result = publishService.callTool(platform, channel, tool, args);
+        return toolResult(result);
+    }
+
+    private AgentResponse<Map<String, Object>> toolResult(McpClient.McpCallResult result) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("ok", result.ok());
         data.put("text", result.text());

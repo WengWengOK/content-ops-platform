@@ -32,53 +32,100 @@ public class McpPublishClientFactory {
         this.objectMapper = objectMapper;
     }
 
-    /** 该平台是否配置并启用了 MCP 发布。 */
+    /** 该平台是否配置并启用了 MCP 发布（原生 MCP 通道）。 */
     public boolean enabledFor(String platform) {
+        return enabledFor(platform, "mcp");
+    }
+
+    /**
+     * 该平台指定通道是否启用。
+     *
+     * @param channel {@code mcp}（平台原生 MCP server）或 {@code rpa}（影刀 RPA 通道）
+     */
+    public boolean enabledFor(String platform, String channel) {
         if (!properties.isEnabled() || platform == null) {
             return false;
         }
         PublishMcpProperties.PlatformMcp cfg = properties.getPlatforms().get(platform.toLowerCase());
-        return cfg != null && cfg.isEnabled();
+        if (cfg == null) {
+            return false;
+        }
+        if ("rpa".equalsIgnoreCase(channel)) {
+            return cfg.getRpa() != null && cfg.getRpa().isEnabled();
+        }
+        return cfg.isEnabled();
     }
 
-    /** 取（或构建）该平台的 MCP 客户端。 */
+    /** 取（或构建）该平台的原生 MCP 客户端。 */
     public Optional<McpClient> clientFor(String platform) {
-        if (!enabledFor(platform)) {
+        return clientFor(platform, "mcp");
+    }
+
+    /** 取（或构建）该平台指定通道的客户端（一个通道一个常驻进程/连接）。 */
+    public Optional<McpClient> clientFor(String platform, String channel) {
+        String normalizedChannel = "rpa".equalsIgnoreCase(channel) ? "rpa" : "mcp";
+        if (!enabledFor(platform, normalizedChannel)) {
             return Optional.empty();
         }
         String key = platform.toLowerCase();
         PublishMcpProperties.PlatformMcp cfg = properties.getPlatforms().get(key);
-        return Optional.of(cache.computeIfAbsent(key, ignored -> build(key, cfg)));
+        String cacheKey = key + ":" + normalizedChannel;
+        return Optional.of(cache.computeIfAbsent(cacheKey,
+                ignored -> build(key, normalizedChannel, cfg)));
     }
 
     /** 丢弃缓存（改完配置或进程挂掉后重建）。 */
     public void reset(String platform) {
-        McpClient removed = cache.remove(platform == null ? "" : platform.toLowerCase());
-        if (removed != null) {
-            removed.close();
-            log.info("[MCP] 已重建 {} 的 MCP 客户端", platform);
+        String key = platform == null ? "" : platform.toLowerCase();
+        for (String channel : List.of("mcp", "rpa")) {
+            McpClient removed = cache.remove(key + ":" + channel);
+            if (removed != null) {
+                removed.close();
+                log.info("[MCP] 已重建 {} 的 {} 客户端", platform, channel);
+            }
         }
     }
 
-    private McpClient build(String platform, PublishMcpProperties.PlatformMcp cfg) {
+    private McpClient build(String platform, String channel, PublishMcpProperties.PlatformMcp cfg) {
         Duration initTimeout = Duration.ofMillis(Math.max(1000, properties.getInitializeTimeoutMs()));
-        String transport = cfg.getTransport() == null ? "http" : cfg.getTransport().trim().toLowerCase();
+        List<String> command;
+        Map<String, String> env;
+        String workDir;
+        String url;
+        String token;
+        if ("rpa".equals(channel)) {
+            PublishMcpProperties.Rpa rpa = cfg.getRpa();
+            command = rpa.getCommand();
+            env = rpa.getEnv();
+            workDir = rpa.getWorkDir();
+            url = null;
+            token = null;
+        } else {
+            command = cfg.getCommand();
+            env = cfg.getEnv();
+            workDir = cfg.getWorkDir();
+            url = cfg.getUrl();
+            token = cfg.getToken();
+        }
+        String transport = "mcp".equals(channel)
+                ? (cfg.getTransport() == null ? "http" : cfg.getTransport().trim().toLowerCase())
+                : "stdio";
         McpTransport mcpTransport;
         if ("stdio".equals(transport)) {
-            if (cfg.getCommand() == null || cfg.getCommand().isEmpty()) {
-                throw new McpClientException("平台 " + platform + " 配置为 stdio 传输但没有 command");
+            if (command == null || command.isEmpty()) {
+                throw new McpClientException("平台 " + platform + " 的 " + channel + " 通道配置为 stdio 但没有 command");
             }
-            mcpTransport = new StdioMcpTransport(List.copyOf(cfg.getCommand()), cfg.getEnv(), cfg.getWorkDir());
+            mcpTransport = new StdioMcpTransport(List.copyOf(command), env, workDir);
         } else if ("http".equals(transport)) {
-            if (cfg.getUrl() == null || cfg.getUrl().isBlank()) {
+            if (url == null || url.isBlank()) {
                 throw new McpClientException("平台 " + platform + " 配置为 http 传输但没有 url");
             }
-            mcpTransport = new HttpMcpTransport(cfg.getUrl(), cfg.getToken(), initTimeout);
+            mcpTransport = new HttpMcpTransport(url, token, initTimeout);
         } else {
             throw new McpClientException("平台 " + platform + " 传输类型不支持：" + transport);
         }
-        log.info("[MCP] 平台 {} 使用 {}", platform, mcpTransport.describe());
-        return new McpClient(platform, mcpTransport, objectMapper, initTimeout);
+        log.info("[MCP] 平台 {} 的 {} 通道使用 {}", platform, channel, mcpTransport.describe());
+        return new McpClient(platform + ":" + channel, mcpTransport, objectMapper, initTimeout);
     }
 
     @PreDestroy
