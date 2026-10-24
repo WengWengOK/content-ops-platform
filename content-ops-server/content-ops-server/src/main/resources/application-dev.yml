@@ -36,6 +36,12 @@ contentops:
         # 开发环境开关：小红书真实发布（xiaohongshu-mcp 在 18060，扫码登录后打开）
         xiaohongshu:
           enabled: ${CONTENTOPS_XHS_PUBLISH_ENABLED:false}
+        # 开发环境开关：抖音经影刀 RPA 发布（装好影刀 + 创建应用后打开）
+        douyin:
+          enabled: ${CONTENTOPS_DOUYIN_RPA_ENABLED:false}
+          channel: rpa
+          rpa:
+            enabled: ${CONTENTOPS_DOUYIN_RPA_ENABLED:false}
         stub:
           enabled: ${CONTENTOPS_PUBLISH_STUB:false}
           transport: stdio
