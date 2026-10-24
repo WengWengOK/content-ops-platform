@@ -82,7 +82,7 @@ public class XhsOperationService {
         if (ok) {
             PlatformPublishService.PublishOutcome note = publishService.publish(key,
                     new PlatformPublishService.PublishContent(noteTitle, noteContent, noteImages,
-                            null, null, null, products), dryRun);
+                            null, null, null, products, null), dryRun);
             boolean planned = isPlanned(note);
             steps.add(new StepResult("note-publish", note.ok() || planned, planned,
                     note.channel(), note.tool(), note.detail(), note.elapsedMs()));

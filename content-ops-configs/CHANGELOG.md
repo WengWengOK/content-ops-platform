@@ -62,6 +62,11 @@ All notable changes to this project will be documented in this file.
   （该 MCP 只挂已上架商品，所以顺序必须是先上架）；商品上架走影刀 RPA（千帆商家后台）或任何提供
   `product-tool` 的 MCP。上架失败自动停止发布，上架成功则把商品标题并入挂车列表。
   实测桩通道：上架 265ms 返回商品ID，笔记发布 38ms 且挂车 `['店铺爆款','保湿面膜 10 片装']`
+- **小红书真实发布链路跑通（Windows + WSL）**：Windows Defender 拦截 Rod leakless.exe，改用独立 Ubuntu WSL
+  跑 Linux 版 xiaohongshu-mcp；修复 MCP Streamable HTTP 的 `Mcp-Session-Id` 透传（否则 tools/call 失败）；
+  发布参数新增 `visibility`（支持仅自己可见）。真实发布「ContentOps 测试笔记」成功（46.6s），
+  `get_my_profile` 核对到笔记 `6adc8158000000002c034df9`。新增 `scripts/xhs-mcp.ps1`（启停）与
+  `scripts/xhs-login-qr.ps1`（取二维码）
 - **前端模块化**：评论助手页拆为 7 个模块组件 + 分段控件（评论工作台/自动采集/账号凭据/意图与关系/客服 Agent/运维总览），
   模块与 URL 同步支持深链
 

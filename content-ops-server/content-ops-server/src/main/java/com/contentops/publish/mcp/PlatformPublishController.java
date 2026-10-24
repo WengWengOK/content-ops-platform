@@ -52,7 +52,7 @@ public class PlatformPublishController {
                                                       @RequestBody PublishRequest request) {
         PlatformPublishService.PublishContent content = new PlatformPublishService.PublishContent(
                 request.getTitle(), request.getContent(), request.getImages(), request.getCoverUrl(),
-                request.getVideoPath(), request.getTags(), request.getProducts());
+                request.getVideoPath(), request.getTags(), request.getProducts(), request.getVisibility());
         PlatformPublishService.PublishOutcome outcome =
                 publishService.publish(platform, content, request.isDryRun());
         Map<String, Object> data = new LinkedHashMap<>();
@@ -132,6 +132,8 @@ public class PlatformPublishController {
         private List<String> tags;
         /** 挂车商品关键词或商品 ID（小红书 xiaohongshu-mcp 的 publish_content.products） */
         private List<String> products;
+        /** 可见范围：公开可见（默认）/ 仅自己可见 / 仅互关好友可见（平台支持时生效） */
+        private String visibility;
         private boolean dryRun;
     }
 

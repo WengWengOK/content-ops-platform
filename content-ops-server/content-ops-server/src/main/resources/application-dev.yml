@@ -33,6 +33,9 @@ contentops:
   publish:
     mcp:
       platforms:
+        # 开发环境开关：小红书真实发布（xiaohongshu-mcp 在 18060，扫码登录后打开）
+        xiaohongshu:
+          enabled: ${CONTENTOPS_XHS_PUBLISH_ENABLED:false}
         stub:
           enabled: ${CONTENTOPS_PUBLISH_STUB:false}
           transport: stdio

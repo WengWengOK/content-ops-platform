@@ -358,3 +358,29 @@ contentops:
 - **挂车需要账号开通商品功能**，且 `products` 传的是已上架商品的关键词/ID；没有商品时不会凭空挂上。
 - **图片/视频需本地路径**：千帆、抖音、小红书的上传工具基本都只认本地文件；URL 素材要先落盘。
 - 商品上架是**有副作用**的操作，建议先用 `dryRun` 演练参数，再小批量真跑。
+
+### 9.7 Windows 实战：用 WSL 跑小红书 MCP（已真实跑通）
+
+Windows 上直接跑 `xiaohongshu-mcp-windows-amd64.exe` 时，Rod 的 `leakless.exe` 会被 Windows Defender
+判定为 PUA（`Operation did not complete successfully because the file contains a virus...`），
+且普通用户无法添加排除项。实测可行方案：
+
+1. 导入一个独立的 Ubuntu WSL 发行版（glibc、盘可扩），在里面跑 **Linux 版 xiaohongshu-mcp**；
+2. 浏览器包在 Windows 侧下载（WSL 内下载会因代理证书校验失败），解压到
+   `/root/.cache/xiaohongshu-mcp/browser/<version>/`；
+3. 安装 Chromium 运行依赖（libglib2.0-0 / libnss3 / libgbm1 / libasound2t64 等）；
+4. **WSL 的 localhost 只转发了 IPv6**：Windows 侧 `http://127.0.0.1:18060` 会被拒，
+   用 `wsl -d xhs -- hostname -I` 拿 IPv4，配置 `XHS_MCP_URL=http://<wsl-ip>:18060/mcp`；
+5. MCP Streamable HTTP 必须透传 `Mcp-Session-Id`（本仓库客户端已支持），否则 `tools/call` 会失败；
+6. 登录：调用 `get_login_qrcode` 拿 Base64 二维码扫码（`scripts/xhs-login-qr.ps1`）。
+
+启停脚本：`scripts/xhs-mcp.ps1 -Action start|status|stop`。
+
+**真实验证（2026-10-24）**：
+
+| 项 | 结果 |
+|----|------|
+| 登录 | 账号「洛文」，`check_login_status` = 已登录 |
+| 后端探活 | `probe=ok`，18 个工具 |
+| 真实发布 | `channel=mcp, ok=true, tool=publish_content, elapsedMs=46579`，visibility=仅自己可见 |
+| 结果核对 | `get_my_profile(tab=note)` 返回笔记 `6adc8158000000002c034df9`「ContentOps 测试笔记」 |

@@ -6,6 +6,7 @@ content-ops-configs/local/alerts.env
 
 # ── 本地数据与数据库 ──
 .pgdata/
+.runtime/
 content-ops-configs/local/data/
 content-ops-configs/local/grafana/data/
 content-ops-configs/local/grafana/logs/

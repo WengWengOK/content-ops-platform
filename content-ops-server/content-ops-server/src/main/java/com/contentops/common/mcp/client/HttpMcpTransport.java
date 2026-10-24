@@ -19,6 +19,11 @@ public class HttpMcpTransport implements McpTransport {
     private final String url;
     private final String bearerToken;
     private final RestClient restClient;
+    /**
+     * MCP Streamable HTTP 会话 ID：initialize 响应头返回，后续请求必须带上。
+     * 小红书 MCP 等服务端会按会话隔离浏览器上下文，丢了它 tools/call 会失败或新开会话。
+     */
+    private volatile String sessionId;
 
     public HttpMcpTransport(String url, String bearerToken, Duration timeout) {
         this.url = url;
@@ -39,6 +44,9 @@ public class HttpMcpTransport implements McpTransport {
             if (bearerToken != null && !bearerToken.isBlank()) {
                 spec = spec.header("Authorization", "Bearer " + bearerToken);
             }
+            if (sessionId != null && !sessionId.isBlank()) {
+                spec = spec.header("Mcp-Session-Id", sessionId);
+            }
             spec.body(requestJson).retrieve().toBodilessEntity();
         } catch (Exception e) {
             // 通知失败不影响后续请求（部分实现直接返回 202 或不响应）
@@ -56,7 +64,21 @@ public class HttpMcpTransport implements McpTransport {
             if (bearerToken != null && !bearerToken.isBlank()) {
                 spec = spec.header("Authorization", "Bearer " + bearerToken);
             }
-            String body = spec.body(requestJson).retrieve().body(String.class);
+            if (sessionId != null && !sessionId.isBlank()) {
+                spec = spec.header("Mcp-Session-Id", sessionId);
+            }
+            String body = spec.body(requestJson).exchange((request, response) -> {
+                String sid = response.getHeaders().getFirst("Mcp-Session-Id");
+                if (sid != null && !sid.isBlank()) {
+                    sessionId = sid;
+                }
+                String text = new String(response.getBody().readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8);
+                if (response.getStatusCode().value() >= 400) {
+                    throw new McpClientException("MCP HTTP " + response.getStatusCode().value() + "：" + text);
+                }
+                return text;
+            });
             String json = McpProtocol.extractJson(body);
             if (json == null) {
                 throw new McpClientException("MCP HTTP 响应无法解析为 JSON-RPC：" + summarise(body));

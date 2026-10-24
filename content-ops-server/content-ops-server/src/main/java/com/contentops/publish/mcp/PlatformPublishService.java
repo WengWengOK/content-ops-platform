@@ -47,7 +47,8 @@ public class PlatformPublishService {
 
     /** 规范化字段 → 值 */
     public record PublishContent(String title, String content, List<String> images, String coverUrl,
-                                 String videoPath, List<String> tags, List<String> products) {
+                                 String videoPath, List<String> tags, List<String> products,
+                                 String visibility) {
     }
 
     /** 商品上架内容（小红书千帆 / 影刀应用入参对齐这个结构） */
@@ -588,6 +589,7 @@ public class PlatformPublishService {
         putIfPresent(args, names.getOrDefault("video", "video"), content.videoPath());
         putIfPresent(args, names.getOrDefault("tags", "tags"), content.tags());
         putIfPresent(args, names.getOrDefault("products", "products"), content.products());
+        putIfPresent(args, names.getOrDefault("visibility", "visibility"), content.visibility());
         if (cfg != null) {
             cfg.getExtraParams().forEach((k, v) -> putIfPresent(args, names.getOrDefault(k, k), v));
         }
@@ -609,6 +611,7 @@ public class PlatformPublishService {
         putIfPresent(args, names.getOrDefault("video", "video"), content.videoPath());
         putIfPresent(args, names.getOrDefault("tags", "tags"), content.tags());
         putIfPresent(args, names.getOrDefault("products", "products"), content.products());
+        putIfPresent(args, names.getOrDefault("visibility", "visibility"), content.visibility());
         cfg.getExtraParams().forEach((k, v) -> putIfPresent(args, names.getOrDefault(k, k), v));
         return args;
     }

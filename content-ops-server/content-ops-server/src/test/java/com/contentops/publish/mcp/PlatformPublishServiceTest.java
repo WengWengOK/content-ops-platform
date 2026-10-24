@@ -57,7 +57,7 @@ class PlatformPublishServiceTest {
     private PlatformPublishService.PublishContent content() {
         return new PlatformPublishService.PublishContent(
                 "AI 提效实测", "正文内容", List.of("https://cdn/1.jpg"),
-                "https://cdn/cover.jpg", "C:/works/demo.mp4", List.of("AI", "提效"), List.of());
+                "https://cdn/cover.jpg", "C:/works/demo.mp4", List.of("AI", "提效"), List.of(), null);
     }
 
     @Test
@@ -340,7 +340,7 @@ class PlatformPublishServiceTest {
                 .thenReturn(new McpClient.McpCallResult(true, "已发布", null));
         PlatformPublishService.PublishContent withProducts = new PlatformPublishService.PublishContent(
                 "标题", "正文", List.of("https://cdn/1.jpg"), null, null, null,
-                List.of("保湿面膜", "sku-123"));
+                List.of("保湿面膜", "sku-123"), null);
 
         PlatformPublishService.PublishOutcome outcome = service.publish("xiaohongshu", withProducts, false);
 

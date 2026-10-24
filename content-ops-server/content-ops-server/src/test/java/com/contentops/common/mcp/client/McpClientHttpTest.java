@@ -36,8 +36,19 @@ class McpClientHttpTest {
         server.createContext("/mcp", exchange -> {
             String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             received.add(request);
+            String session = exchange.getRequestHeaders().getFirst("Mcp-Session-Id");
+            boolean initialize = request.contains("\"method\":\"initialize\"");
+            if (!initialize && !"sess-123".equals(session)) {
+                byte[] error = "{\"error\":\"missing Mcp-Session-Id\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(400, error.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(error);
+                }
+                return;
+            }
             String response;
-            if (request.contains("\"method\":\"initialize\"")) {
+            if (initialize) {
                 response = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\","
                         + "\"serverInfo\":{\"name\":\"stub-xhs\",\"version\":\"1.0\"}}}";
             } else if (request.contains("\"method\":\"tools/list\"")) {
@@ -61,6 +72,9 @@ class McpClientHttpTest {
             byte[] bytes = (sseMode ? "event: message\ndata: " + response + "\n\n" : response)
                     .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", sseMode ? "text/event-stream" : "application/json");
+            if (initialize) {
+                exchange.getResponseHeaders().add("Mcp-Session-Id", "sess-123");
+            }
             exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);
